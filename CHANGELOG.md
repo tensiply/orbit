@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Multi-workspace support in TUI ([#6](https://github.com/tensiply/orbit/issues/6)).
+  Tab bar shows the active workspace name. Press `[w]` to cycle through detected workspaces.
+  Workspace detection scans `~/` for directories containing `orbit.toml` or `tenants/`.
+  Switching reloads MCP entries, launch defaults, and sessions from the new workspace root.
 - `orbit session attach` auto-attaches when only one tmux session is active; shows a selector when there are multiple ([#4](https://github.com/tensiply/orbit/issues/4)).
   Verifies the tmux window still exists before attaching; clear error message if it's gone.
   TUI `[a]`/`↵` in the Sessions tab also checks window existence before handing off the terminal.

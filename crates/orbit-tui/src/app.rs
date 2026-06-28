@@ -4,7 +4,13 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use orbit_core::{engine::Engine, ipc::socket_path, session::Session, user_config::UserConfig};
+use orbit_core::{
+    engine::Engine,
+    ipc::socket_path,
+    session::Session,
+    user_config::UserConfig,
+    workspace_config::detect_workspaces,
+};
 use ratatui::{Terminal, backend::CrosstermBackend, widgets::TableState};
 use std::{
     io,
@@ -409,6 +415,8 @@ pub struct App {
     pub sys: SystemState,
     pub status_msg: Option<String>,
     pub pending_async: Option<AsyncAction>,
+    pub workspaces: Vec<PathBuf>,
+    pub workspace_idx: usize,
     should_quit: bool,
     post_action: Option<PostAction>,
 }
@@ -424,6 +432,13 @@ impl App {
             table_state.select(Some(0));
         }
 
+        let home = dirs_home();
+        let workspaces = detect_workspaces(&home);
+        let workspace_idx = workspaces
+            .iter()
+            .position(|w| *w == sys.ai_root)
+            .unwrap_or(0);
+
         Self {
             tab: Tab::Sessions,
             mode: Mode::Normal,
@@ -433,9 +448,35 @@ impl App {
             sys,
             status_msg: None,
             pending_async: None,
+            workspaces,
+            workspace_idx,
             should_quit: false,
             post_action: None,
         }
+    }
+
+    pub fn active_workspace_name(&self) -> &str {
+        self.workspaces
+            .get(self.workspace_idx)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+    }
+
+    pub fn switch_workspace_next(&mut self) {
+        if self.workspaces.len() <= 1 {
+            return;
+        }
+        self.workspace_idx = (self.workspace_idx + 1) % self.workspaces.len();
+        let new_root = self.workspaces[self.workspace_idx].clone();
+        self.sys.ai_root = new_root;
+        self.sys.reload_mcp();
+        self.launch = LaunchState::new(&self.sys.default_tenant, &self.sys.default_engine);
+        self.refresh_sessions();
+        self.status_msg = Some(format!(
+            "Workspace: {}",
+            self.active_workspace_name()
+        ));
     }
 
     pub fn refresh_sessions(&mut self) {
@@ -554,7 +595,7 @@ impl App {
             return;
         }
 
-        // Tab switching: skip when typing in a text field
+        // Tab switching + workspace cycling: skip when typing in a text field
         let in_text_input = self.tab == Tab::Launch && self.launch.focused.is_text_input();
         if !in_text_input {
             match code {
@@ -572,6 +613,10 @@ impl App {
                 }
                 KeyCode::Char('3') => {
                     self.tab = Tab::System;
+                    return;
+                }
+                KeyCode::Char('w') => {
+                    self.switch_workspace_next();
                     return;
                 }
                 _ => {}
@@ -928,4 +973,10 @@ pub fn send_sigterm(pid: u32) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+}
+
+fn dirs_home() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
 }

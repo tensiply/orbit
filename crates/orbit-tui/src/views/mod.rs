@@ -43,6 +43,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 }
 
 fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let ws_name = app.active_workspace_name().to_string();
+    let ws_hint = if app.workspaces.len() > 1 {
+        Span::styled("[w]", Style::default().fg(Color::Cyan))
+    } else {
+        Span::styled("[w]", Style::default().fg(Color::DarkGray))
+    };
+
     let line = Line::from(vec![
         Span::raw(" "),
         tab_span("[1]", app.tab == Tab::Sessions),
@@ -50,7 +57,13 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         tab_span("[2]", app.tab == Tab::Launch),
         Span::styled(" Launch  ", tab_label_style(app.tab == Tab::Launch)),
         tab_span("[3]", app.tab == Tab::System),
-        Span::styled(" System", tab_label_style(app.tab == Tab::System)),
+        Span::styled(" System  ", tab_label_style(app.tab == Tab::System)),
+        Span::styled("─  ", Style::default().fg(Color::DarkGray)),
+        ws_hint,
+        Span::styled(
+            format!(" {ws_name}"),
+            Style::default().fg(Color::Yellow),
+        ),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
@@ -97,6 +110,8 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" details  "),
                 hint("[c]"),
                 Span::raw(" clean  "),
+                hint("[w]"),
+                Span::raw(" workspace  "),
                 hint("[?]"),
                 Span::raw(" help  "),
                 hint("[q]"),
@@ -127,6 +142,8 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" remove  "),
                 hint("[s]"),
                 Span::raw(" daemon  "),
+                hint("[w]"),
+                Span::raw(" workspace  "),
                 hint("[r]"),
                 Span::raw(" refresh  "),
                 hint("[q]"),

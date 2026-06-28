@@ -99,6 +99,25 @@ impl WorkspaceConfig {
     }
 }
 
+/// Scan `home` for direct subdirectories that look like orbit workspaces.
+/// A workspace directory must contain `orbit.toml` or a `tenants/` subdirectory.
+pub fn detect_workspaces(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(home) else {
+        return vec![];
+    };
+    let mut workspaces: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            let p = e.path();
+            p.join("orbit.toml").exists() || p.join("tenants").is_dir()
+        })
+        .map(|e| e.path())
+        .collect();
+    workspaces.sort();
+    workspaces
+}
+
 fn current_platform() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "linux-x86_64",
