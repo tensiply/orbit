@@ -88,3 +88,161 @@ jobs:
             artifacts/orbit-linux-aarch64
             artifacts/checksums.txt
           generate_release_notes: true
+
+  docs:
+    name: Update docs & wiki
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG footer and README
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, re
+
+          version = os.environ['VERSION']
+          tag     = os.environ['TAG']
+          repo    = os.environ['REPO']
+
+          # ── CHANGELOG: update footer links ───────────────────────────────────
+          with open('CHANGELOG.md') as f:
+              changelog = f.read()
+
+          # Update [Unreleased] compare URL to point from the new tag
+          changelog = re.sub(
+              r'\[Unreleased\]: .*',
+              f'[Unreleased]: https://github.com/{repo}/compare/{tag}...HEAD',
+              changelog,
+          )
+
+          # Insert version link below [Unreleased] if not already present
+          version_link = f'[{version}]: https://github.com/{repo}/releases/tag/{tag}'
+          if version_link not in changelog:
+              changelog = re.sub(
+                  r'(\[Unreleased\]: [^\n]+\n)',
+                  rf'\g<1>{version_link}\n',
+                  changelog,
+              )
+
+          with open('CHANGELOG.md', 'w') as f:
+              f.write(changelog)
+
+          # ── README: update "Latest" line ─────────────────────────────────────
+          with open('README.md') as f:
+              readme = f.read()
+
+          new_latest = (
+              f'**Latest:** [{tag}](https://github.com/{repo}/releases/tag/{tag})'
+              f' · [Changelog](CHANGELOG.md)'
+              f' · [Wiki](https://github.com/{repo}/wiki)\n'
+          )
+
+          if '**Latest:**' in readme:
+              readme = re.sub(r'\*\*Latest:\*\*[^\n]+\n', new_latest, readme)
+          else:
+              # Insert before the first horizontal rule
+              readme = re.sub(r'(\n---\n)', f'\n{new_latest}\\1', readme, count=1)
+
+          with open('README.md', 'w') as f:
+              f.write(readme)
+
+          # ── release_notes.md: extract section for wiki ───────────────────────
+          pattern = rf'(?m)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)'
+          match   = re.search(pattern, changelog, re.DOTALL)
+          body    = match.group(1).strip() if match else '_No notes found._'
+
+          with open('release_notes.md', 'w') as f:
+              f.write(f'# Release {tag}\n\n')
+              f.write(body)
+              f.write('\n')
+
+          print(f'Docs updated for {tag}')
+          PYEOF
+
+      - name: Commit docs updates to main
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md README.md
+          git diff --cached --quiet || git commit -m "docs: update links for ${{ github.ref_name }}"
+          git pull --rebase
+          git push
+
+      - name: Update wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Clone wiki (or init if it doesn't exist yet)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" wiki 2>/dev/null || {
+            mkdir -p wiki
+            git -C wiki init
+            git -C wiki remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git"
+          }
+
+          # Per-version release page
+          cp release_notes.md "wiki/Release-${TAG}.md"
+
+          # Rebuild Home.md index from CHANGELOG
+          python3 - << 'PYEOF'
+          import os, re
+
+          repo    = os.environ['REPO']
+          tag     = os.environ['TAG']
+
+          with open('CHANGELOG.md') as f:
+              changelog = f.read()
+
+          # All released versions, newest first
+          releases = re.findall(
+              r'^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})',
+              changelog, re.MULTILINE,
+          )
+
+          rows = '\n'.join(
+              f'| [v{ver}](Release-v{ver}) | {date} |'
+              for ver, date in releases
+          )
+
+          home = f"""# orbit
+
+A CLI launcher for AI coding assistants (opencode, Gemini CLI, Claude Code) with
+multi-tenant workspace management, session tracking, and MCP server configuration.
+
+→ [Repository](https://github.com/{repo}) · [Releases](https://github.com/{repo}/releases) · [Changelog](https://github.com/{repo}/blob/main/CHANGELOG.md)
+
+## Releases
+
+| Version | Date |
+|---------|------|
+{rows}
+"""
+
+          with open('wiki/Home.md', 'w') as f:
+              f.write(home)
+
+          print('wiki/Home.md rebuilt')
+          PYEOF
+
+          git -C wiki config user.name  "github-actions[bot]"
+          git -C wiki config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C wiki add .
+          git -C wiki diff --cached --quiet || git -C wiki commit -m "Release ${TAG}"
+          git -C wiki push -u origin HEAD:master
