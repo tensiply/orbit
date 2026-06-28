@@ -1,5 +1,15 @@
 name: Prepare Release
 
+# ── Usage ──────────────────────────────────────────────────────────────────────
+# 1. Go to Actions → Prepare Release → Run workflow → enter version (X.Y.Z)
+# 2. The "Preview" job runs immediately and writes a summary to the Actions UI.
+# 3. The "Release" job waits for manual approval (GitHub Environment: release).
+# 4. Review the summary, click "Review pending deployments" → Approve.
+# 5. The release commit + tag are pushed, triggering release.yml automatically.
+#
+# One-time setup: Settings → Environments → New → name "release"
+#                 → Required reviewers → add your GitHub username → Save
+
 on:
   workflow_dispatch:
     inputs:
@@ -9,9 +19,93 @@ on:
         type: string
 
 jobs:
-  prepare:
-    name: Prepare release v${{ inputs.version }}
+  # ── Job 1: validate + show summary ────────────────────────────────────────────
+  preview:
+    name: Preview v${{ inputs.version }}
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate and write summary
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # ── shell validation ─────────────────────────────────────────────────
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version '$VERSION' — must be X.Y.Z (e.g. 0.3.0)"
+            exit 1
+          fi
+
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+            echo "::error::Tag v$VERSION already exists"
+            exit 1
+          fi
+
+          FIRST_LINE=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{if(f)exit} f&&NF{print;exit}' CHANGELOG.md)
+          if [ -z "$FIRST_LINE" ]; then
+            echo "::error::[Unreleased] section in CHANGELOG.md is empty"
+            exit 1
+          fi
+
+          # ── build summary ────────────────────────────────────────────────────
+          python3 - << 'PYEOF'
+          import os, re
+          from datetime import date
+
+          version = os.environ['VERSION']
+          today   = date.today().isoformat()
+
+          with open('Cargo.toml') as f:
+              cargo = f.read()
+          current_ver = re.search(
+              r'(?ms)^\[workspace\.package\].*?^version = "([^"]+)"', cargo
+          ).group(1)
+
+          with open('CHANGELOG.md') as f:
+              cl = f.read()
+          match = re.search(
+              r'(?ms)^## \[Unreleased\]\n(.*?)(?=^## \[|\Z)', cl
+          )
+          notes = match.group(1).strip() if match else '_(empty)_'
+
+          summary = f"""## Release preview: v{current_ver} → v{version}
+
+| | |
+|---|---|
+| Current version | `v{current_ver}` |
+| **New version** | **`v{version}`** |
+| Release date | `{today}` |
+
+### Release notes
+
+{notes}
+
+---
+
+### Files that will change
+
+| File | Change |
+|------|--------|
+| `CHANGELOG.md` | `[Unreleased]` → `[{version}] - {today}` |
+| `Cargo.toml` | `version = "{current_ver}"` → `version = "{version}"` |
+| `Cargo.lock` | workspace package versions bumped |
+
+> If this looks correct, approve the pending deployment below to proceed.
+"""
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(summary)
+
+          print(f'Summary ready — v{current_ver} → v{version} ({today})')
+          PYEOF
+
+  # ── Job 2: execute release (waits for manual approval) ────────────────────────
+  release:
+    name: Release v${{ inputs.version }}
+    needs: preview
+    runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     steps:
@@ -20,31 +114,6 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Validate
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          # Must be X.Y.Z
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Invalid version '$VERSION' — must be X.Y.Z (e.g. 0.3.0)"
-            exit 1
-          fi
-
-          # Tag must not already exist
-          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
-            echo "::error::Tag v$VERSION already exists"
-            exit 1
-          fi
-
-          # [Unreleased] section must have content
-          FIRST_LINE=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{if(f)exit} f&&NF{print;exit}' CHANGELOG.md)
-          if [ -z "$FIRST_LINE" ]; then
-            echo "::error::[Unreleased] section in CHANGELOG.md is empty — add entries before releasing"
-            exit 1
-          fi
-
-          echo "Ready to release v$VERSION"
 
       - name: Bump versions and update CHANGELOG
         env:
@@ -57,9 +126,7 @@ jobs:
           version = os.environ['VERSION']
           today   = os.environ['TODAY']
 
-          # ── CHANGELOG: [Unreleased] → [X.Y.Z] - date ────────────────────────
-          # Inserts the new version heading right after ## [Unreleased], so the
-          # content that was under Unreleased naturally becomes the new release section.
+          # ── CHANGELOG ────────────────────────────────────────────────────────
           with open('CHANGELOG.md') as f:
               cl = f.read()
 
@@ -72,7 +139,7 @@ jobs:
           with open('CHANGELOG.md', 'w') as f:
               f.write(cl)
 
-          # ── Cargo.toml: bump version in [workspace.package] ──────────────────
+          # ── Cargo.toml ───────────────────────────────────────────────────────
           with open('Cargo.toml') as f:
               lines = f.readlines()
 
@@ -91,7 +158,7 @@ jobs:
           with open('Cargo.toml', 'w') as f:
               f.writelines(result)
 
-          # ── Cargo.lock: update workspace package versions ────────────────────
+          # ── Cargo.lock ───────────────────────────────────────────────────────
           ws_packages = [
               'orbit', 'orbit-cli', 'orbit-tui', 'orbit-core',
               'orbit-client', 'orbit-engine', 'orbit-daemon', 'orbit-dev',
