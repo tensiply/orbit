@@ -1,0 +1,124 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.3.0)"
+        required: true
+        type: string
+
+jobs:
+  prepare:
+    name: Prepare release v${{ inputs.version }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Must be X.Y.Z
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version '$VERSION' — must be X.Y.Z (e.g. 0.3.0)"
+            exit 1
+          fi
+
+          # Tag must not already exist
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+            echo "::error::Tag v$VERSION already exists"
+            exit 1
+          fi
+
+          # [Unreleased] section must have content
+          FIRST_LINE=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{if(f)exit} f&&NF{print;exit}' CHANGELOG.md)
+          if [ -z "$FIRST_LINE" ]; then
+            echo "::error::[Unreleased] section in CHANGELOG.md is empty — add entries before releasing"
+            exit 1
+          fi
+
+          echo "Ready to release v$VERSION"
+
+      - name: Bump versions and update CHANGELOG
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          export TODAY=$(date -u +%Y-%m-%d)
+          python3 - << 'PYEOF'
+          import os, re
+
+          version = os.environ['VERSION']
+          today   = os.environ['TODAY']
+
+          # ── CHANGELOG: [Unreleased] → [X.Y.Z] - date ────────────────────────
+          # Inserts the new version heading right after ## [Unreleased], so the
+          # content that was under Unreleased naturally becomes the new release section.
+          with open('CHANGELOG.md') as f:
+              cl = f.read()
+
+          cl = cl.replace(
+              '## [Unreleased]',
+              f'## [Unreleased]\n\n## [{version}] - {today}',
+              1,
+          )
+
+          with open('CHANGELOG.md', 'w') as f:
+              f.write(cl)
+
+          # ── Cargo.toml: bump version in [workspace.package] ──────────────────
+          with open('Cargo.toml') as f:
+              lines = f.readlines()
+
+          in_ws_pkg = False
+          result = []
+          for line in lines:
+              stripped = line.strip()
+              if stripped == '[workspace.package]':
+                  in_ws_pkg = True
+              elif stripped.startswith('[') and stripped != '[workspace.package]':
+                  in_ws_pkg = False
+              if in_ws_pkg and re.match(r'^version\s*=', stripped):
+                  line = f'version = "{version}"\n'
+              result.append(line)
+
+          with open('Cargo.toml', 'w') as f:
+              f.writelines(result)
+
+          # ── Cargo.lock: update workspace package versions ────────────────────
+          ws_packages = [
+              'orbit', 'orbit-cli', 'orbit-tui', 'orbit-core',
+              'orbit-client', 'orbit-engine', 'orbit-daemon', 'orbit-dev',
+          ]
+          with open('Cargo.lock') as f:
+              lock = f.read()
+
+          for pkg in ws_packages:
+              lock = re.sub(
+                  rf'(name = "{re.escape(pkg)}"\nversion = ")[^"]+(")',
+                  rf'\g<1>{version}\g<2>',
+                  lock,
+              )
+
+          with open('Cargo.lock', 'w') as f:
+              f.write(lock)
+
+          print(f'Bumped to v{version} ({today})')
+          PYEOF
+
+      - name: Commit, tag, push
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md Cargo.toml Cargo.lock
+          git commit -m "chore: release v${VERSION}"
+          git tag "v${VERSION}"
+          git push --atomic origin main "v${VERSION}"
