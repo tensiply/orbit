@@ -21,3 +21,4 @@ futures-util.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tokio = { workspace = true }
+directories.workspace = true

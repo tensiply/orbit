@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
 
 pub mod commands;
+mod update_check;
 
 #[derive(Debug, Parser)]
 #[command(name = "orbit", about = "AI ecosystem CLI", version)]
@@ -44,6 +46,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Session(args)) => commands::session::run(args).await,
         Some(Commands::Daemon(args)) => commands::daemon::run(args).await,
         None => {
+            let ws_cfg = {
+                let ai_root = UserConfig::load().ai_root_expanded();
+                WorkspaceConfig::load(&ai_root)
+            };
+            update_check::check_and_print(&ws_cfg).await;
+
             if let Some(params) = orbit_tui::run().await? {
                 use orbit_core::engine::Engine;
                 commands::launch::run(commands::launch::LaunchArgs {

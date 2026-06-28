@@ -40,13 +40,25 @@ pub struct GovernanceSection {
     pub sync_interval_hours: u64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateSection {
     /// Internal URL to download new orbit binaries.
     /// Format: `http://server/orbit/latest/{platform}` where platform is
     /// `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`.
     pub binary_url: String,
+    /// Check for a newer orbit release on startup (default: true).
+    /// Set to false to opt out team-wide. Use ORBIT_NO_UPDATE_CHECK=1 for per-user opt-out.
+    pub check_on_startup: bool,
+}
+
+impl Default for UpdateSection {
+    fn default() -> Self {
+        Self {
+            binary_url: String::new(),
+            check_on_startup: true,
+        }
+    }
 }
 
 // ── load ──────────────────────────────────────────────────────────────────────
