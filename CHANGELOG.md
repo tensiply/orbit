@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `orbit session attach` auto-attaches when only one tmux session is active; shows a selector when there are multiple ([#4](https://github.com/tensiply/orbit/issues/4)).
+  Verifies the tmux window still exists before attaching; clear error message if it's gone.
+  TUI `[a]`/`↵` in the Sessions tab also checks window existence before handing off the terminal.
+  Uses `switch-client` when already inside tmux, `attach-session` otherwise.
 - `orbit update` now downloads, checksum-verifies, and atomically installs the new binary ([#3](https://github.com/tensiply/orbit/issues/3)).
   Shows progress, validates SHA-256 against `checksums.txt`, skips if already on latest.
   New flag `--force` to reinstall even when current. Respects `ORBIT_NO_UPDATE_CHECK=1`.

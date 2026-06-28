@@ -483,7 +483,16 @@ impl App {
                 self.status_msg = Some(format!("Session {} was not launched in tmux.", s.id));
             }
             Some(s) if !s.is_running() => {
-                self.status_msg = Some(format!("Session {} is no longer running.", s.id));
+                self.status_msg = Some(format!(
+                    "Session {} is no longer running. Run `orbit session clean`.",
+                    s.id
+                ));
+            }
+            Some(s) if !s.tmux_window_exists() => {
+                self.status_msg = Some(format!(
+                    "tmux window for session {} is gone. Run `orbit session clean`.",
+                    s.id
+                ));
             }
             Some(s) => {
                 self.post_action = Some(PostAction::Attach(s.clone()));
@@ -593,11 +602,20 @@ impl App {
             }
             Mode::SessionDetails(session) => match code {
                 KeyCode::Char('a') => {
-                    if session.has_tmux() && session.is_running() {
+                    if !session.has_tmux() {
+                        self.status_msg =
+                            Some("Session was not launched in tmux — cannot attach.".into());
+                    } else if !session.is_running() {
+                        self.status_msg = Some(
+                            "Session is no longer running. Run `orbit session clean`.".into(),
+                        );
+                    } else if !session.tmux_window_exists() {
+                        self.status_msg = Some(
+                            "tmux window is gone. Run `orbit session clean`.".into(),
+                        );
+                    } else {
                         self.post_action = Some(PostAction::Attach(session));
                         self.should_quit = true;
-                    } else {
-                        self.status_msg = Some("Cannot attach: not in tmux or not running.".into());
                     }
                 }
                 KeyCode::Char('K') => {

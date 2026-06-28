@@ -124,7 +124,7 @@ fn kill(id: Option<&str>, force: bool) -> Result<()> {
                 println!("No active sessions to kill.");
                 return Ok(());
             }
-            select_session(&alive)?
+            select_session(&alive, "Select a session to kill:")?
         }
     };
 
@@ -139,9 +139,9 @@ fn kill(id: Option<&str>, force: bool) -> Result<()> {
     send_signal(session, force)
 }
 
-fn select_session<'a>(alive: &[&'a Session]) -> Result<&'a Session> {
-    println!("Select a session to kill:\n");
-    for (i, s) in alive.iter().enumerate() {
+fn select_session<'a>(sessions: &[&'a Session], prompt: &str) -> Result<&'a Session> {
+    println!("{prompt}\n");
+    for (i, s) in sessions.iter().enumerate() {
         println!(
             "  {:>2})  {:<24}  {:<10}  {:<30}  {}",
             i + 1,
@@ -154,7 +154,7 @@ fn select_session<'a>(alive: &[&'a Session]) -> Result<&'a Session> {
     println!();
 
     loop {
-        print!("  Enter number (1-{}): ", alive.len());
+        print!("  Enter number (1-{}): ", sessions.len());
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -166,10 +166,10 @@ fn select_session<'a>(alive: &[&'a Session]) -> Result<&'a Session> {
         }
 
         match trimmed.parse::<usize>() {
-            Ok(n) if n >= 1 && n <= alive.len() => return Ok(alive[n - 1]),
+            Ok(n) if n >= 1 && n <= sessions.len() => return Ok(sessions[n - 1]),
             _ => println!(
                 "  Invalid choice — enter a number between 1 and {}.",
-                alive.len()
+                sessions.len()
             ),
         }
     }
@@ -204,10 +204,6 @@ fn send_signal(session: &Session, force: bool) -> Result<()> {
 
 fn attach(id: Option<&str>) -> Result<()> {
     let sessions = Session::load_all();
-    let attachable: Vec<&Session> = sessions
-        .iter()
-        .filter(|s| s.is_running() && s.has_tmux())
-        .collect();
 
     let session = match id {
         Some(id) => sessions
@@ -219,26 +215,26 @@ fn attach(id: Option<&str>) -> Result<()> {
                 )
             })?,
         None => {
-            if attachable.is_empty() {
-                if sessions.iter().any(|s| s.is_running()) {
-                    bail!(
-                        "Running sessions found but none were launched with tmux.\n\
-                         Use `orbit launch` (without --no-tmux) to enable session resuming."
-                    );
-                } else {
-                    bail!("No active sessions. Start one with `orbit launch`.");
-                }
-            }
-            select_session(&attachable)?
-        }
-    };
+            let attachable: Vec<&Session> = sessions
+                .iter()
+                .filter(|s| s.is_running() && s.has_tmux())
+                .collect();
 
-    let Some(ref tmux_name) = session.tmux_session else {
-        bail!(
-            "Session {} was not launched with tmux — cannot reattach.\n\
-             Kill it and relaunch without --no-tmux.",
-            session.id
-        );
+            match attachable.len() {
+                0 => {
+                    if sessions.iter().any(|s| s.is_running()) {
+                        bail!(
+                            "Running sessions found but none were launched with tmux.\n\
+                             Use `orbit launch` (without --no-tmux) to enable session resuming."
+                        );
+                    } else {
+                        bail!("No active sessions. Start one with `orbit launch`.");
+                    }
+                }
+                1 => attachable[0],
+                _ => select_session(&attachable, "Select a session to attach:")?,
+            }
+        }
     };
 
     if !session.is_running() {
@@ -248,7 +244,24 @@ fn attach(id: Option<&str>) -> Result<()> {
         );
     }
 
-    // If already inside tmux, switch to the target session instead of nesting
+    let Some(ref tmux_name) = session.tmux_session else {
+        bail!(
+            "Session {} was not launched with tmux — cannot reattach.\n\
+             Kill it and relaunch without --no-tmux.",
+            session.id
+        );
+    };
+
+    // Verify the tmux session window still exists
+    if !session.tmux_window_exists() {
+        bail!(
+            "tmux session '{}' no longer exists (the window may have been closed).\n\
+             Run `orbit session clean` to remove stale entries.",
+            tmux_name
+        );
+    }
+
+    // If already inside tmux, switch-client instead of nesting attach-session
     let tmux_cmd = if std::env::var("TMUX").is_ok() {
         vec!["switch-client", "-t", tmux_name.as_str()]
     } else {

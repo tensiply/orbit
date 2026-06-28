@@ -116,6 +116,21 @@ impl Session {
         is_pid_alive(self.pid)
     }
 
+    /// `true` if the tmux session window still exists (`tmux has-session`).
+    /// Always returns `false` when the session was not launched with tmux.
+    pub fn tmux_window_exists(&self) -> bool {
+        let Some(ref name) = self.tmux_session else {
+            return false;
+        };
+        std::process::Command::new("tmux")
+            .args(["has-session", "-t", name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
     /// Human-readable scope label.
     pub fn scope_label(&self) -> String {
         if self.global_mode {
