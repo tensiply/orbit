@@ -11,11 +11,11 @@ Built in Rust. Runs on Linux and macOS.
 `orbit` resolves the right context for your AI session — tenant, project, repository, instructions, MCP servers — and launches the engine ready to work. It manages sessions via tmux and provides a terminal UI for navigating active sessions, launching new ones, and configuring the ecosystem.
 
 ```
-orbit                    # open TUI dashboard
-orbit launch             # launch with auto-resolved context
-orbit launch --tenant acme --project api --engine opencode
-orbit session list       # list active sessions
-orbit session attach     # attach to a running session
+orbit                                         # open TUI dashboard
+orbit launch AI AIDEV AI-ECOSYSTEM orbit      # full scope: workspace/tenant/project/repo
+orbit launch BeFra DEVTEAM core backend       # different workspace
+orbit session list                            # list active sessions
+orbit session attach                          # attach to a running session
 ```
 
 ---
@@ -82,28 +82,54 @@ dir = "~/.local/bin"      # where the orbit binary lives
 
 ## Workspace structure
 
-orbit resolves context from a directory tree under `ai_root` (default: `~/AI`):
+orbit organises context across four scope levels. Each is a positional argument to `orbit launch`:
 
 ```
-~/AI/
-├── mcp.json                          # global MCP servers
-├── tenants/
-│   └── acme/                         # tenant
-│       ├── mcp.json                  # tenant-scoped MCP servers
-│       ├── source-of-truth/          # tenant-level instructions & agents
-│       └── projects/
-│           └── api/                  # project
-│               ├── source-of-truth/  # project-level instructions
-│               └── repositories/
-│                   └── backend/      # repository
-│                       └── source-of-truth/
+~/ (home)
+├── AI/                               ← workspace  (orbit launch AI ...)
+│   ├── mcp.json                      # workspace-wide MCP servers
+│   ├── orbit.toml                    # workspace configuration
+│   └── tenants/
+│       └── acme/                     ← tenant     (orbit launch AI acme ...)
+│           ├── mcp.json              # tenant MCP servers
+│           ├── source-of-truth/      # tenant instructions & agents
+│           └── projects/
+│               └── api/              ← project    (orbit launch AI acme api ...)
+│                   ├── source-of-truth/
+│                   └── repositories/
+│                       └── backend/  ← repository (orbit launch AI acme api backend)
+│                           └── source-of-truth/
+│
+└── BeFra/                            ← another workspace (orbit launch BeFra ...)
+    └── tenants/
+        └── devteam/
+            └── projects/
+                └── core/
 ```
 
-When you run `orbit launch --tenant acme --project api`, orbit:
-1. Resolves the workspace path to the repository directory
-2. Merges MCP servers from all scope layers (global → tenant → project → repo)
+Multiple workspaces (`~/AI`, `~/BeFra`, …) can coexist — each with independent tenants, governance, and MCP config. The workspace is resolved case-insensitively as a direct subdirectory of `~`.
+
+When you run `orbit launch AI acme api backend`, orbit:
+1. Resolves each scope level to a real directory (case-insensitive)
+2. Merges MCP servers from all layers: workspace → tenant → project → repo
 3. Assembles instructions and agent configs for the engine
 4. Launches the engine inside a named tmux session
+
+### `orbit launch` reference
+
+All arguments are positional and optional — omit from the right to broaden scope:
+
+```bash
+orbit launch                                   # global mode (uses ai_root from config)
+orbit launch AI                                # workspace only
+orbit launch AI AIDEV                          # workspace + tenant
+orbit launch AI AIDEV AI-ECOSYSTEM             # + project
+orbit launch AI AIDEV AI-ECOSYSTEM orbit       # full scope
+
+orbit launch AI AIDEV AI-ECOSYSTEM orbit --engine claude   # pick engine
+orbit launch AI AIDEV --no-tmux                            # skip tmux
+orbit launch AI AIDEV AI-ECOSYSTEM orbit --dry-run         # print resolved config
+```
 
 ---
 
