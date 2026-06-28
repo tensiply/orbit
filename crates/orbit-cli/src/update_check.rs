@@ -5,7 +5,7 @@ use std::time::Duration;
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CACHE_TTL_SECS: u64 = 86_400; // 24 hours
 const TIMEOUT: Duration = Duration::from_secs(1);
-const API_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases/latest";
+pub const API_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases/latest";
 
 /// Checks GitHub for a newer release and prints a one-line notice if one exists.
 /// All failures (network, timeout, parse) are silent — startup is never blocked.
@@ -22,7 +22,13 @@ pub async fn check_and_print(ws_cfg: &WorkspaceConfig) {
         return;
     }
 
-    let result = tokio::time::timeout(TIMEOUT, fetch_latest_tag()).await;
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("orbit-cli/", env!("CARGO_PKG_VERSION")))
+        .timeout(TIMEOUT)
+        .build()
+        .unwrap_or_default();
+
+    let result = tokio::time::timeout(TIMEOUT, fetch_latest_tag(&client)).await;
 
     if let Ok(Ok(tag)) = result {
         write_cache(&cache);
@@ -39,7 +45,7 @@ pub async fn check_and_print(ws_cfg: &WorkspaceConfig) {
 
 // ── version comparison ────────────────────────────────────────────────────────
 
-fn is_newer(latest: &str, current: &str) -> bool {
+pub fn is_newer(latest: &str, current: &str) -> bool {
     parse_semver(latest) > parse_semver(current)
 }
 
@@ -55,12 +61,7 @@ fn parse_semver(v: &str) -> (u64, u64, u64) {
 
 // ── GitHub API ────────────────────────────────────────────────────────────────
 
-async fn fetch_latest_tag() -> anyhow::Result<String> {
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("orbit-cli/", env!("CARGO_PKG_VERSION")))
-        .timeout(TIMEOUT)
-        .build()?;
-
+pub async fn fetch_latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
     let resp = client.get(API_URL).send().await?;
 
     if !resp.status().is_success() {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `orbit update` now downloads, checksum-verifies, and atomically installs the new binary ([#3](https://github.com/tensiply/orbit/issues/3)).
+  Shows progress, validates SHA-256 against `checksums.txt`, skips if already on latest.
+  New flag `--force` to reinstall even when current. Respects `ORBIT_NO_UPDATE_CHECK=1`.
+
 ## [0.2.0] - 2026-06-28
 
 ### Added
