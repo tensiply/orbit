@@ -120,15 +120,15 @@ When you run `orbit launch AI acme api backend`, orbit:
 All arguments are positional and optional — omit from the right to broaden scope:
 
 ```bash
-orbit launch                                   # global mode (uses ai_root from config)
-orbit launch AI                                # workspace only
-orbit launch AI AIDEV                          # workspace + tenant
-orbit launch AI AIDEV AI-ECOSYSTEM             # + project
-orbit launch AI AIDEV AI-ECOSYSTEM orbit       # full scope
+orbit launch                                        # global mode (uses ai_root from config)
+orbit launch WORKSPACE                              # workspace only
+orbit launch WORKSPACE TENANT                       # workspace + tenant
+orbit launch WORKSPACE TENANT PROJECT               # + project
+orbit launch WORKSPACE TENANT PROJECT REPO          # full scope
 
-orbit launch AI AIDEV AI-ECOSYSTEM orbit --engine claude   # pick engine
-orbit launch AI AIDEV --no-tmux                            # skip tmux
-orbit launch AI AIDEV AI-ECOSYSTEM orbit --dry-run         # print resolved config
+orbit launch WORKSPACE TENANT PROJECT REPO --engine claude   # pick engine
+orbit launch WORKSPACE TENANT --no-tmux                      # skip tmux
+orbit launch WORKSPACE TENANT PROJECT REPO --dry-run         # print resolved config
 ```
 
 ---
