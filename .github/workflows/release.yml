@@ -4,16 +4,9 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release (e.g. v0.4.1)"
-        required: true
-        type: string
 
 env:
   CARGO_TERM_COLOR: always
-  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -34,8 +27,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_TAG }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -92,7 +83,6 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             artifacts/orbit-linux-x86_64
             artifacts/orbit-linux-aarch64
@@ -114,12 +104,12 @@ jobs:
 
       - name: Extract version
         id: ver
-        run: echo "version=${RELEASE_TAG#v}" >> $GITHUB_OUTPUT
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Update CHANGELOG footer and README
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-          TAG: ${{ env.RELEASE_TAG }}
+          TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: python3 .github/scripts/update_docs.py
 
@@ -128,14 +118,14 @@ jobs:
           git config user.name  "Eloir Corona"
           git config user.email "eloircoronah@outlook.com"
           git add CHANGELOG.md README.md
-          git diff --cached --quiet || git commit -m "docs: update links for ${{ env.RELEASE_TAG }}"
+          git diff --cached --quiet || git commit -m "docs: update links for ${{ github.ref_name }}"
           git pull --rebase
           git push
 
       - name: Update wiki
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ env.RELEASE_TAG }}
+          TAG: ${{ github.ref_name }}
           VERSION: ${{ steps.ver.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
