@@ -170,7 +170,15 @@ pub(crate) async fn update_binary(
     version: &str,
 ) -> Result<()> {
     let install_dir = UserConfig::load().install_dir_expanded();
-    update_binary_to(client, binary_url, checksums_url, artifact_name, version, &install_dir.join("orbit")).await
+    update_binary_to(
+        client,
+        binary_url,
+        checksums_url,
+        artifact_name,
+        version,
+        &install_dir.join("orbit"),
+    )
+    .await
 }
 
 pub(crate) async fn update_binary_to(
@@ -225,9 +233,8 @@ pub(crate) async fn update_binary_to(
     // Step 4: atomic replace
     let tmp_path = install_path.with_extension("tmp");
     if let Some(parent) = install_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("failed to create install directory: {}", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create install directory: {}", parent.display()))?;
     }
 
     fs::write(&tmp_path, &bytes).with_context(|| {

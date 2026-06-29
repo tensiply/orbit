@@ -160,7 +160,15 @@ async fn switch_to_stable() -> Result<()> {
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");
     remove_binary_or_symlink()?;
-    update::update_binary_to(&client, &binary_url, &checksums_url, &artifact, &tag, &install_path).await?;
+    update::update_binary_to(
+        &client,
+        &binary_url,
+        &checksums_url,
+        &artifact,
+        &tag,
+        &install_path,
+    )
+    .await?;
 
     write_mode("stable")?;
     println!("  Switched to stable mode ({tag}).");
@@ -226,7 +234,15 @@ async fn switch_to_beta() -> Result<()> {
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");
     remove_binary_or_symlink()?;
-    update::update_binary_to(&client, &binary_url, &checksums_url, &artifact, &tag, &install_path).await?;
+    update::update_binary_to(
+        &client,
+        &binary_url,
+        &checksums_url,
+        &artifact,
+        &tag,
+        &install_path,
+    )
+    .await?;
 
     write_mode("beta")?;
     println!("  Switched to beta mode ({tag}).");
