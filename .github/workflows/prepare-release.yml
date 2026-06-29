@@ -1,14 +1,13 @@
 name: Prepare Release
 
 # ── Usage ──────────────────────────────────────────────────────────────────────
-# 1. Go to Actions → Prepare Release → Run workflow → enter version (X.Y.Z)
-# 2. The "Preview" job runs immediately and writes a summary to the Actions UI.
-# 3. The "Release" job waits for manual approval (GitHub Environment: release).
-# 4. Review the summary, click "Review pending deployments" → Approve.
-# 5. The release commit + tag are pushed, triggering release.yml automatically.
+# 1. Actions → Prepare Release → Run workflow → enter version (X.Y.Z)
+# 2. "Preview" job runs immediately and writes a summary to the Actions UI.
+# 3. "Release" job waits for manual approval (Environment: release).
+# 4. Review the summary → "Review pending deployments" → Approve.
+# 5. Commit + tag are pushed, triggering release.yml automatically.
 #
-# One-time setup: Settings → Environments → New → name "release"
-#                 → Required reviewers → add your GitHub username → Save
+# One-time setup: Settings → Environments → "release" → Required reviewers → add yourself
 
 on:
   workflow_dispatch:
@@ -28,77 +27,28 @@ jobs:
         with:
           ref: main
 
-      - name: Validate and write summary
+      - name: Validate
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          # ── shell validation ─────────────────────────────────────────────────
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::Invalid version '$VERSION' — must be X.Y.Z (e.g. 0.3.0)"
             exit 1
           fi
-
           if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
             echo "::error::Tag v$VERSION already exists"
             exit 1
           fi
-
-          FIRST_LINE=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{if(f)exit} f&&NF{print;exit}' CHANGELOG.md)
-          if [ -z "$FIRST_LINE" ]; then
-            echo "::error::[Unreleased] section in CHANGELOG.md is empty"
+          FIRST=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{if(f)exit} f&&NF{print;exit}' CHANGELOG.md)
+          if [ -z "$FIRST" ]; then
+            echo "::error::[Unreleased] section is empty — add entries before releasing"
             exit 1
           fi
 
-          # ── build summary ────────────────────────────────────────────────────
-          python3 - << 'PYEOF'
-          import os, re
-          from datetime import date
-
-          version = os.environ['VERSION']
-          today   = date.today().isoformat()
-
-          with open('Cargo.toml') as f:
-              cargo = f.read()
-          current_ver = re.search(
-              r'(?ms)^\[workspace\.package\].*?^version = "([^"]+)"', cargo
-          ).group(1)
-
-          with open('CHANGELOG.md') as f:
-              cl = f.read()
-          match = re.search(
-              r'(?ms)^## \[Unreleased\]\n(.*?)(?=^## \[|\Z)', cl
-          )
-          notes = match.group(1).strip() if match else '_(empty)_'
-
-          summary = f"""## Release preview: v{current_ver} → v{version}
-
-| | |
-|---|---|
-| Current version | `v{current_ver}` |
-| **New version** | **`v{version}`** |
-| Release date | `{today}` |
-
-### Release notes
-
-{notes}
-
----
-
-### Files that will change
-
-| File | Change |
-|------|--------|
-| `CHANGELOG.md` | `[Unreleased]` → `[{version}] - {today}` |
-| `Cargo.toml` | `version = "{current_ver}"` → `version = "{version}"` |
-| `Cargo.lock` | workspace package versions bumped |
-
-> If this looks correct, approve the pending deployment below to proceed.
-"""
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
-              f.write(summary)
-
-          print(f'Summary ready — v{current_ver} → v{version} ({today})')
-          PYEOF
+      - name: Write summary
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 .github/scripts/preview_release.py
 
   # ── Job 2: execute release (waits for manual approval) ────────────────────────
   release:
@@ -118,66 +68,10 @@ jobs:
       - name: Bump versions and update CHANGELOG
         env:
           VERSION: ${{ inputs.version }}
+          TODAY: ${{ steps.date.outputs.date }}
         run: |
           export TODAY=$(date -u +%Y-%m-%d)
-          python3 - << 'PYEOF'
-          import os, re
-
-          version = os.environ['VERSION']
-          today   = os.environ['TODAY']
-
-          # ── CHANGELOG ────────────────────────────────────────────────────────
-          with open('CHANGELOG.md') as f:
-              cl = f.read()
-
-          cl = cl.replace(
-              '## [Unreleased]',
-              f'## [Unreleased]\n\n## [{version}] - {today}',
-              1,
-          )
-
-          with open('CHANGELOG.md', 'w') as f:
-              f.write(cl)
-
-          # ── Cargo.toml ───────────────────────────────────────────────────────
-          with open('Cargo.toml') as f:
-              lines = f.readlines()
-
-          in_ws_pkg = False
-          result = []
-          for line in lines:
-              stripped = line.strip()
-              if stripped == '[workspace.package]':
-                  in_ws_pkg = True
-              elif stripped.startswith('[') and stripped != '[workspace.package]':
-                  in_ws_pkg = False
-              if in_ws_pkg and re.match(r'^version\s*=', stripped):
-                  line = f'version = "{version}"\n'
-              result.append(line)
-
-          with open('Cargo.toml', 'w') as f:
-              f.writelines(result)
-
-          # ── Cargo.lock ───────────────────────────────────────────────────────
-          ws_packages = [
-              'orbit', 'orbit-cli', 'orbit-tui', 'orbit-core',
-              'orbit-client', 'orbit-engine', 'orbit-daemon', 'orbit-dev',
-          ]
-          with open('Cargo.lock') as f:
-              lock = f.read()
-
-          for pkg in ws_packages:
-              lock = re.sub(
-                  rf'(name = "{re.escape(pkg)}"\nversion = ")[^"]+(")',
-                  rf'\g<1>{version}\g<2>',
-                  lock,
-              )
-
-          with open('Cargo.lock', 'w') as f:
-              f.write(lock)
-
-          print(f'Bumped to v{version} ({today})')
-          PYEOF
+          python3 .github/scripts/bump_versions.py
 
       - name: Commit, tag, push
         env:
