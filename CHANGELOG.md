@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-06-29
-
 ### Changed
 
 - `orbit dev` replaced by `orbit mode` with three explicit modes: `stable`, `dev`, and `beta`.
