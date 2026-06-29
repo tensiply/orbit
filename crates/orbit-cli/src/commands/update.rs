@@ -69,7 +69,9 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     if do_binary {
         if std::env::var("ORBIT_NO_UPDATE_CHECK").is_ok() && !args.force {
             println!();
-            println!("  Binary update skipped (ORBIT_NO_UPDATE_CHECK is set). Use --force to override.");
+            println!(
+                "  Binary update skipped (ORBIT_NO_UPDATE_CHECK is set). Use --force to override."
+            );
             return Ok(());
         }
 
@@ -117,9 +119,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
 
         if args.dry_run {
             println!();
-            println!(
-                "  [dry-run] orbit v{CURRENT_VERSION} → {latest_tag}"
-            );
+            println!("  [dry-run] orbit v{CURRENT_VERSION} → {latest_tag}");
             println!("  [dry-run] binary:    {binary_url}");
             println!("  [dry-run] checksums: {checksums_url}");
             println!();
@@ -135,8 +135,14 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             .build()
             .context("failed to build download client")?;
 
-        update_binary(&dl_client, &binary_url, &checksums_url, &artifact_name, &latest_tag)
-            .await?;
+        update_binary(
+            &dl_client,
+            &binary_url,
+            &checksums_url,
+            &artifact_name,
+            &latest_tag,
+        )
+        .await?;
     }
 
     println!();

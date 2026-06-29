@@ -5,10 +5,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use orbit_core::{
-    engine::Engine,
-    ipc::socket_path,
-    session::Session,
-    user_config::UserConfig,
+    engine::Engine, ipc::socket_path, session::Session, user_config::UserConfig,
     workspace_config::detect_workspaces,
 };
 use ratatui::{Terminal, backend::CrosstermBackend, widgets::TableState};
@@ -473,10 +470,7 @@ impl App {
         self.sys.reload_mcp();
         self.launch = LaunchState::new(&self.sys.default_tenant, &self.sys.default_engine);
         self.refresh_sessions();
-        self.status_msg = Some(format!(
-            "Workspace: {}",
-            self.active_workspace_name()
-        ));
+        self.status_msg = Some(format!("Workspace: {}", self.active_workspace_name()));
     }
 
     pub fn refresh_sessions(&mut self) {
@@ -651,13 +645,11 @@ impl App {
                         self.status_msg =
                             Some("Session was not launched in tmux — cannot attach.".into());
                     } else if !session.is_running() {
-                        self.status_msg = Some(
-                            "Session is no longer running. Run `orbit session clean`.".into(),
-                        );
+                        self.status_msg =
+                            Some("Session is no longer running. Run `orbit session clean`.".into());
                     } else if !session.tmux_window_exists() {
-                        self.status_msg = Some(
-                            "tmux window is gone. Run `orbit session clean`.".into(),
-                        );
+                        self.status_msg =
+                            Some("tmux window is gone. Run `orbit session clean`.".into());
                     } else {
                         self.post_action = Some(PostAction::Attach(session));
                         self.should_quit = true;

@@ -60,10 +60,7 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Span::styled(" System  ", tab_label_style(app.tab == Tab::System)),
         Span::styled("─  ", Style::default().fg(Color::DarkGray)),
         ws_hint,
-        Span::styled(
-            format!(" {ws_name}"),
-            Style::default().fg(Color::Yellow),
-        ),
+        Span::styled(format!(" {ws_name}"), Style::default().fg(Color::Yellow)),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
