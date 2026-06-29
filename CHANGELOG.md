@@ -63,7 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 - MIT license — Copyright (c) 2026 Eloir Corona
 
-[Unreleased]: https://github.com/tensiply/orbit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tensiply/orbit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tensiply/orbit/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tensiply/orbit/releases/tag/v0.3.0
 [0.2.0]: https://github.com/tensiply/orbit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/tensiply/orbit/releases/tag/v0.1.0
