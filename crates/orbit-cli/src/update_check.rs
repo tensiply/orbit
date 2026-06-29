@@ -6,6 +6,7 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CACHE_TTL_SECS: u64 = 86_400; // 24 hours
 const TIMEOUT: Duration = Duration::from_secs(1);
 pub const API_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases/latest";
+pub const API_RELEASES_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases";
 
 /// Checks GitHub for a newer release and prints a one-line notice if one exists.
 /// All failures (network, timeout, parse) are silent — startup is never blocked.
@@ -60,6 +61,23 @@ fn parse_semver(v: &str) -> (u64, u64, u64) {
 }
 
 // ── GitHub API ────────────────────────────────────────────────────────────────
+
+pub async fn fetch_latest_prerelease_tag(client: &reqwest::Client) -> anyhow::Result<String> {
+    let resp = client.get(API_RELEASES_URL).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {}", resp.status());
+    }
+    let body = resp.text().await?;
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+    json.as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|r| r["prerelease"].as_bool().unwrap_or(false))
+        })
+        .and_then(|r| r["tag_name"].as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow::anyhow!("No pre-release found on GitHub"))
+}
 
 pub async fn fetch_latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
     let resp = client.get(API_URL).send().await?;

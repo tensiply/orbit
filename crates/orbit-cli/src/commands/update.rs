@@ -33,7 +33,14 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     let ws_cfg = WorkspaceConfig::load(&ai_root);
 
     let do_governance = !args.binary_only;
-    let do_binary = !args.governance_only;
+    let mut do_binary = !args.governance_only;
+
+    let mode = crate::commands::mode::current_mode();
+    if do_binary && mode == "dev" {
+        println!("  Binary update skipped (dev mode — using local build).");
+        println!("  Run `orbit mode stable` or `orbit mode beta` to switch.");
+        do_binary = false;
+    }
 
     // ── governance sync ───────────────────────────────────────────────────────
     if do_governance {
@@ -91,7 +98,11 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         // Check latest version
         print!("  Checking latest version... ");
         let _ = std::io::stdout().flush();
-        let latest_tag = match update_check::fetch_latest_tag(&client).await {
+        let latest_tag = match if mode == "beta" {
+            update_check::fetch_latest_prerelease_tag(&client).await
+        } else {
+            update_check::fetch_latest_tag(&client).await
+        } {
             Ok(tag) => tag,
             Err(e) => {
                 println!("failed");
@@ -151,7 +162,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
 
 // ── binary download & install ─────────────────────────────────────────────────
 
-async fn update_binary(
+pub(crate) async fn update_binary(
     client: &reqwest::Client,
     binary_url: &str,
     checksums_url: &str,
@@ -221,7 +232,7 @@ async fn update_binary(
     Ok(())
 }
 
-fn parse_checksum(checksums: &str, artifact: &str) -> Option<String> {
+pub(crate) fn parse_checksum(checksums: &str, artifact: &str) -> Option<String> {
     // sha256sum format: "<hash>  <filename>" (two spaces)
     checksums.lines().find_map(|line| {
         let (hash, name) = line.split_once("  ")?;
@@ -233,7 +244,7 @@ fn parse_checksum(checksums: &str, artifact: &str) -> Option<String> {
     })
 }
 
-async fn download_with_progress(resp: reqwest::Response) -> Result<Vec<u8>> {
+pub(crate) async fn download_with_progress(resp: reqwest::Response) -> Result<Vec<u8>> {
     use futures_util::StreamExt;
 
     let total = resp.content_length();
@@ -266,7 +277,7 @@ async fn download_with_progress(resp: reqwest::Response) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hex::encode(hasher.finalize())

@@ -16,8 +16,8 @@ pub struct Cli {
 pub enum Commands {
     /// First-time setup: write config and install the binary
     Setup(commands::setup::SetupArgs),
-    /// Switch between stable and development mode
-    Dev(commands::dev::DevArgs),
+    /// Manage the active orbit binary mode (stable / dev / beta)
+    Mode(commands::mode::ModeArgs),
     /// Clone the governance repository into the AI root
     Init(commands::init::InitArgs),
     /// Sync governance configs and/or update the binary
@@ -39,7 +39,7 @@ impl Cli {
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
-        Some(Commands::Dev(args)) => commands::dev::run(args).await,
+        Some(Commands::Mode(args)) => commands::mode::run(args).await,
         Some(Commands::Init(args)) => commands::init::run(args).await,
         Some(Commands::Update(args)) => commands::update::run(args).await,
         Some(Commands::Launch(args)) => commands::launch::run(args).await,
