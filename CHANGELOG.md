@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-29
+
+### Changed
+
+- `orbit dev` replaced by `orbit mode` with three explicit modes: `stable`, `dev`, and `beta`.
+  - `orbit mode stable` — downloads and atomically installs the latest GitHub release (no symlink).
+  - `orbit mode dev [path]` — creates a symlink to a local build; path is saved in
+    `~/.local/share/orbit/dev_path` so subsequent calls require no argument.
+  - `orbit mode beta` — downloads and installs the latest GitHub pre-release.
+  - `orbit mode status` — shows the active mode and binary details.
+  - `orbit update` now respects the active mode: skips binary download in `dev` mode,
+    targets pre-releases in `beta` mode.
+
 ## [0.3.0] - 2026-06-29
 
 ### Added
