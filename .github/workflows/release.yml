@@ -115,8 +115,8 @@ jobs:
 
       - name: Commit docs updates to main
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "Eloir Corona"
+          git config user.email "eloircoronah@outlook.com"
           git add CHANGELOG.md README.md
           git diff --cached --quiet || git commit -m "docs: update links for ${{ github.ref_name }}"
           git pull --rebase
@@ -138,8 +138,8 @@ jobs:
           cp release_notes.md "wiki/Release-${TAG}.md"
           python3 .github/scripts/build_wiki_home.py
 
-          git -C wiki config user.name  "github-actions[bot]"
-          git -C wiki config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C wiki config user.name  "Eloir Corona"
+          git -C wiki config user.email "eloircoronah@outlook.com"
           git -C wiki add .
           git -C wiki diff --cached --quiet || git -C wiki commit -m "Release ${TAG}"
           git -C wiki push -u origin HEAD:master
