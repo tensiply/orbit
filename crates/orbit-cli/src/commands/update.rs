@@ -169,6 +169,18 @@ pub(crate) async fn update_binary(
     artifact_name: &str,
     version: &str,
 ) -> Result<()> {
+    let install_dir = UserConfig::load().install_dir_expanded();
+    update_binary_to(client, binary_url, checksums_url, artifact_name, version, &install_dir.join("orbit")).await
+}
+
+pub(crate) async fn update_binary_to(
+    client: &reqwest::Client,
+    binary_url: &str,
+    checksums_url: &str,
+    artifact_name: &str,
+    version: &str,
+    install_path: &std::path::Path,
+) -> Result<()> {
     // Step 1: fetch checksums.txt
     print!("  Fetching checksums... ");
     let _ = std::io::stdout().flush();
@@ -211,24 +223,28 @@ pub(crate) async fn update_binary(
     println!("ok");
 
     // Step 4: atomic replace
-    let current_exe = std::env::current_exe()?;
-    let tmp_path = current_exe.with_extension("tmp");
+    let tmp_path = install_path.with_extension("tmp");
+    if let Some(parent) = install_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("failed to create install directory: {}", parent.display())
+        })?;
+    }
 
     fs::write(&tmp_path, &bytes).with_context(|| {
         format!(
             "failed to write temp file — is {} writable? Try running with sudo.",
-            current_exe.parent().unwrap_or(&current_exe).display()
+            install_path.parent().unwrap_or(install_path).display()
         )
     })?;
     fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755))?;
-    fs::rename(&tmp_path, &current_exe).with_context(|| {
+    fs::rename(&tmp_path, install_path).with_context(|| {
         format!(
             "failed to replace binary at {} — try running with sudo",
-            current_exe.display()
+            install_path.display()
         )
     })?;
 
-    println!("  orbit {} installed → {}", version, current_exe.display());
+    println!("  orbit {} installed → {}", version, install_path.display());
     Ok(())
 }
 

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `orbit mode stable` and `orbit mode beta` no longer overwrite the dev build when running in dev mode.
+  `update_binary` now installs to the configured `install_dir` instead of resolving `current_exe()`,
+  which on Linux follows symlinks and returned the local build path instead of the install target.
+
 ### Changed
 
 - `orbit dev` replaced by `orbit mode` with three explicit modes: `stable`, `dev`, and `beta`.
