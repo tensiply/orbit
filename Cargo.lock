@@ -1031,6 +1031,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "directories",
  "orbit-client",
  "orbit-core",
  "ratatui",
