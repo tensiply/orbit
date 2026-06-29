@@ -13,11 +13,11 @@ Built in Rust. Runs on Linux and macOS.
 `orbit` resolves the right context for your AI session — tenant, project, repository, instructions, MCP servers — and launches the engine ready to work. It manages sessions via tmux and provides a terminal UI for navigating active sessions, launching new ones, and configuring the ecosystem.
 
 ```
-orbit                                         # open TUI dashboard
-orbit launch AI AIDEV AI-ECOSYSTEM orbit      # full scope: workspace/tenant/project/repo
-orbit launch BeFra DEVTEAM core backend       # different workspace
-orbit session list                            # list active sessions
-orbit session attach                          # attach to a running session
+orbit                                              # open TUI dashboard
+orbit launch WORKSPACE TENANT PROJECT REPO         # full scope
+orbit launch WORKSPACE TENANT                      # workspace + tenant only
+orbit session list                                 # list active sessions
+orbit session attach                               # attach to a running session
 ```
 
 ---
