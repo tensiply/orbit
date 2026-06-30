@@ -6,6 +6,7 @@ pub mod init;
 pub mod launch;
 pub mod ls;
 pub mod mode;
+pub mod plugins;
 pub mod session;
 pub mod setup;
 pub mod snapshot;

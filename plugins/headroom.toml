@@ -1,0 +1,25 @@
+name = "headroom"
+description = "Context compression layer — 60–95% fewer tokens for AI agents"
+category = "compression"
+url = "https://github.com/headroomlabs-ai/headroom"
+
+[check]
+binary = "headroom"
+
+[[install]]
+method = "pip"
+cmd = ["pip", "install", "headroom-ai"]
+label = "PyPI (Python)"
+
+[[install]]
+method = "npm"
+cmd = ["npm", "install", "-g", "headroom-ai"]
+label = "npm (Node.js)"
+
+[auth]
+hint = "No auth required — runs locally"
+
+[wrap]
+cmd_template = "headroom wrap {engine}"
+unwrap_cmd_template = "headroom unwrap {engine}"
+engines = ["claude", "opencode", "gemini"]

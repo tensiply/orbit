@@ -1,0 +1,21 @@
+name = "playwright"
+description = "Browser automation — web testing, scraping, and UI interaction for AI agents"
+category = "browser"
+url = "https://github.com/microsoft/playwright-mcp"
+
+[check]
+binary = "playwright"
+
+[[install]]
+method = "npm"
+cmd = ["npm", "install", "-g", "@playwright/mcp", "playwright"]
+label = "npm (global)"
+
+[auth]
+hint = "Run `playwright install` after install to download browser binaries"
+
+[[mcp]]
+name = "playwright"
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+label = "Playwright MCP — browser automation for AI agents"

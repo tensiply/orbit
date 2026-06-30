@@ -167,6 +167,11 @@ fn merge_value_into(
 
 /// Load MCP from `mcp.json` files at every scope layer (shared + local pattern).
 fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) {
+    // Plugin MCPs enabled via `orbit plugins enable` — loaded first as baseline;
+    // any scope-level mcp.json can override.
+    let plugins_mcp = dirs_global_config().join("orbit/plugins.mcp.json");
+    mcp::merge_file(target, &plugins_mcp);
+
     let shared = &scope.global_ai_root;
     let local = &scope.ai_context_root;
 

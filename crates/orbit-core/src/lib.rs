@@ -3,6 +3,7 @@ pub mod context;
 pub mod engine;
 pub mod error;
 pub mod ipc;
+pub mod plugin;
 pub mod session;
 pub mod user_config;
 pub mod workspace_config;

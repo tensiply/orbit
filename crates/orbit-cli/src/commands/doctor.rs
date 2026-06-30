@@ -3,6 +3,8 @@ use clap::Args;
 use orbit_core::{ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig};
 use std::process::Command;
 
+use super::plugins::print_plugins_section;
+
 #[derive(Debug, Args)]
 pub struct DoctorArgs;
 
@@ -25,6 +27,9 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     check("tmux", check_bin("tmux"), Some("https://github.com/tmux/tmux/wiki/Installing"));
     check("node", check_bin("node"), Some("https://nodejs.org"));
     println!();
+
+    // ── plugins ───────────────────────────────────────────────────────────────
+    print_plugins_section();
 
     // ── workspace ─────────────────────────────────────────────────────────────
     section("workspace");

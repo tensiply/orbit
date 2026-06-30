@@ -8,6 +8,8 @@ use std::{
     process::Command,
 };
 
+use super::plugins::setup_plugins;
+
 #[derive(Debug, Args)]
 pub struct SetupArgs {
     /// AI workspace root directory [default: ~/AI]
@@ -37,6 +39,10 @@ pub struct SetupArgs {
     /// Skip engine installation prompts
     #[arg(long)]
     pub no_install: bool,
+
+    /// Skip plugin installation prompts
+    #[arg(long)]
+    pub no_plugins: bool,
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
@@ -154,6 +160,12 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     if !args.no_install {
         println!();
         setup_engines(&default_engine, args.yes).await?;
+    }
+
+    // ── plugin install ────────────────────────────────────────────────────────
+    if !args.no_plugins && !args.yes {
+        println!();
+        setup_plugins(args.yes)?;
     }
 
     // ── next steps ────────────────────────────────────────────────────────────
