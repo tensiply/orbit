@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-30
+
 ### Added
 
 - `orbit config get/set/list/edit` — read and write individual config values without re-running `orbit setup`. Supports dot-notation keys: `engine.default`, `engine.default_tenant`, `workspace.ai_root`, `install.dir`. `orbit config edit` opens the file in `$EDITOR`.
