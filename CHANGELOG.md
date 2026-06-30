@@ -83,7 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP configuration at four scope levels: global, tenant, project, repository
 - CI workflow: format check, clippy `-D warnings`, tests on every push/PR to `main`
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
-- MIT license — Copyright (c) 2026 Eloir Corona
 
 [Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.4.1...HEAD
 [0.4.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.4.1

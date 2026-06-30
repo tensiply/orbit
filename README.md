@@ -189,15 +189,16 @@ orbit session clean             # remove files for dead sessions
 
 ## Development mode
 
-orbit supports swapping between a stable binary and a local development build:
+Switch between a stable binary, a local build, or pre-release builds:
 
 ```bash
-orbit dev enable   # symlink orbit → orbit-dev (requires token)
-orbit dev disable  # restore stable binary
-orbit dev status   # show current mode
+orbit mode stable        # download and install the latest release
+orbit mode dev [path]    # symlink to a local build (path saved across calls)
+orbit mode beta          # download and install the latest pre-release
+orbit mode status        # show active mode and binary details
 ```
 
-Development binaries are token-gated to prevent accidental activation.
+`orbit update` respects the active mode: skips binary download in `dev` mode, targets pre-releases in `beta` mode.
 
 ---
 
@@ -213,8 +214,3 @@ orbit daemon status  # uptime, session count, PID
 
 Socket: `~/.local/share/orbit/orbit.sock`
 
----
-
-## License
-
-MIT — Copyright (c) 2026 Eloir Corona
