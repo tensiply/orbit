@@ -393,7 +393,7 @@ pub fn render_field_select(f: &mut Frame, area: Rect, state: &FieldSelectState) 
 
     let filtered = state.filtered_options();
     let n_opts = filtered.len();
-    let height = (n_opts as u16 + 6).min(20).max(8);
+    let height = (n_opts as u16 + 6).clamp(8, 20);
     let popup_area = centered_rect(44, height, area);
 
     let mut lines: Vec<Line> = vec![Line::from("")];

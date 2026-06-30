@@ -209,12 +209,7 @@ fn render_text_field(
     let inner = box_block.inner(box_area);
     f.render_widget(box_block, box_area);
 
-    // Append ↓ hint when focused (indicates selector is available via ↓)
-    let rendered_text = if focused {
-        format!("{display_text}")
-    } else {
-        display_text.clone()
-    };
+    let rendered_text = display_text.clone();
 
     f.render_widget(
         Paragraph::new(Span::styled(rendered_text, text_style)),
