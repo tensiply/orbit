@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Plugin system (`orbit plugins list/install/enable/disable/info/wrap/unwrap`) — optional external tools with their own install lifecycle. Plugins defined as TOML files in `plugins/`; add a file and rebuild to register a new plugin. Users can also drop `.toml` files into `~/.config/orbit/plugins/` without rebuilding.
+- `orbit plugins enable/disable` — registers or removes a plugin's MCP servers in `~/.config/orbit/plugins.mcp.json`, loaded as the baseline MCP layer in every orbit session. State persisted in `~/.config/orbit/plugin-state.toml`.
+- Built-in plugin: `headroom` — context compression layer (60–95% fewer tokens). Supports `orbit plugins wrap headroom` to proxy the active engine.
+- Built-in plugin: `playwright` — browser automation via `@playwright/mcp`. MCP server runs `npx -y @playwright/mcp@latest` when enabled.
+- `orbit doctor` and `orbit setup` now include a plugins section.
+
+### Changed
+
+- README: simplified to core concepts (what it does, install, workspace model, quick reference). Full documentation moved to the wiki.
+- Wiki: comprehensive pages generated at release — Commands, Plugins, Workspace.
+
 ## [0.6.0] - 2026-06-30
 
 ### Added
