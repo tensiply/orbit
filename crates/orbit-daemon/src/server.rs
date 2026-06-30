@@ -88,8 +88,7 @@ impl ServerState {
             } => {
                 use orbit_core::engine::Engine;
                 use orbit_engine::{
-                    config,
-                    launcher,
+                    config, launcher,
                     resolver::{self, ResolveArgs},
                 };
 
@@ -107,7 +106,7 @@ impl ServerState {
                     other => {
                         return Response::Error {
                             message: format!("unknown engine: {other}"),
-                        }
+                        };
                     }
                 };
 
@@ -118,12 +117,20 @@ impl ServerState {
                     repository,
                 }) {
                     Ok(s) => s,
-                    Err(e) => return Response::Error { message: e.to_string() },
+                    Err(e) => {
+                        return Response::Error {
+                            message: e.to_string(),
+                        };
+                    }
                 };
 
                 let merged = match config::load(&scope, engine_val) {
                     Ok(m) => m,
-                    Err(e) => return Response::Error { message: e.to_string() },
+                    Err(e) => {
+                        return Response::Error {
+                            message: e.to_string(),
+                        };
+                    }
                 };
 
                 match launcher::spawn_background(&scope, &merged, engine_val) {
@@ -131,7 +138,9 @@ impl ServerState {
                         tmux_name: session.tmux_session.unwrap_or_default(),
                         session_id: session.id,
                     },
-                    Err(e) => Response::Error { message: e.to_string() },
+                    Err(e) => Response::Error {
+                        message: e.to_string(),
+                    },
                 }
             }
         }

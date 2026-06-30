@@ -104,15 +104,31 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
 
         if orbit_client::ipc::is_available() {
             match orbit_client::ipc::launch_session(
-                scope.workspace_root.file_name()
+                scope
+                    .workspace_root
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .map(|s| s.to_string()),
-                if scope.tenant.is_empty() { None } else { Some(scope.tenant.clone()) },
-                if scope.project.is_empty() { None } else { Some(scope.project.clone()) },
-                if scope.repository.is_empty() { None } else { Some(scope.repository.clone()) },
+                if scope.tenant.is_empty() {
+                    None
+                } else {
+                    Some(scope.tenant.clone())
+                },
+                if scope.project.is_empty() {
+                    None
+                } else {
+                    Some(scope.project.clone())
+                },
+                if scope.repository.is_empty() {
+                    None
+                } else {
+                    Some(scope.repository.clone())
+                },
                 engine.as_str(),
                 false,
-            ).await {
+            )
+            .await
+            {
                 Ok(info) => {
                     // Session spawned in background — attach to the tmux window
                     return attach_tmux(&info.tmux_name);
@@ -138,7 +154,9 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 async fn ensure_daemon_running() {
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     let _ = std::process::Command::new(&exe)
         .args(["daemon", "start"])
         .stdout(std::process::Stdio::null())

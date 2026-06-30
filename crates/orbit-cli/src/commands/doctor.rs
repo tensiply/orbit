@@ -23,9 +23,15 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     let ai_root_str = ai_root.display().to_string();
     if ai_root.is_dir() {
         if ai_root.join(".git").is_dir() {
-            check(&format!("AI root (git)   {ai_root_str}"), Ok::<(), &str>(()));
+            check(
+                &format!("AI root (git)   {ai_root_str}"),
+                Ok::<(), &str>(()),
+            );
         } else {
-            check(&format!("AI root (local) {ai_root_str}"), Ok::<(), &str>(()));
+            check(
+                &format!("AI root (local) {ai_root_str}"),
+                Ok::<(), &str>(()),
+            );
         }
     } else {
         check(

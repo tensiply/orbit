@@ -126,12 +126,10 @@ pub fn find_icase(parent: &Path, name: &str) -> Option<std::path::PathBuf> {
     let Ok(rd) = fs::read_dir(parent) else {
         return None;
     };
-    rd.filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .find(|p| {
-            p.is_dir()
-                && p.file_name()
-                    .map(|n| n.to_string_lossy().to_lowercase() == needle)
-                    .unwrap_or(false)
-        })
+    rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
+        p.is_dir()
+            && p.file_name()
+                .map(|n| n.to_string_lossy().to_lowercase() == needle)
+                .unwrap_or(false)
+    })
 }

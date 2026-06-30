@@ -237,7 +237,11 @@ impl FieldSelectState {
         if n == 0 {
             return;
         }
-        self.cursor = if self.cursor == 0 { n - 1 } else { self.cursor - 1 };
+        self.cursor = if self.cursor == 0 {
+            n - 1
+        } else {
+            self.cursor - 1
+        };
     }
 
     pub fn move_down(&mut self) {
@@ -852,8 +856,8 @@ impl App {
                                         TextInput::new("Tenant", "AIDEV").with_value(&selected);
                                 }
                                 LaunchField::Project => {
-                                    self.launch.project =
-                                        TextInput::new("Project", "my-project").with_value(&selected);
+                                    self.launch.project = TextInput::new("Project", "my-project")
+                                        .with_value(&selected);
                                 }
                                 LaunchField::Repository => {
                                     self.launch.repository =
@@ -1003,11 +1007,7 @@ impl App {
 
 // ── field options loader ──────────────────────────────────────────────────────
 
-pub fn load_field_options(
-    field: LaunchField,
-    launch: &LaunchState,
-    ai_root: &Path,
-) -> Vec<String> {
+pub fn load_field_options(field: LaunchField, launch: &LaunchState, ai_root: &Path) -> Vec<String> {
     fn subdirs(dir: &Path) -> Vec<String> {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return vec![];

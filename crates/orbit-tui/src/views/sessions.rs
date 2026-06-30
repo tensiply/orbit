@@ -33,21 +33,26 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
     }
 
     for (ti, tenant) in tenants.iter().enumerate() {
-        let t_prefix = if ti + 1 < tenants.len() { "├─" } else { "└─" };
+        let t_prefix = if ti + 1 < tenants.len() {
+            "├─"
+        } else {
+            "└─"
+        };
         lines.push(Line::from(vec![
             Span::styled(format!("  {t_prefix} "), dim),
             Span::styled(tenant.clone(), Style::default().fg(Color::White)),
         ]));
 
-        let projects_dir = ai_root
-            .join("tenants")
-            .join(tenant)
-            .join("projects");
+        let projects_dir = ai_root.join("tenants").join(tenant).join("projects");
         let projects = subdirs_limited(&projects_dir, 3);
 
         for (pi, project) in projects.iter().enumerate() {
             let t_cont = if ti + 1 < tenants.len() { "│" } else { " " };
-            let p_prefix = if pi + 1 < projects.len() { "├─" } else { "└─" };
+            let p_prefix = if pi + 1 < projects.len() {
+                "├─"
+            } else {
+                "└─"
+            };
             lines.push(Line::from(vec![
                 Span::styled(format!("  {t_cont}  {p_prefix} "), dim),
                 Span::styled(project.clone(), Style::default().fg(Color::DarkGray)),
@@ -58,7 +63,11 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
 
             for (ri, repo) in repos.iter().enumerate() {
                 let p_cont = if pi + 1 < projects.len() { "│" } else { " " };
-                let r_prefix = if ri + 1 < repos.len() { "├─" } else { "└─" };
+                let r_prefix = if ri + 1 < repos.len() {
+                    "├─"
+                } else {
+                    "└─"
+                };
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {t_cont}  {p_cont}  {r_prefix} "), dim),
                     Span::styled(repo.clone(), Style::default().fg(Color::DarkGray)),

@@ -29,7 +29,9 @@ fn xdg_data_dir() -> std::path::PathBuf {
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
     ListSessions,
-    KillSession { id: String },
+    KillSession {
+        id: String,
+    },
     CleanSessions,
     Status,
     Shutdown,

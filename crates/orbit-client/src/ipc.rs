@@ -111,7 +111,13 @@ pub async fn launch_session(
     })
     .await?
     {
-        Response::Launched { tmux_name, session_id } => Ok(LaunchedInfo { tmux_name, session_id }),
+        Response::Launched {
+            tmux_name,
+            session_id,
+        } => Ok(LaunchedInfo {
+            tmux_name,
+            session_id,
+        }),
         Response::Error { message } => bail!("{message}"),
         _ => bail!("unexpected response"),
     }

@@ -48,11 +48,7 @@ pub fn resolve_from_cwd() -> Result<OrbitScope> {
 }
 
 /// Testable variant of cwd resolution.
-pub fn resolve_from_path(
-    cwd: &Path,
-    home: &Path,
-    ai_root: &Path,
-) -> Result<OrbitScope> {
+pub fn resolve_from_path(cwd: &Path, home: &Path, ai_root: &Path) -> Result<OrbitScope> {
     resolve_from_path_inner(cwd, home, ai_root)
 }
 
@@ -69,15 +65,12 @@ fn resolve_from_path_inner(cwd: &Path, home: &Path, ai_root: &Path) -> Result<Or
             .collect();
         // Prefer the deepest match (shouldn't be more than one at home level)
         candidates.sort_by_key(|p| p.components().count());
-        candidates
-            .into_iter()
-            .last()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "current directory is not inside any workspace under {}",
-                    home.display()
-                )
-            })?
+        candidates.into_iter().last().ok_or_else(|| {
+            anyhow::anyhow!(
+                "current directory is not inside any workspace under {}",
+                home.display()
+            )
+        })?
     };
 
     let ai_name = ai_root
