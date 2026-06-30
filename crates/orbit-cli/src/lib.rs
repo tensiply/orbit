@@ -16,6 +16,8 @@ pub struct Cli {
 pub enum Commands {
     /// First-time setup: write config and install the binary
     Setup(commands::setup::SetupArgs),
+    /// Get, set, or list config values
+    Config(commands::config::ConfigArgs),
     /// Manage the active orbit binary mode (stable / dev / beta)
     Mode(commands::mode::ModeArgs),
     /// Clone the governance repository into the AI root
@@ -34,6 +36,8 @@ pub enum Commands {
     Completions(commands::completions::CompletionsArgs),
     /// Run environment diagnostics
     Doctor(commands::doctor::DoctorArgs),
+    /// Save a context snapshot for the current scope to the governance repo
+    Snapshot(commands::snapshot::SnapshotArgs),
 }
 
 impl Cli {
@@ -45,6 +49,7 @@ impl Cli {
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
+        Some(Commands::Config(args)) => commands::config::run(args),
         Some(Commands::Mode(args)) => commands::mode::run(args).await,
         Some(Commands::Init(args)) => commands::init::run(args).await,
         Some(Commands::Update(args)) => commands::update::run(args).await,
@@ -54,6 +59,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Ls(args)) => commands::ls::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args),
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
+        Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         None => {
             let ws_cfg = {
                 let ai_root = UserConfig::load().ai_root_expanded();
@@ -84,11 +90,11 @@ pub async fn run(cli: Cli) -> Result<()> {
                     } else {
                         Some(params.repository)
                     },
-                    engine: match params.engine {
+                    engine: Some(match params.engine {
                         Engine::Opencode => commands::launch::CliEngine::Opencode,
                         Engine::Gemini => commands::launch::CliEngine::Gemini,
                         Engine::Claude => commands::launch::CliEngine::Claude,
-                    },
+                    }),
                     dry_run: false,
                     no_tmux: params.no_tmux,
                 })

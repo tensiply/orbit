@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args, ValueEnum};
-use orbit_core::engine::Engine;
+use orbit_core::{engine::Engine, user_config::UserConfig};
 use orbit_engine::{
     config,
     launcher::{self, LaunchOptions},
@@ -41,9 +41,9 @@ pub struct LaunchArgs {
     /// Repository name within the project
     pub repository: Option<String>,
 
-    /// AI engine to launch [default: opencode]
-    #[arg(short, long, value_enum, default_value = "opencode")]
-    pub engine: CliEngine,
+    /// AI engine to launch (default: reads engine.default from config)
+    #[arg(short, long, value_enum)]
+    pub engine: Option<CliEngine>,
 
     /// Print the resolved config without launching the engine (useful for debugging)
     #[arg(long)]
@@ -55,7 +55,13 @@ pub struct LaunchArgs {
 }
 
 pub async fn run(args: LaunchArgs) -> Result<()> {
-    let engine = Engine::from(args.engine);
+    let engine = match args.engine {
+        Some(e) => Engine::from(e),
+        None => {
+            let cfg = UserConfig::load();
+            cfg.engine.default.parse::<Engine>().unwrap_or(Engine::Opencode)
+        }
+    };
 
     // "." means resolve scope from cwd automatically
     let scope = if args.workspace.as_deref() == Some(".") {

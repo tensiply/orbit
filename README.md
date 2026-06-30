@@ -14,10 +14,14 @@ Built in Rust. Runs on Linux and macOS.
 
 ```
 orbit                                              # open TUI dashboard
+orbit launch .                                     # auto-detect scope from current directory
 orbit launch WORKSPACE TENANT PROJECT REPO         # full scope
 orbit launch WORKSPACE TENANT                      # workspace + tenant only
 orbit session list                                 # list active sessions
 orbit session attach                               # attach to a running session
+orbit config list                                  # show all config values
+orbit config set engine.default claude             # change default engine
+orbit doctor                                       # check engines, dependencies, config
 ```
 
 ---
@@ -57,6 +61,44 @@ curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/or
   -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 ```
 
+### Windows (WSL)
+
+orbit runs natively inside Windows Subsystem for Linux. Use the Linux instructions above inside your WSL terminal.
+
+Prerequisites inside WSL:
+
+```bash
+# Install tmux if missing
+sudo apt-get install -y tmux
+
+# Install Node.js (for npx-based MCP servers and engine installers)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+Then run `orbit setup` — it will detect which engines are installed and offer to install missing ones.
+
+---
+
+### Windows (WSL)
+
+orbit runs natively inside Windows Subsystem for Linux. Use the Linux instructions above inside your WSL terminal.
+
+Prerequisites inside WSL:
+
+```bash
+# Install tmux
+sudo apt-get install -y tmux
+
+# Install Node.js (required for engine installers and npx-based MCP servers)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+After installing the binary, run `orbit setup` — it will detect which AI engines are installed and offer to install any that are missing.
+
+---
+
 ### Build from source
 
 ```bash
@@ -78,7 +120,28 @@ Run once after installation:
 orbit setup
 ```
 
-This creates `~/.config/orbit/config.toml` with your preferences:
+This creates `~/.config/orbit/config.toml` with your preferences, and walks you through installing any AI engines that are missing:
+
+```
+  Default engine (opencode / gemini / claude) [opencode]:
+  ...
+
+  Checking engines...
+
+  ✓  opencode
+  ○  gemini  — not installed
+    Install gemini? [y/N]: y
+    Installing gemini... done
+  ✓  claude
+
+  auth: Run `gemini auth` or set GOOGLE_API_KEY / GEMINI_API_KEY
+```
+
+Pass `--no-install` to skip the engine installation prompts:
+
+```bash
+orbit setup --no-install
+```
 
 ```toml
 [workspace]
@@ -169,15 +232,48 @@ All arguments are positional and optional — omit from the right to broaden sco
 
 ```bash
 orbit launch                                        # global mode (uses ai_root from config)
+orbit launch .                                      # auto-detect scope from cwd
 orbit launch WORKSPACE                              # workspace only
 orbit launch WORKSPACE TENANT                       # workspace + tenant
 orbit launch WORKSPACE TENANT PROJECT               # + project
 orbit launch WORKSPACE TENANT PROJECT REPO          # full scope
 
-orbit launch WORKSPACE TENANT PROJECT REPO --engine claude   # pick engine
+orbit launch WORKSPACE TENANT PROJECT REPO --engine claude   # pick engine (default: config)
 orbit launch WORKSPACE TENANT --no-tmux                      # skip tmux
 orbit launch WORKSPACE TENANT PROJECT REPO --dry-run         # print resolved config
 ```
+
+---
+
+## Config
+
+View and change preferences without re-running `orbit setup`:
+
+```bash
+orbit config list                          # show all values
+orbit config get engine.default            # print one value
+orbit config set engine.default claude     # change default engine
+orbit config set engine.default_tenant work
+orbit config set workspace.ai_root ~/AI
+orbit config set install.dir ~/.local/bin
+orbit config edit                          # open config in $EDITOR
+```
+
+Config file lives at `~/.config/orbit/config.toml`. Valid engines: `opencode`, `gemini`, `claude`.
+
+---
+
+## Launching from the current directory
+
+Use `.` as the workspace argument and orbit will auto-detect scope from your working directory:
+
+```bash
+cd ~/MYCO/backend/api
+orbit launch .                             # resolves workspace, tenant, project, repo automatically
+orbit launch . --engine gemini            # same, with explicit engine
+```
+
+This works whenever your working directory is inside a workspace managed by orbit.
 
 ---
 
@@ -229,6 +325,78 @@ orbit session list              # list all tracked sessions
 orbit session attach [id]       # attach to session (defaults to most recent)
 orbit session kill <id>         # send SIGTERM to session process
 orbit session clean             # remove files for dead sessions
+```
+
+---
+
+## Snapshot
+
+`orbit snapshot` syncs the context file generated by an engine's `/init` command into the governance repo at the correct scope layer.
+
+**Typical workflow:**
+
+```bash
+# 1. Launch a session for a repo
+orbit launch MYCO backend api
+
+# 2. Inside Claude (or any engine), run /init to generate CLAUDE.md
+#    (Claude does this automatically)
+
+# 3. Back in the shell (or with ! inside the engine), sync to governance
+! orbit snapshot
+```
+
+orbit auto-detects `CLAUDE.md` (claude), `AGENTS.md` (opencode), or `GEMINI.md` (gemini) in the current directory and copies it to the right `source-of-truth/context.md` in the governance repo:
+
+| Scope | Governance destination |
+|---|---|
+| Repository | `~/AI/tenants/<T>/projects/<P>/repositories/<R>/source-of-truth/context.md` |
+| Project | `~/AI/tenants/<T>/projects/<P>/source-of-truth/context.md` |
+| Tenant | `~/AI/tenants/<T>/source-of-truth/context.md` |
+
+```bash
+orbit snapshot                          # auto-detect file, auto-detect scope from cwd
+orbit snapshot --file path/to/file.md   # explicit source file
+orbit snapshot --stdin                  # read from stdin
+orbit snapshot --dry-run                # show source and dest without writing
+orbit snapshot --output ~/AI/tenants/X/source-of-truth/context.md  # override dest
+```
+
+---
+
+## Doctor
+
+Run `orbit doctor` to check the environment at a glance:
+
+```
+orbit doctor
+
+engines
+  ✓  opencode
+  ✗  gemini  — not found in PATH
+      install: npm install -g @google/gemini-cli
+  ✓  claude
+
+dependencies
+  ✓  tmux
+  ✓  node
+
+workspace
+  ✓  AI root (git)   /home/user/AI
+
+config
+  file                    ~/.config/orbit/config.toml
+  engine.default          opencode
+  engine.default_tenant   work
+  workspace.ai_root       ~/AI
+  install.dir             ~/.local/bin
+
+daemon
+  ✗  daemon  — not running — start with `orbit daemon start`
+
+binary
+  ✓  install dir  /home/user/.local/bin
+  ✓  orbit binary /home/user/.local/bin/orbit
 ```
 
 ---

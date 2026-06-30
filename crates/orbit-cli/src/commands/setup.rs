@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{self, Write},
     path::PathBuf,
+    process::Command,
 };
 
 #[derive(Debug, Args)]
@@ -32,6 +33,10 @@ pub struct SetupArgs {
     /// Print what would be done without writing anything
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Skip engine installation prompts
+    #[arg(long)]
+    pub no_install: bool,
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
@@ -145,6 +150,12 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         println!("    export PATH=\"{install_dir_str}:$PATH\"");
     }
 
+    // ── engine install & auth ─────────────────────────────────────────────────
+    if !args.no_install {
+        println!();
+        setup_engines(&default_engine, args.yes).await?;
+    }
+
     // ── next steps ────────────────────────────────────────────────────────────
     println!();
     if !ai_root.exists() {
@@ -158,7 +169,93 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     Ok(())
 }
 
-// ── prompt helper ─────────────────────────────────────────────────────────────
+// ── engine setup ─────────────────────────────────────────────────────────────
+
+async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
+    println!("  Checking engines...");
+    println!();
+
+    let engines = [
+        EngineInfo {
+            name: "opencode",
+            install_cmd: &["npm", "install", "-g", "opencode-ai"],
+            auth_cmd: &["opencode", "auth"],
+            auth_hint: "Run `opencode auth` or set OPENAI_API_KEY / provider keys",
+        },
+        EngineInfo {
+            name: "gemini",
+            install_cmd: &["npm", "install", "-g", "@google/gemini-cli"],
+            auth_cmd: &["gemini", "auth"],
+            auth_hint: "Run `gemini auth` or set GOOGLE_API_KEY / GEMINI_API_KEY",
+        },
+        EngineInfo {
+            name: "claude",
+            install_cmd: &["npm", "install", "-g", "@anthropic-ai/claude-code"],
+            auth_cmd: &["claude", "auth", "login"],
+            auth_hint: "Run `claude auth login` or set ANTHROPIC_API_KEY",
+        },
+    ];
+
+    let has_npm = bin_available("npm");
+
+    for engine in &engines {
+        let installed = bin_available(engine.name);
+
+        if installed {
+            println!("  \x1b[32m✓\x1b[0m  {}", engine.name);
+        } else {
+            println!("  \x1b[33m○\x1b[0m  {} — not installed", engine.name);
+
+            if !has_npm {
+                println!("      install Node.js first: https://nodejs.org");
+                continue;
+            }
+
+            let should_install = if yes || engine.name == default_engine {
+                true
+            } else {
+                confirm(&format!("    Install {}?", engine.name), false)?
+            };
+
+            if should_install {
+                print!("    Installing {}...", engine.name);
+                io::stdout().flush()?;
+                let status = Command::new(engine.install_cmd[0])
+                    .args(&engine.install_cmd[1..])
+                    .status();
+                match status {
+                    Ok(s) if s.success() => println!(" done"),
+                    _ => println!(" \x1b[31mfailed\x1b[0m — run manually: {}", engine.install_cmd.join(" ")),
+                }
+            }
+        }
+
+        // Auth hint (always shown — we can't reliably detect auth state)
+        println!("      \x1b[2mauth: {}\x1b[0m", engine.auth_hint);
+    }
+
+    Ok(())
+}
+
+struct EngineInfo {
+    name: &'static str,
+    install_cmd: &'static [&'static str],
+    #[allow(dead_code)]
+    auth_cmd: &'static [&'static str],
+    auth_hint: &'static str,
+}
+
+fn bin_available(bin: &str) -> bool {
+    Command::new("which")
+        .arg(bin)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+// ── prompt helpers ────────────────────────────────────────────────────────────
 
 fn ask(question: &str, default: &str) -> Result<String> {
     print!("  {question} [{default}]: ");
@@ -170,5 +267,18 @@ fn ask(question: &str, default: &str) -> Result<String> {
         default.to_string()
     } else {
         trimmed.to_string()
+    })
+}
+
+fn confirm(question: &str, default: bool) -> Result<bool> {
+    let hint = if default { "Y/n" } else { "y/N" };
+    print!("  {question} [{hint}]: ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(match input.trim().to_lowercase().as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        _ => default,
     })
 }

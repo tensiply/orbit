@@ -1,4 +1,5 @@
 pub mod completions;
+pub mod config;
 pub mod daemon;
 pub mod doctor;
 pub mod init;
@@ -7,4 +8,5 @@ pub mod ls;
 pub mod mode;
 pub mod session;
 pub mod setup;
+pub mod snapshot;
 pub mod update;
