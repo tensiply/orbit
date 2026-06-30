@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.5.0)"
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,6 +32,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,6 +74,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -83,6 +92,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: |
             artifacts/orbit-linux-x86_64
             artifacts/orbit-linux-aarch64
@@ -116,7 +126,7 @@ jobs:
       - name: Commit docs updates to main
         run: |
           git config user.name  "Eloir Corona"
-          git config user.email "eloircoronah@outlook.com"
+          git config user.email "ecorona@better.com.mx"
           git add CHANGELOG.md README.md
           git diff --cached --quiet || git commit -m "docs: update links for ${{ github.ref_name }}"
           git pull --rebase
@@ -139,7 +149,7 @@ jobs:
           python3 .github/scripts/build_wiki_home.py
 
           git -C wiki config user.name  "Eloir Corona"
-          git -C wiki config user.email "eloircoronah@outlook.com"
+          git -C wiki config user.email "ecorona@better.com.mx"
           git -C wiki add .
           git -C wiki diff --cached --quiet || git -C wiki commit -m "Release ${TAG}"
           git -C wiki push -u origin HEAD:master
