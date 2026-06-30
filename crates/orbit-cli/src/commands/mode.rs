@@ -78,12 +78,13 @@ fn ensure_data_dir() -> Result<()> {
 // ── platform ──────────────────────────────────────────────────────────────────
 
 fn platform_artifact() -> &'static str {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return "orbit-linux-x86_64";
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    return "orbit-linux-aarch64";
-    #[allow(unreachable_code)]
-    "orbit"
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "orbit-linux-x86_64",
+        ("linux", "aarch64") => "orbit-linux-aarch64",
+        ("macos", "x86_64") => "orbit-macos-x86_64",
+        ("macos", "aarch64") => "orbit-macos-aarch64",
+        _ => "orbit-linux-x86_64",
+    }
 }
 
 fn make_binary_url(tag: &str) -> String {

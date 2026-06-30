@@ -43,6 +43,18 @@ Download the latest binary for your platform from [Releases](https://github.com/
 # Linux (x86_64)
 curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
+
+# Linux (aarch64)
+curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-aarch64 \
+  -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
+
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-aarch64 \
+  -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
+
+# macOS (Intel)
+curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-x86_64 \
+  -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 ```
 
 ### Build from source
