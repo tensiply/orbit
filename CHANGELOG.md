@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-30
+
 ### Added
 
 - Plugin system (`orbit plugins list/install/enable/disable/info/wrap/unwrap`) — optional external tools with their own install lifecycle. Plugins defined as TOML files in `plugins/`; add a file and rebuild to register a new plugin. Users can also drop `.toml` files into `~/.config/orbit/plugins/` without rebuilding.
