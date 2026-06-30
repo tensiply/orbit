@@ -105,7 +105,7 @@ fn scaffold(ai_root: &std::path::Path) -> Result<()> {
     if !toml_path.exists() {
         std::fs::write(
             &toml_path,
-            "# orbit workspace configuration\n# See: https://github.com/tensiply/orbit\n",
+            "# orbit workspace configuration\n# See: https://github.com/befraeloircorona/orbit\n",
         )?;
     }
 

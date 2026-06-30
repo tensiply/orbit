@@ -4,7 +4,7 @@ A CLI launcher for AI coding assistants (opencode, Gemini CLI, Claude Code) with
 
 Built in Rust. Runs on Linux and macOS.
 
-**Latest:** [v0.4.1](https://github.com/tensiply/orbit/releases/tag/v0.4.1) · [Changelog](CHANGELOG.md) · [Wiki](https://github.com/tensiply/orbit/wiki)
+**Latest:** [v0.4.1](https://github.com/befraeloircorona/orbit/releases/tag/v0.4.1) · [Changelog](CHANGELOG.md) · [Wiki](https://github.com/befraeloircorona/orbit/wiki)
 
 ---
 
@@ -37,18 +37,18 @@ orbit session attach                               # attach to a running session
 
 ### Download binary (recommended)
 
-Download the latest binary for your platform from [Releases](https://github.com/tensiply/orbit/releases):
+Download the latest binary for your platform from [Releases](https://github.com/befraeloircorona/orbit/releases):
 
 ```bash
 # Linux (x86_64)
-curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-linux-x86_64 \
+curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/tensiply/orbit.git
+git clone https://github.com/befraeloircorona/orbit.git
 cd orbit
 cargo build --release
 cp target/release/orbit ~/.local/bin/

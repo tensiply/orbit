@@ -5,8 +5,8 @@ use std::time::Duration;
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CACHE_TTL_SECS: u64 = 86_400; // 24 hours
 const TIMEOUT: Duration = Duration::from_secs(1);
-pub const API_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases/latest";
-pub const API_RELEASES_URL: &str = "https://api.github.com/repos/tensiply/orbit/releases";
+pub const API_URL: &str = "https://api.github.com/repos/befraeloircorona/orbit/releases/latest";
+pub const API_RELEASES_URL: &str = "https://api.github.com/repos/befraeloircorona/orbit/releases";
 
 /// Checks GitHub for a newer release and prints a one-line notice if one exists.
 /// All failures (network, timeout, parse) are silent — startup is never blocked.

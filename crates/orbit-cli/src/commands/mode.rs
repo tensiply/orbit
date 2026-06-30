@@ -88,13 +88,13 @@ fn platform_artifact() -> &'static str {
 
 fn make_binary_url(tag: &str) -> String {
     format!(
-        "https://github.com/tensiply/orbit/releases/download/{tag}/{}",
+        "https://github.com/befraeloircorona/orbit/releases/download/{tag}/{}",
         platform_artifact()
     )
 }
 
 fn make_checksums_url(tag: &str) -> String {
-    format!("https://github.com/tensiply/orbit/releases/download/{tag}/checksums.txt")
+    format!("https://github.com/befraeloircorona/orbit/releases/download/{tag}/checksums.txt")
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────

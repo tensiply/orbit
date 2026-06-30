@@ -44,15 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Multi-workspace support in TUI ([#6](https://github.com/tensiply/orbit/issues/6)).
+- Multi-workspace support in TUI ([#6](https://github.com/befraeloircorona/orbit/issues/6)).
   Tab bar shows the active workspace name. Press `[w]` to cycle through detected workspaces.
   Workspace detection scans `~/` for directories containing `orbit.toml` or `tenants/`.
   Switching reloads MCP entries, launch defaults, and sessions from the new workspace root.
-- `orbit session attach` auto-attaches when only one tmux session is active; shows a selector when there are multiple ([#4](https://github.com/tensiply/orbit/issues/4)).
+- `orbit session attach` auto-attaches when only one tmux session is active; shows a selector when there are multiple ([#4](https://github.com/befraeloircorona/orbit/issues/4)).
   Verifies the tmux window still exists before attaching; clear error message if it's gone.
   TUI `[a]`/`↵` in the Sessions tab also checks window existence before handing off the terminal.
   Uses `switch-client` when already inside tmux, `attach-session` otherwise.
-- `orbit update` now downloads, checksum-verifies, and atomically installs the new binary ([#3](https://github.com/tensiply/orbit/issues/3)).
+- `orbit update` now downloads, checksum-verifies, and atomically installs the new binary ([#3](https://github.com/befraeloircorona/orbit/issues/3)).
   Shows progress, validates SHA-256 against `checksums.txt`, skips if already on latest.
   New flag `--force` to reinstall even when current. Respects `ORBIT_NO_UPDATE_CHECK=1`.
 
@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Check latest release on startup and print a one-line notice when a newer version is available ([#1](https://github.com/tensiply/orbit/issues/1)).
+- Check latest release on startup and print a one-line notice when a newer version is available ([#1](https://github.com/befraeloircorona/orbit/issues/1)).
   Opt-out: `ORBIT_NO_UPDATE_CHECK=1` or `update.check_on_startup = false` in `orbit.toml`. Check is cached 24 h.
 
 ## [0.1.0] - 2026-06-27
@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `orbit init` — clone a governance repository as the AI root
 - `orbit init --scaffold` — create a local-only AI root without a governance repo
 - `orbit launch` — launch AI sessions with tenant/project/repo context and optional tmux
-- `orbit update` — self-update binary; defaults to `tensiply/orbit` GitHub releases
+- `orbit update` — self-update binary; defaults to `befraeloircorona/orbit` GitHub releases
 - `orbit session list|kill|attach|clean` — CLI session management
 - `orbit daemon serve|start|stop|status` — daemon lifecycle management
 - `orbit dev enable|disable|status|generate-token` — dev-mode toggle via token-based auth
@@ -85,9 +85,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 - MIT license — Copyright (c) 2026 Eloir Corona
 
-[Unreleased]: https://github.com/tensiply/orbit/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/tensiply/orbit/releases/tag/v0.4.1
-[0.4.0]: https://github.com/tensiply/orbit/releases/tag/v0.4.0
-[0.3.0]: https://github.com/tensiply/orbit/releases/tag/v0.3.0
-[0.2.0]: https://github.com/tensiply/orbit/releases/tag/v0.2.0
-[0.1.0]: https://github.com/tensiply/orbit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.4.1
+[0.4.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.4.0
+[0.3.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.3.0
+[0.2.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.2.0
+[0.1.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.1.0

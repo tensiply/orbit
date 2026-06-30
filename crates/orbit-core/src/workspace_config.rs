@@ -77,7 +77,7 @@ impl WorkspaceConfig {
             Some(format!("{base}/{platform}"))
         } else {
             Some(format!(
-                "https://github.com/tensiply/orbit/releases/latest/download/orbit-{platform}"
+                "https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-{platform}"
             ))
         }
     }
