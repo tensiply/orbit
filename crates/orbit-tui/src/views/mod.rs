@@ -38,6 +38,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Mode::SessionDetails(s) => popup::render_details(f, area, s.clone()),
         Mode::AddMcp(state) => popup::render_add_mcp(f, area, state, &app.sys.default_tenant),
         Mode::ConfirmRemoveMcp(entry) => popup::render_confirm_remove_mcp(f, area, entry),
+        Mode::FieldSelect(state) => popup::render_field_select(f, area, state),
         Mode::Normal => {}
     }
 }

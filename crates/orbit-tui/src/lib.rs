@@ -7,6 +7,7 @@ use orbit_core::engine::Engine;
 
 pub struct LaunchParams {
     pub engine: Engine,
+    pub workspace: String,
     pub tenant: String,
     pub project: String,
     pub repository: String,

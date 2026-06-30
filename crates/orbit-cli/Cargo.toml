@@ -11,6 +11,7 @@ orbit-engine.workspace = true
 orbit-tui.workspace = true
 orbit-daemon.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

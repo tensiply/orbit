@@ -77,6 +77,63 @@ impl ServerState {
                 let _ = self.shutdown_tx.send(());
                 Response::Ok
             }
+
+            Request::LaunchSession {
+                workspace,
+                tenant,
+                project,
+                repository,
+                engine,
+                no_tmux,
+            } => {
+                use orbit_core::engine::Engine;
+                use orbit_engine::{
+                    config,
+                    launcher,
+                    resolver::{self, ResolveArgs},
+                };
+
+                if no_tmux {
+                    return Response::Error {
+                        message: "daemon cannot launch without tmux — would replace daemon process"
+                            .into(),
+                    };
+                }
+
+                let engine_val = match engine.as_str() {
+                    "opencode" => Engine::Opencode,
+                    "gemini" => Engine::Gemini,
+                    "claude" => Engine::Claude,
+                    other => {
+                        return Response::Error {
+                            message: format!("unknown engine: {other}"),
+                        }
+                    }
+                };
+
+                let scope = match resolver::resolve(ResolveArgs {
+                    workspace,
+                    tenant,
+                    project,
+                    repository,
+                }) {
+                    Ok(s) => s,
+                    Err(e) => return Response::Error { message: e.to_string() },
+                };
+
+                let merged = match config::load(&scope, engine_val) {
+                    Ok(m) => m,
+                    Err(e) => return Response::Error { message: e.to_string() },
+                };
+
+                match launcher::spawn_background(&scope, &merged, engine_val) {
+                    Ok(session) => Response::Launched {
+                        tmux_name: session.tmux_session.unwrap_or_default(),
+                        session_id: session.id,
+                    },
+                    Err(e) => Response::Error { message: e.to_string() },
+                }
+            }
         }
     }
 }

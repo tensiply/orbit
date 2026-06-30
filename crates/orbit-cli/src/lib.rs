@@ -28,6 +28,12 @@ pub enum Commands {
     Session(commands::session::SessionArgs),
     /// Interact with the orbit daemon
     Daemon(commands::daemon::DaemonArgs),
+    /// Browse workspace / tenant / project / repository hierarchy
+    Ls(commands::ls::LsArgs),
+    /// Print shell completion script
+    Completions(commands::completions::CompletionsArgs),
+    /// Run environment diagnostics
+    Doctor(commands::doctor::DoctorArgs),
 }
 
 impl Cli {
@@ -45,6 +51,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Launch(args)) => commands::launch::run(args).await,
         Some(Commands::Session(args)) => commands::session::run(args).await,
         Some(Commands::Daemon(args)) => commands::daemon::run(args).await,
+        Some(Commands::Ls(args)) => commands::ls::run(args),
+        Some(Commands::Completions(args)) => commands::completions::run(args),
+        Some(Commands::Doctor(args)) => commands::doctor::run(args),
         None => {
             let ws_cfg = {
                 let ai_root = UserConfig::load().ai_root_expanded();
@@ -55,7 +64,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             if let Some(params) = orbit_tui::run().await? {
                 use orbit_core::engine::Engine;
                 commands::launch::run(commands::launch::LaunchArgs {
-                    workspace: None,
+                    workspace: if params.workspace.is_empty() {
+                        None
+                    } else {
+                        Some(params.workspace)
+                    },
                     tenant: if params.tenant.is_empty() {
                         None
                     } else {

@@ -32,6 +32,172 @@ pub fn resolve_with_roots(args: ResolveArgs, home: &Path, ai_root: &Path) -> Res
     resolve_inner(args, home, ai_root)
 }
 
+/// Resolve scope from the current working directory.
+///
+/// Walks the cwd's ancestors to find a workspace root (a direct child of home
+/// that contains `tenants/` or `orbit.toml`), then maps remaining path
+/// segments to tenant / project / repository.
+pub fn resolve_from_cwd() -> Result<OrbitScope> {
+    let base_dirs =
+        BaseDirs::new().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home = base_dirs.home_dir();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| home.to_path_buf());
+    let user_cfg = UserConfig::load();
+    let ai_root = user_cfg.ai_root_expanded();
+    resolve_from_path_inner(&cwd, home, &ai_root)
+}
+
+/// Testable variant of cwd resolution.
+pub fn resolve_from_path(
+    cwd: &Path,
+    home: &Path,
+    ai_root: &Path,
+) -> Result<OrbitScope> {
+    resolve_from_path_inner(cwd, home, ai_root)
+}
+
+fn resolve_from_path_inner(cwd: &Path, home: &Path, ai_root: &Path) -> Result<OrbitScope> {
+    // Find the direct child of home that contains cwd.
+    let workspace_root = {
+        let Ok(rd) = std::fs::read_dir(home) else {
+            anyhow::bail!("cannot read home directory");
+        };
+        let mut candidates: Vec<std::path::PathBuf> = rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && cwd.starts_with(p) && p.as_path() != cwd)
+            .collect();
+        // Prefer the deepest match (shouldn't be more than one at home level)
+        candidates.sort_by_key(|p| p.components().count());
+        candidates
+            .into_iter()
+            .last()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "current directory is not inside any workspace under {}",
+                    home.display()
+                )
+            })?
+    };
+
+    let ai_name = ai_root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "AI".to_string());
+
+    // Strip workspace root prefix, then skip the AI layer dir if present.
+    let rest = cwd.strip_prefix(&workspace_root).unwrap_or(Path::new(""));
+    let mut segments = rest
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(n) => n.to_str().map(|s| s.to_string()),
+            _ => None,
+        })
+        .peekable();
+
+    // Skip the AI directory itself if it is the first segment.
+    if segments
+        .peek()
+        .map(|s| s.eq_ignore_ascii_case(&ai_name))
+        .unwrap_or(false)
+    {
+        segments.next();
+    }
+
+    let ai_context_root = {
+        let candidate = workspace_root.join(&ai_name);
+        if candidate.join("tenants").is_dir() {
+            candidate
+        } else {
+            workspace_root.clone()
+        }
+    };
+
+    let tenants_root = ai_context_root.join("tenants");
+
+    // Skip "tenants" directory if it appears next in the path.
+    if segments
+        .peek()
+        .map(|s| s.eq_ignore_ascii_case("tenants"))
+        .unwrap_or(false)
+    {
+        segments.next();
+    }
+
+    let tenant_raw = segments.next().unwrap_or_default();
+    let project_raw = segments.next().unwrap_or_default();
+    let repo_raw = segments.next().unwrap_or_default();
+
+    let tenant = if tenant_raw.is_empty() {
+        String::new()
+    } else {
+        resolve_name(&tenants_root, &tenant_raw)
+    };
+
+    let project = if project_raw.is_empty() || tenant.is_empty() {
+        String::new()
+    } else {
+        let projects_root = tenants_root.join(&tenant).join("projects");
+        // Skip "projects" segment if cwd went through it
+        let project_input = if project_raw.eq_ignore_ascii_case("projects") {
+            segments.next().unwrap_or_default()
+        } else {
+            project_raw
+        };
+        if project_input.is_empty() {
+            String::new()
+        } else {
+            resolve_name(&projects_root, &project_input)
+        }
+    };
+
+    let repository = if repo_raw.is_empty() || project.is_empty() {
+        String::new()
+    } else {
+        let repos_root = tenants_root
+            .join(&tenant)
+            .join("projects")
+            .join(&project)
+            .join("repositories");
+        let repo_input = if repo_raw.eq_ignore_ascii_case("repositories") {
+            segments.next().unwrap_or_default()
+        } else {
+            repo_raw
+        };
+        if repo_input.is_empty() {
+            String::new()
+        } else {
+            resolve_name(&repos_root, &repo_input)
+        }
+    };
+
+    let code_root = workspace_root.join(&tenant);
+    let tenant_dir = ai_context_root.join("tenants").join(&tenant);
+
+    let work_dir = if !repository.is_empty() {
+        code_root.join(&project).join(&repository)
+    } else if !project.is_empty() {
+        code_root.join(&project)
+    } else if !tenant.is_empty() {
+        code_root.clone()
+    } else {
+        workspace_root.clone()
+    };
+
+    Ok(OrbitScope {
+        workspace_root,
+        ai_context_root,
+        global_ai_root: ai_root.to_path_buf(),
+        tenant,
+        project,
+        repository,
+        tenant_dir,
+        code_root,
+        work_dir,
+        global_mode: false,
+    })
+}
+
 fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<OrbitScope> {
     // ── global mode: no arguments at all ─────────────────────────────────────
     if args.workspace.is_none() {

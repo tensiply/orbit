@@ -87,3 +87,32 @@ pub async fn shutdown() -> Result<()> {
         _ => bail!("unexpected response"),
     }
 }
+
+pub struct LaunchedInfo {
+    pub tmux_name: String,
+    pub session_id: String,
+}
+
+pub async fn launch_session(
+    workspace: Option<String>,
+    tenant: Option<String>,
+    project: Option<String>,
+    repository: Option<String>,
+    engine: &str,
+    no_tmux: bool,
+) -> Result<LaunchedInfo> {
+    match send(&Request::LaunchSession {
+        workspace,
+        tenant,
+        project,
+        repository,
+        engine: engine.to_string(),
+        no_tmux,
+    })
+    .await?
+    {
+        Response::Launched { tmux_name, session_id } => Ok(LaunchedInfo { tmux_name, session_id }),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}

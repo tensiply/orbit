@@ -45,6 +45,7 @@ pub enum Mode {
     SessionDetails(Session),
     AddMcp(Box<AddMcpState>),
     ConfirmRemoveMcp(crate::mcp::McpEntry),
+    FieldSelect(FieldSelectState),
 }
 
 // ── engines ───────────────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ pub const ENGINES: [Engine; 3] = [Engine::Opencode, Engine::Gemini, Engine::Clau
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LaunchField {
     Engine,
+    Workspace,
     Tenant,
     Project,
     Repository,
@@ -66,7 +68,8 @@ pub enum LaunchField {
 impl LaunchField {
     pub fn next(self) -> Self {
         match self {
-            LaunchField::Engine => LaunchField::Tenant,
+            LaunchField::Engine => LaunchField::Workspace,
+            LaunchField::Workspace => LaunchField::Tenant,
             LaunchField::Tenant => LaunchField::Project,
             LaunchField::Project => LaunchField::Repository,
             LaunchField::Repository => LaunchField::NoTmux,
@@ -78,7 +81,8 @@ impl LaunchField {
     pub fn prev(self) -> Self {
         match self {
             LaunchField::Engine => LaunchField::Launch,
-            LaunchField::Tenant => LaunchField::Engine,
+            LaunchField::Workspace => LaunchField::Engine,
+            LaunchField::Tenant => LaunchField::Workspace,
             LaunchField::Project => LaunchField::Tenant,
             LaunchField::Repository => LaunchField::Project,
             LaunchField::NoTmux => LaunchField::Repository,
@@ -96,6 +100,8 @@ impl LaunchField {
 
 pub struct LaunchState {
     pub engine_idx: usize,
+    pub workspace_idx: usize,
+    pub workspaces: Vec<String>,
     pub tenant: TextInput,
     pub project: TextInput,
     pub repository: TextInput,
@@ -110,8 +116,12 @@ impl LaunchState {
             .position(|e| e.as_str() == default_engine)
             .unwrap_or(0);
 
+        let workspaces = detect_workspace_names();
+
         Self {
             engine_idx,
+            workspace_idx: 0,
+            workspaces,
             tenant: TextInput::new("Tenant", "AIDEV").with_value(default_tenant),
             project: TextInput::new("Project", "my-project"),
             repository: TextInput::new("Repo", "(optional)"),
@@ -124,9 +134,41 @@ impl LaunchState {
         ENGINES[self.engine_idx]
     }
 
+    pub fn workspace_name(&self) -> &str {
+        self.workspaces
+            .get(self.workspace_idx)
+            .map(|s| s.as_str())
+            .unwrap_or("")
+    }
+
+    pub fn cycle_workspace_left(&mut self) {
+        let n = self.workspaces.len();
+        if n == 0 {
+            return;
+        }
+        self.workspace_idx = (self.workspace_idx + n - 1) % n;
+        self.reset_scope_fields();
+    }
+
+    pub fn cycle_workspace_right(&mut self) {
+        let n = self.workspaces.len();
+        if n == 0 {
+            return;
+        }
+        self.workspace_idx = (self.workspace_idx + 1) % n;
+        self.reset_scope_fields();
+    }
+
+    fn reset_scope_fields(&mut self) {
+        self.tenant = TextInput::new("Tenant", "AIDEV");
+        self.project = TextInput::new("Project", "my-project");
+        self.repository = TextInput::new("Repo", "(optional)");
+    }
+
     pub fn to_params(&self) -> LaunchParams {
         LaunchParams {
             engine: self.engine(),
+            workspace: self.workspace_name().to_string(),
             tenant: self.tenant.as_str().to_string(),
             project: self.project.as_str().to_string(),
             repository: self.repository.as_str().to_string(),
@@ -141,6 +183,69 @@ impl LaunchState {
             LaunchField::Repository => Some(&mut self.repository),
             _ => None,
         }
+    }
+}
+
+fn detect_workspace_names() -> Vec<String> {
+    let home = dirs_home();
+    let Ok(rd) = std::fs::read_dir(&home) else {
+        return vec![];
+    };
+    let mut names: Vec<String> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            let p = e.path();
+            p.join("tenants").is_dir() || p.join("orbit.toml").is_file()
+        })
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.starts_with('.'))
+        .collect();
+    names.sort();
+    names
+}
+
+// ── field select state ────────────────────────────────────────────────────────
+
+pub struct FieldSelectState {
+    pub field: LaunchField,
+    pub options: Vec<String>,
+    pub cursor: usize,
+    pub filter: String,
+}
+
+impl FieldSelectState {
+    pub fn filtered_options(&self) -> Vec<&str> {
+        if self.filter.is_empty() {
+            self.options.iter().map(|s| s.as_str()).collect()
+        } else {
+            let f = self.filter.to_lowercase();
+            self.options
+                .iter()
+                .filter(|o| o.to_lowercase().contains(&f))
+                .map(|s| s.as_str())
+                .collect()
+        }
+    }
+
+    pub fn selected_option(&self) -> Option<&str> {
+        self.filtered_options().into_iter().nth(self.cursor)
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.filtered_options().len();
+        if n == 0 {
+            return;
+        }
+        self.cursor = if self.cursor == 0 { n - 1 } else { self.cursor - 1 };
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.filtered_options().len();
+        if n == 0 {
+            return;
+        }
+        self.cursor = (self.cursor + 1) % n;
     }
 }
 
@@ -728,6 +833,52 @@ impl App {
                 }
                 // any other key: cancel (mode stays Normal)
             }
+            Mode::FieldSelect(mut state) => {
+                match code {
+                    KeyCode::Esc => { /* mode already reset to Normal */ }
+                    KeyCode::Up => {
+                        state.move_up();
+                        self.mode = Mode::FieldSelect(state);
+                    }
+                    KeyCode::Down => {
+                        state.move_down();
+                        self.mode = Mode::FieldSelect(state);
+                    }
+                    KeyCode::Enter => {
+                        if let Some(selected) = state.selected_option().map(|s| s.to_string()) {
+                            match state.field {
+                                LaunchField::Tenant => {
+                                    self.launch.tenant =
+                                        TextInput::new("Tenant", "AIDEV").with_value(&selected);
+                                }
+                                LaunchField::Project => {
+                                    self.launch.project =
+                                        TextInput::new("Project", "my-project").with_value(&selected);
+                                }
+                                LaunchField::Repository => {
+                                    self.launch.repository =
+                                        TextInput::new("Repo", "(optional)").with_value(&selected);
+                                }
+                                _ => {}
+                            }
+                        }
+                        // mode reset to Normal by the std::mem::replace above
+                    }
+                    KeyCode::Backspace => {
+                        state.filter.pop();
+                        state.cursor = 0;
+                        self.mode = Mode::FieldSelect(state);
+                    }
+                    KeyCode::Char(c) => {
+                        state.filter.push(c);
+                        state.cursor = 0;
+                        self.mode = Mode::FieldSelect(state);
+                    }
+                    _ => {
+                        self.mode = Mode::FieldSelect(state);
+                    }
+                }
+            }
             Mode::Normal => {}
         }
     }
@@ -755,6 +906,26 @@ impl App {
     }
 
     fn handle_launch_key(&mut self, code: KeyCode) {
+        // ↓ on a text field opens the field selector if options are available
+        if code == KeyCode::Down && self.launch.focused.is_text_input() {
+            let options = load_field_options(self.launch.focused, &self.launch, &self.sys.ai_root);
+            if !options.is_empty() {
+                let filter = self
+                    .launch
+                    .focused_input_mut()
+                    .map(|i| i.as_str().to_string())
+                    .unwrap_or_default();
+                self.mode = Mode::FieldSelect(FieldSelectState {
+                    field: self.launch.focused,
+                    options,
+                    cursor: 0,
+                    filter,
+                });
+                return;
+            }
+            // No options — fall through to next-field navigation
+        }
+
         // Route to focused text input first
         let consumed = {
             if let Some(input) = self.launch.focused_input_mut() {
@@ -771,11 +942,19 @@ impl App {
             KeyCode::Up => self.launch.focused = self.launch.focused.prev(),
             KeyCode::Down => self.launch.focused = self.launch.focused.next(),
             KeyCode::Left => {
-                let n = ENGINES.len();
-                self.launch.engine_idx = (self.launch.engine_idx + n - 1) % n;
+                if self.launch.focused == LaunchField::Workspace {
+                    self.launch.cycle_workspace_left();
+                } else {
+                    let n = ENGINES.len();
+                    self.launch.engine_idx = (self.launch.engine_idx + n - 1) % n;
+                }
             }
             KeyCode::Right => {
-                self.launch.engine_idx = (self.launch.engine_idx + 1) % ENGINES.len();
+                if self.launch.focused == LaunchField::Workspace {
+                    self.launch.cycle_workspace_right();
+                } else {
+                    self.launch.engine_idx = (self.launch.engine_idx + 1) % ENGINES.len();
+                }
             }
             KeyCode::Char(' ') => {
                 if self.launch.focused == LaunchField::NoTmux {
@@ -819,6 +998,55 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             _ => {}
         }
+    }
+}
+
+// ── field options loader ──────────────────────────────────────────────────────
+
+pub fn load_field_options(
+    field: LaunchField,
+    launch: &LaunchState,
+    ai_root: &Path,
+) -> Vec<String> {
+    fn subdirs(dir: &Path) -> Vec<String> {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return vec![];
+        };
+        let mut names: Vec<String> = rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| !n.starts_with('.'))
+            .collect();
+        names.sort();
+        names
+    }
+
+    match field {
+        LaunchField::Tenant => subdirs(&ai_root.join("tenants")),
+        LaunchField::Project => {
+            let tenant = launch.tenant.as_str();
+            if tenant.is_empty() {
+                return vec![];
+            }
+            subdirs(&ai_root.join("tenants").join(tenant).join("projects"))
+        }
+        LaunchField::Repository => {
+            let tenant = launch.tenant.as_str();
+            let project = launch.project.as_str();
+            if tenant.is_empty() || project.is_empty() {
+                return vec![];
+            }
+            subdirs(
+                &ai_root
+                    .join("tenants")
+                    .join(tenant)
+                    .join("projects")
+                    .join(project)
+                    .join("repositories"),
+            )
+        }
+        _ => vec![],
     }
 }
 

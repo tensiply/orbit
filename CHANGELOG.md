@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `orbit ls [WORKSPACE] [TENANT] [PROJECT]` — browse workspace / tenant / project / repository hierarchy.
+- `orbit completions <shell>` — print shell completion scripts for bash, zsh, and fish.
+- `orbit doctor` — environment diagnostics: checks tmux, AI engines, AI root, daemon socket, and install directory.
+- `orbit launch .` (and `orbit .`) — auto-resolves scope from the current working directory by walking ancestors to find the workspace root and mapping path segments to tenant / project / repository.
+- Daemon session launch via IPC: `orbit launch` now tries to route through the daemon using the new `LaunchSession` request; daemon spawns a detached tmux session without replacing its own process.
+- Daemon auto-start: `orbit launch` starts the daemon automatically if the socket is not present, then routes through it and attaches to the resulting tmux session.
+- TUI Launch tab — **workspace selector**: cycles between detected workspaces with `[←→]`; switching resets tenant / project / repository fields.
+- TUI Launch tab — **dropdown selectors**: pressing `[↓]` on the Tenant, Project, or Repository field opens a filterable popup populated from the workspace filesystem.
+- TUI Sessions tab — **workspace tree**: when no sessions are running, the tab shows the tenant → project → repository tree for the current workspace.
+
 ## [0.4.1] - 2026-06-29
 
 ### Fixed

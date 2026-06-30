@@ -1,4 +1,4 @@
-use crate::app::{AddMcpField, AddMcpState, McpScope};
+use crate::app::{AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope};
 use crate::mcp::McpEntry;
 use crate::widget::TextInput;
 use orbit_core::session::Session;
@@ -378,6 +378,71 @@ fn mcp_confirm_line(focused: bool) -> Line<'static> {
             ),
         ])
     }
+}
+
+// ── field select popup ────────────────────────────────────────────────────────
+
+pub fn render_field_select(f: &mut Frame, area: Rect, state: &FieldSelectState) {
+    let field_name = match state.field {
+        LaunchField::Tenant => "Tenant",
+        LaunchField::Project => "Project",
+        LaunchField::Repository => "Repository",
+        _ => "Select",
+    };
+    let title = format!("Select {field_name}");
+
+    let filtered = state.filtered_options();
+    let n_opts = filtered.len();
+    let height = (n_opts as u16 + 6).min(20).max(8);
+    let popup_area = centered_rect(44, height, area);
+
+    let mut lines: Vec<Line> = vec![Line::from("")];
+
+    // Filter line
+    let filter_display = if state.filter.is_empty() {
+        Span::styled("  (type to filter)", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(
+            format!("  filter: {}", state.filter),
+            Style::default().fg(Color::Yellow),
+        )
+    };
+    lines.push(Line::from(filter_display));
+    lines.push(Line::from(""));
+
+    // Option list
+    for (i, opt) in filtered.iter().enumerate() {
+        let selected = i == state.cursor;
+        let (bullet, style) = if selected {
+            (
+                "▶ ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            ("  ", Style::default().fg(Color::White))
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {bullet}"), style),
+            Span::styled(opt.to_string(), style),
+        ]));
+    }
+
+    if n_opts == 0 {
+        lines.push(Line::from(Span::styled(
+            "  (no options found)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  ↑↓ navigate  Enter select  Esc cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    render_popup(f, popup_area, &title, lines);
 }
 
 fn pad42(s: &str) -> String {

@@ -25,6 +25,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .constraints([
             Constraint::Length(1), // spacer
             Constraint::Length(1), // Engine row
+            Constraint::Length(1), // Workspace row
             Constraint::Length(1), // spacer
             Constraint::Length(3), // Tenant
             Constraint::Length(3), // Project
@@ -37,16 +38,13 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         ])
         .split(inner);
 
-    // Engine selector row
     render_engine_row(f, app, rows[1]);
-    // Text fields
-    render_text_field(f, app, rows[3], LaunchField::Tenant);
-    render_text_field(f, app, rows[4], LaunchField::Project);
-    render_text_field(f, app, rows[5], LaunchField::Repository);
-    // NoTmux toggle
-    render_notmux(f, app, rows[7]);
-    // Launch button
-    render_launch_button(f, app, rows[9]);
+    render_workspace_row(f, app, rows[2]);
+    render_text_field(f, app, rows[4], LaunchField::Tenant);
+    render_text_field(f, app, rows[5], LaunchField::Project);
+    render_text_field(f, app, rows[6], LaunchField::Repository);
+    render_notmux(f, app, rows[8]);
+    render_launch_button(f, app, rows[10]);
 }
 
 fn render_engine_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
@@ -59,7 +57,7 @@ fn render_engine_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let mut spans = vec![Span::styled("  Engine:  ", label_style)];
+    let mut spans = vec![Span::styled("  Engine:    ", label_style)];
 
     for (i, engine) in ENGINES.iter().enumerate() {
         let selected = i == app.launch.engine_idx;
@@ -81,6 +79,53 @@ fn render_engine_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     }
 
     if focused {
+        spans.push(Span::styled("  [←→]", Style::default().fg(Color::DarkGray)));
+    }
+
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn render_workspace_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let focused = app.launch.focused == LaunchField::Workspace;
+    let label_style = if focused {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let ws_name = app.launch.workspace_name();
+    let ws_style = if focused {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let n = app.launch.workspaces.len();
+    let mut spans = vec![
+        Span::styled("  Workspace: ", label_style),
+        Span::styled("● ", ws_style),
+        Span::styled(
+            if ws_name.is_empty() {
+                "(none)".to_string()
+            } else {
+                ws_name.to_string()
+            },
+            ws_style,
+        ),
+    ];
+
+    if n > 1 {
+        spans.push(Span::styled(
+            format!("  ({n})"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    if focused && n > 1 {
         spans.push(Span::styled("  [←→]", Style::default().fg(Color::DarkGray)));
     }
 
@@ -163,8 +208,16 @@ fn render_text_field(
 
     let inner = box_block.inner(box_area);
     f.render_widget(box_block, box_area);
+
+    // Append ↓ hint when focused (indicates selector is available via ↓)
+    let rendered_text = if focused {
+        format!("{display_text}")
+    } else {
+        display_text.clone()
+    };
+
     f.render_widget(
-        Paragraph::new(Span::styled(display_text, text_style)),
+        Paragraph::new(Span::styled(rendered_text, text_style)),
         inner,
     );
 }

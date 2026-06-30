@@ -1,0 +1,17 @@
+use anyhow::Result;
+use clap::{Args, CommandFactory};
+use clap_complete::{Shell, generate};
+use std::io;
+
+#[derive(Debug, Args)]
+pub struct CompletionsArgs {
+    /// Shell to generate completions for
+    #[arg(value_enum)]
+    pub shell: Shell,
+}
+
+pub fn run(args: CompletionsArgs) -> Result<()> {
+    let mut cmd = crate::Cli::command();
+    generate(args.shell, &mut cmd, "orbit", &mut io::stdout());
+    Ok(())
+}

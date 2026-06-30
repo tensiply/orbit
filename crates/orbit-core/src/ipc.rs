@@ -33,6 +33,14 @@ pub enum Request {
     CleanSessions,
     Status,
     Shutdown,
+    LaunchSession {
+        workspace: Option<String>,
+        tenant: Option<String>,
+        project: Option<String>,
+        repository: Option<String>,
+        engine: String,
+        no_tmux: bool,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,6 +59,10 @@ pub enum Response {
         uptime_secs: u64,
         session_count: usize,
         pid: u32,
+    },
+    Launched {
+        tmux_name: String,
+        session_id: String,
     },
     Ok,
     Error {

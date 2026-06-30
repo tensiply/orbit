@@ -191,6 +191,134 @@ fn set_env(scope: &OrbitScope, engine: Engine, paths: &runtime::RuntimePaths) {
     }
 }
 
+/// Apply engine env vars to a `Command` instead of the current process.
+/// Used by the daemon to avoid polluting its own environment.
+fn apply_env_to_cmd(
+    cmd: &mut Command,
+    scope: &OrbitScope,
+    engine: Engine,
+    paths: &runtime::RuntimePaths,
+) {
+    cmd.env("XDG_CONFIG_HOME", &paths.xdg_config_home)
+        .env("XDG_DATA_HOME", &paths.xdg_data)
+        .env("XDG_CACHE_HOME", &paths.xdg_cache)
+        .env("XDG_STATE_HOME", &paths.xdg_state)
+        .env("AI_ENGINE", engine.as_str())
+        .env("AI_WORKSPACE_ROOT", &scope.workspace_root)
+        .env("AI_CONTEXT_ROOT", &scope.ai_context_root)
+        .env("AI_GLOBAL_ROOT", &scope.global_ai_root)
+        .env("AI_TENANT", &scope.tenant)
+        .env("AI_PROJECT", &scope.project)
+        .env("AI_REPOSITORY", &scope.repository)
+        .env("AI_GLOBAL_MODE", if scope.global_mode { "1" } else { "0" });
+
+    match engine {
+        Engine::Opencode => {
+            cmd.env("OPENCODE_CONFIG", &paths.config_file);
+        }
+        Engine::Gemini => {
+            cmd.env("GEMINI_CLI_HOME", &paths.runtime_dir)
+                .env("GEMINI_CLI_SYSTEM_SETTINGS_PATH", &paths.config_file);
+        }
+        Engine::Claude => {}
+    }
+}
+
+// ── daemon-side spawn ─────────────────────────────────────────────────────────
+
+/// Spawn a detached tmux session containing the engine. Returns the registered
+/// `Session` on success. Intended for daemon use — does NOT exec() the current
+/// process and does NOT call `std::env::set_var`.
+pub fn spawn_background(
+    scope: &OrbitScope,
+    config: &MergedConfig,
+    engine: Engine,
+) -> Result<orbit_core::session::Session> {
+    // 1. Runtime dirs
+    let paths = runtime::setup(scope, engine)?;
+
+    // 2. Agent materialisation
+    agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
+
+    // 3. Write config file
+    let rendered = render::render(config, engine);
+    fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
+
+    // 4. Tmux session name
+    let tmux_name = tmux_session_name(scope, engine);
+
+    if tmux::session_exists(&tmux_name) {
+        // Already running — return the existing session name so client can attach
+        let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
+        let session = orbit_core::session::Session::new(
+            pid,
+            engine.as_str(),
+            &scope.tenant,
+            &scope.project,
+            &scope.repository,
+            scope.work_dir.clone(),
+            scope.global_mode,
+            Some(tmux_name),
+        );
+        return Ok(session);
+    }
+
+    // 5. Build command
+    let (bin, extra_args) = engine_cmd(engine, &paths.config_file);
+    let mut cmd = Command::new("tmux");
+    cmd.arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(&tmux_name)
+        .arg("--")
+        .arg(&bin);
+    for arg in &extra_args {
+        cmd.arg(arg);
+    }
+    apply_env_to_cmd(&mut cmd, scope, engine, &paths);
+    cmd.current_dir(&scope.work_dir);
+
+    let status = cmd.status()?;
+    if !status.success() {
+        bail!("failed to spawn tmux session '{tmux_name}'");
+    }
+
+    // 6. Get pane PID
+    let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
+
+    // 7. Register session
+    let session = orbit_core::session::Session::new(
+        pid,
+        engine.as_str(),
+        &scope.tenant,
+        &scope.project,
+        &scope.repository,
+        scope.work_dir.clone(),
+        scope.global_mode,
+        Some(tmux_name),
+    );
+    if let Err(e) = session.save() {
+        tracing::warn!("could not save session: {e}");
+    }
+
+    Ok(session)
+}
+
+fn tmux_pane_pid(session_name: &str) -> Option<u32> {
+    let out = Command::new("tmux")
+        .args(["list-panes", "-t", session_name, "-F", "#{pane_pid}"])
+        .output()
+        .ok()?;
+    String::from_utf8(out.stdout)
+        .ok()?
+        .trim()
+        .lines()
+        .next()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
