@@ -100,30 +100,30 @@ orbit organises context across four scope levels. Each is a positional argument 
 
 ```
 ~/ (home)
-├── AI/                               ← global AI root (governance repo, orbit launch AI ...)
-│   ├── mcp.json                      # workspace-wide MCP servers
-│   ├── orbit.toml                    # workspace configuration
+├── AI/                                   ← global AI root (governance repo)
+│   ├── mcp.json                          # workspace-wide MCP servers
+│   ├── orbit.toml                        # workspace configuration
 │   └── tenants/
-│       └── acme/                     ← tenant     (orbit launch AI acme ...)
-│           ├── mcp.json              # tenant MCP servers
-│           ├── source-of-truth/      # tenant instructions & agents
+│       └── <TENANT>/                     ← tenant
+│           ├── mcp.json                  # tenant MCP servers
+│           ├── source-of-truth/          # tenant instructions & agents
 │           └── projects/
-│               └── api/              ← project    (orbit launch AI acme api ...)
+│               └── <PROJECT>/            ← project
 │                   ├── source-of-truth/
 │                   └── repositories/
-│                       └── backend/  ← repository (orbit launch AI acme api backend)
+│                       └── <REPO>/       ← repository
 │                           └── source-of-truth/
 │
-└── BeFra/                            ← workspace root (orbit launch BeFra ...)
-    ├── AI/                           ← workspace AI context (optional, see below)
+└── <WORKSPACE>/                          ← workspace root
+    ├── AI/                               ← workspace AI context (optional, see below)
     │   └── tenants/
-    │       └── devteam/
+    │       └── <TENANT>/
     │           ├── source-of-truth/
     │           └── projects/
-    │               └── core/
-    └── devteam/                      ← actual code lives here (not inside AI/)
-        └── core/
-            └── myrepo/
+    │               └── <PROJECT>/
+    └── <TENANT>/                         ← actual code lives here (not inside AI/)
+        └── <PROJECT>/
+            └── <REPO>/
 ```
 
 ### Two concepts: global AI root vs workspace root
@@ -131,19 +131,19 @@ orbit organises context across four scope levels. Each is a positional argument 
 | Concept | Path | Purpose |
 |---|---|---|
 | **Global AI root** | `~/AI` (configured via `ai_root`) | Governance repo. Always loaded as shared context for every workspace. |
-| **Workspace root** | `~/BeFra`, `~/Work`, … | A working area. Each workspace has its own tenants, projects, and repos. |
+| **Workspace root** | `~/<WORKSPACE>` | A working area. Each workspace has its own tenants, projects, and repos. |
 
 **`~/AI` is always loaded** regardless of which workspace you launch. It provides the global baseline — shared MCP servers, global agent definitions, and the default tenant when no other is specified.
 
 ### How orbit locates AI context inside a workspace
 
-When you run `orbit launch BeFra devteam`, orbit resolves paths in this order:
+When you run `orbit launch <WORKSPACE> <TENANT>`, orbit resolves paths in this order:
 
-1. `workspace_root` = `~/BeFra`
-2. **AI context root**: if `~/BeFra/AI/tenants/` exists → uses `~/BeFra/AI/`; otherwise falls back to `~/BeFra/` itself
-3. `code_root` = `~/BeFra/devteam/` (where actual code repos live)
+1. `workspace_root` = `~/<WORKSPACE>`
+2. **AI context root**: if `~/<WORKSPACE>/AI/tenants/` exists → uses `~/<WORKSPACE>/AI/`; otherwise falls back to `~/<WORKSPACE>/` itself
+3. `code_root` = `~/<WORKSPACE>/<TENANT>/` (where actual code repos live)
 
-So if you have a separate AI config directory for BeFra, place it at `~/BeFra/AI/tenants/...`. If you prefer a flat layout, put `tenants/` directly inside `~/BeFra/`.
+So if you want workspace-specific AI config, place it at `~/<WORKSPACE>/AI/tenants/...`. If you prefer a flat layout, put `tenants/` directly inside `~/<WORKSPACE>/`.
 
 ### What gets created
 
@@ -154,9 +154,9 @@ orbit init <governance-url>   # clones a governance repo as ~/AI (or configured 
 orbit init --scaffold         # creates ~/AI as a local-only directory (no git)
 ```
 
-For additional workspaces (`~/BeFra`, etc.) you create the directory structure manually or via your own governance repo.
+For additional workspaces you create the directory structure manually or via your own governance repo.
 
-When you run `orbit launch BeFra devteam core myrepo`, orbit:
+When you run `orbit launch <WORKSPACE> <TENANT> <PROJECT> <REPO>`, orbit:
 1. Resolves each scope level to a real directory (case-insensitive)
 2. Loads `~/AI` as global context, then merges workspace → tenant → project → repo layers
 3. Merges MCP servers from all layers
