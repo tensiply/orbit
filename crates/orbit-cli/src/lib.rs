@@ -39,6 +39,8 @@ pub enum Commands {
     Ls(commands::ls::LsArgs),
     /// Print shell completion script
     Completions(commands::completions::CompletionsArgs),
+    /// Manage MCP servers: list, enable, disable, info
+    Mcp(commands::mcp::McpArgs),
     /// Manage orbit plugins (install, list, wrap)
     Plugins(commands::plugins::PluginsArgs),
     /// Run environment diagnostics
@@ -92,6 +94,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Daemon(args)) => commands::daemon::run(args).await,
         Some(Commands::Ls(args)) => commands::ls::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args),
+        Some(Commands::Mcp(args)) => commands::mcp::run(args),
         Some(Commands::Plugins(args)) => commands::plugins::run(args),
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),

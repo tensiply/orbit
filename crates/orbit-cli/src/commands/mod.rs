@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod init;
 pub mod launch;
 pub mod ls;
+pub mod mcp;
 pub mod mode;
 pub mod plugins;
 pub mod session;
