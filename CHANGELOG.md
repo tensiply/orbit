@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-01
+
+### Added
+
+- **Terminal title** — `orbit launch` now sets the terminal window/tab title via an xterm OSC escape (`orbit · <engine> · <tenant>/<project>/<repo>`, or `orbit · <engine>` in global mode). No-ops when stdout is not a TTY. Also sets the tmux window name (`-n <title>`) when launching in a new tmux session.
+
+### Fixed
+
+- `orbit setup` used a direct file write that could trigger `ETXTBSY` when orbit itself is the running binary being replaced. Now uses an atomic rename (write to a temp file, then `rename`) to avoid the error.
+
+### CI
+
+- Restructured GitHub Actions workflows: added a CI gate job, matrix tests across Linux and macOS, and Dependabot configuration for automated dependency updates.
+
 ## [0.7.0] - 2026-06-30
 
 ### Added
