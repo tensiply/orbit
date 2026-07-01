@@ -33,6 +33,7 @@ const VALID_KEYS: &[&str] = &[
     "workspace.ai_root",
     "engine.default",
     "engine.default_tenant",
+    "engine.default_workspace",
     "install.dir",
 ];
 
@@ -89,6 +90,7 @@ fn get_value(cfg: &UserConfig, key: &str) -> Result<String> {
         "workspace.ai_root" => cfg.workspace.ai_root.to_string_lossy().into_owned(),
         "engine.default" => cfg.engine.default.clone(),
         "engine.default_tenant" => cfg.engine.default_tenant.clone(),
+        "engine.default_workspace" => cfg.engine.default_workspace.clone(),
         "install.dir" => cfg.install.dir.to_string_lossy().into_owned(),
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",
@@ -100,11 +102,37 @@ fn get_value(cfg: &UserConfig, key: &str) -> Result<String> {
 fn set_value(cfg: &mut UserConfig, key: &str, value: &str) -> Result<()> {
     match key {
         "workspace.ai_root" => cfg.workspace.ai_root = PathBuf::from(value),
-        "engine.default" => match value {
-            "opencode" | "gemini" | "claude" => cfg.engine.default = value.to_string(),
-            other => bail!("invalid engine: {other}  (valid: opencode, gemini, claude)"),
-        },
+        "engine.default" => {
+            let valid: Vec<String> = orbit_core::catalog::engines()
+                .into_iter()
+                .map(|e| e.name)
+                .collect();
+            if !valid.contains(&value.to_string()) {
+                bail!(
+                    "invalid engine: {value}  (valid: {})",
+                    valid.join(", ")
+                );
+            }
+            cfg.engine.default = value.to_string();
+        }
         "engine.default_tenant" => cfg.engine.default_tenant = value.to_string(),
+        "engine.default_workspace" => {
+            if value.is_empty() {
+                cfg.engine.default_workspace = String::new();
+            } else {
+                let home = directories::BaseDirs::new()
+                    .map(|b| b.home_dir().to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("/"));
+                let ws_path = home.join(value);
+                if !ws_path.is_dir() {
+                    bail!(
+                        "workspace not found: ~/{value}\n\n  Expected a directory at {}",
+                        ws_path.display()
+                    );
+                }
+                cfg.engine.default_workspace = value.to_string();
+            }
+        }
         "install.dir" => cfg.install.dir = PathBuf::from(value),
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",

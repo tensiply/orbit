@@ -1,0 +1,47 @@
+[[mcps]]
+name = "filesystem"
+description = "Read and write files on the local filesystem"
+command = ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+required_vars = []
+optional_vars = []
+
+[[mcps]]
+name = "github"
+description = "GitHub integration — issues, pull requests, repositories"
+command = ["npx", "-y", "@modelcontextprotocol/server-github"]
+required_vars = [
+  { name = "GITHUB_TOKEN", description = "GitHub personal access token with repo scope", secret = true },
+]
+optional_vars = []
+
+[[mcps]]
+name = "postgres"
+description = "PostgreSQL database access"
+command = ["npx", "-y", "@modelcontextprotocol/server-postgres"]
+required_vars = [
+  { name = "DATABASE_URL", description = "Connection string (postgresql://user:pass@host/db)", secret = true },
+]
+optional_vars = []
+
+[[mcps]]
+name = "sqlite"
+description = "SQLite database access"
+command = ["npx", "-y", "@modelcontextprotocol/server-sqlite"]
+required_vars = [
+  { name = "DB_PATH", description = "Path to the SQLite database file", secret = false },
+]
+optional_vars = []
+
+[[mcps]]
+name = "fetch"
+description = "Fetch content from URLs (web pages, APIs)"
+command = ["npx", "-y", "@modelcontextprotocol/server-fetch"]
+required_vars = []
+optional_vars = []
+
+[[mcps]]
+name = "context7"
+description = "Up-to-date library and framework documentation"
+command = ["npx", "-y", "@upstash/context7-mcp@latest"]
+required_vars = []
+optional_vars = []

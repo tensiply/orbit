@@ -1,7 +1,11 @@
 use anyhow::Result;
 use clap::Args;
-use orbit_core::user_config::UserConfig;
+use orbit_core::{
+    catalog::{self, McpEntry},
+    user_config::UserConfig,
+};
 use std::{
+    collections::HashMap,
     fs,
     io::{self, Write},
     path::PathBuf,
@@ -24,6 +28,10 @@ pub struct SetupArgs {
     #[arg(long)]
     pub default_tenant: Option<String>,
 
+    /// Default workspace name (leave empty to always specify it explicitly)
+    #[arg(long)]
+    pub default_workspace: Option<String>,
+
     /// Directory where orbit binary is installed [default: ~/.local/bin]
     #[arg(long)]
     pub install_dir: Option<PathBuf>,
@@ -43,6 +51,10 @@ pub struct SetupArgs {
     /// Skip plugin installation prompts
     #[arg(long)]
     pub no_plugins: bool,
+
+    /// Skip MCP configuration prompts
+    #[arg(long)]
+    pub no_mcps: bool,
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
@@ -51,6 +63,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     println!();
 
     let current = UserConfig::load();
+    let engines = catalog::engines();
+    let engine_names: Vec<&str> = engines.iter().map(|e| e.name.as_str()).collect();
+    let engine_names_str = engine_names.join(" / ");
 
     // ── collect values (flags → interactive → default) ────────────────────────
     let ai_root = match args.ai_root {
@@ -72,7 +87,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
             if args.yes {
                 default.clone()
             } else {
-                ask("Default engine (opencode / gemini / claude)", default)?
+                ask(&format!("Default engine ({})", engine_names_str), default)?
             }
         }
     };
@@ -98,6 +113,27 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         }
     };
 
+    let default_workspace = match args.default_workspace {
+        Some(w) => w,
+        None => {
+            let default = if current.engine.default_workspace.is_empty() {
+                "(none)"
+            } else {
+                &current.engine.default_workspace
+            };
+            if args.yes {
+                if default == "(none)" {
+                    String::new()
+                } else {
+                    default.to_string()
+                }
+            } else {
+                let val = ask("Default workspace name (leave blank to skip)", default)?;
+                if val == "(none)" { String::new() } else { val }
+            }
+        }
+    };
+
     let install_dir = match args.install_dir {
         Some(d) => d,
         None => {
@@ -115,6 +151,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     cfg.workspace.ai_root = ai_root.clone();
     cfg.engine.default = default_engine.clone();
     cfg.engine.default_tenant = default_tenant.clone();
+    cfg.engine.default_workspace = default_workspace.clone();
     cfg.install.dir = install_dir.clone();
 
     if args.dry_run {
@@ -168,6 +205,12 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         setup_plugins(args.yes)?;
     }
 
+    // ── MCP configuration ─────────────────────────────────────────────────────
+    if !args.no_mcps && !args.yes {
+        println!();
+        setup_mcps()?;
+    }
+
     // ── next steps ────────────────────────────────────────────────────────────
     println!();
     if !ai_root.exists() {
@@ -187,31 +230,11 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
     println!("  Checking engines...");
     println!();
 
-    let engines = [
-        EngineInfo {
-            name: "opencode",
-            install_cmd: &["npm", "install", "-g", "opencode-ai"],
-            auth_cmd: &["opencode", "auth"],
-            auth_hint: "Run `opencode auth` or set OPENAI_API_KEY / provider keys",
-        },
-        EngineInfo {
-            name: "gemini",
-            install_cmd: &["npm", "install", "-g", "@google/gemini-cli"],
-            auth_cmd: &["gemini", "auth"],
-            auth_hint: "Run `gemini auth` or set GOOGLE_API_KEY / GEMINI_API_KEY",
-        },
-        EngineInfo {
-            name: "claude",
-            install_cmd: &["npm", "install", "-g", "@anthropic-ai/claude-code"],
-            auth_cmd: &["claude", "auth", "login"],
-            auth_hint: "Run `claude auth login` or set ANTHROPIC_API_KEY",
-        },
-    ];
-
+    let engines = catalog::engines();
     let has_npm = bin_available("npm");
 
     for engine in &engines {
-        let installed = bin_available(engine.name);
+        let installed = bin_available(&engine.bin);
 
         if installed {
             println!("  \x1b[32m✓\x1b[0m  {}", engine.name);
@@ -220,42 +243,128 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
 
             if !has_npm {
                 println!("      install Node.js first: https://nodejs.org");
-                continue;
-            }
-
-            let should_install = if yes || engine.name == default_engine {
-                true
             } else {
-                confirm(&format!("    Install {}?", engine.name), false)?
-            };
+                let should_install = yes || engine.name == default_engine
+                    || confirm(&format!("    Install {}?", engine.name), false)?;
 
-            if should_install {
-                print!("    Installing {}...", engine.name);
-                io::stdout().flush()?;
-                let status = Command::new(engine.install_cmd[0])
-                    .args(&engine.install_cmd[1..])
-                    .status();
-                match status {
-                    Ok(s) if s.success() => println!(" done"),
-                    _ => println!(" \x1b[31mfailed\x1b[0m — run manually: {}", engine.install_cmd.join(" ")),
+                if should_install {
+                    print!("    Installing {}...", engine.name);
+                    io::stdout().flush()?;
+                    let install_cmd: Vec<&str> = {
+                        let mut v = vec!["npm", "install", "-g"];
+                        v.push(engine.npm_package.as_str());
+                        v
+                    };
+                    let status = Command::new(install_cmd[0])
+                        .args(&install_cmd[1..])
+                        .status();
+                    match status {
+                        Ok(s) if s.success() => println!(" done"),
+                        _ => println!(
+                            " \x1b[31mfailed\x1b[0m — run manually: npm install -g {}",
+                            engine.npm_package
+                        ),
+                    }
                 }
             }
         }
 
-        // Auth hint (always shown — we can't reliably detect auth state)
         println!("      \x1b[2mauth: {}\x1b[0m", engine.auth_hint);
     }
 
     Ok(())
 }
 
-struct EngineInfo {
-    name: &'static str,
-    install_cmd: &'static [&'static str],
-    #[allow(dead_code)]
-    auth_cmd: &'static [&'static str],
-    auth_hint: &'static str,
+// ── MCP setup ─────────────────────────────────────────────────────────────────
+
+fn setup_mcps() -> Result<()> {
+    let mcps = catalog::mcps();
+
+    println!("  Available MCPs:");
+    println!();
+    for (i, mcp) in mcps.iter().enumerate() {
+        println!("  {}. {}  —  {}", i + 1, mcp.name, mcp.description);
+    }
+    println!();
+
+    if !confirm("  Configure any MCPs now?", false)? {
+        println!("  Skipped. Use `orbit mcp <name> enable` to configure later.");
+        return Ok(());
+    }
+
+    let mut selected: Vec<&McpEntry> = Vec::new();
+    for mcp in &mcps {
+        if confirm(&format!("    Enable {}?", mcp.name), false)? {
+            selected.push(mcp);
+        }
+    }
+
+    if selected.is_empty() {
+        println!("  No MCPs selected.");
+        return Ok(());
+    }
+
+    // Collect vars and build mcp.json entries
+    let mut mcp_config: HashMap<String, serde_json::Value> = HashMap::new();
+
+    for mcp in &selected {
+        let mut env: HashMap<String, String> = HashMap::new();
+
+        for var in &mcp.required_vars {
+            let default = var.default.as_deref().unwrap_or("");
+            let prompt = if var.secret {
+                format!("    {} (secret)", var.name)
+            } else {
+                var.name.clone()
+            };
+            let val = ask(&prompt, default)?;
+            if !val.is_empty() {
+                env.insert(var.name.clone(), val);
+            }
+        }
+
+        for var in &mcp.optional_vars {
+            let default = var.default.as_deref().unwrap_or("");
+            let val = ask(&format!("    {} (optional)", var.name), default)?;
+            if !val.is_empty() && val != default {
+                env.insert(var.name.clone(), val);
+            }
+        }
+
+        let (command, args) = mcp.command.split_first().unwrap_or((&mcp.name, &[]));
+        let mut entry = serde_json::json!({
+            "command": command,
+            "args": args,
+        });
+        if !env.is_empty() {
+            entry["env"] = serde_json::to_value(&env)?;
+        }
+        mcp_config.insert(mcp.name.clone(), entry);
+    }
+
+    // Write to ~/.config/orbit/mcps.json
+    let config_dir = orbit_core::user_config::UserConfig::path()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mcps_path = config_dir.join("mcps.json");
+    let existing: HashMap<String, serde_json::Value> = if mcps_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&mcps_path)?).unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
+    let merged: serde_json::Map<String, serde_json::Value> =
+        existing.into_iter().chain(mcp_config).collect();
+
+    fs::write(&mcps_path, serde_json::to_string_pretty(&merged)?)?;
+    println!();
+    println!("  MCPs saved → {}", mcps_path.display());
+
+    Ok(())
 }
+
+// ── helpers ────────────────────────────────────────────────────────────────────
 
 fn bin_available(bin: &str) -> bool {
     Command::new("which")
@@ -266,8 +375,6 @@ fn bin_available(bin: &str) -> bool {
         .map(|s| s.success())
         .unwrap_or(false)
 }
-
-// ── prompt helpers ────────────────────────────────────────────────────────────
 
 fn ask(question: &str, default: &str) -> Result<String> {
     print!("  {question} [{default}]: ");

@@ -164,17 +164,15 @@ pub fn load_all() -> Vec<Plugin> {
     if let Ok(dir) = fs::read_dir(user_plugins_dir()) {
         let mut paths: Vec<_> = dir
             .flatten()
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "toml"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
             .collect();
         paths.sort_by_key(|e| e.path());
 
         for entry in paths {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                if let Ok(p) = toml::from_str::<Plugin>(&content) {
-                    plugins.retain(|existing| existing.name != p.name);
-                    plugins.push(p);
-                }
-            }
+            let Ok(content) = fs::read_to_string(entry.path()) else { continue };
+            let Ok(p) = toml::from_str::<Plugin>(&content) else { continue };
+            plugins.retain(|existing| existing.name != p.name);
+            plugins.push(p);
         }
     }
 

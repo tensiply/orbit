@@ -5,6 +5,7 @@ fn main() {
     let plugins_dir = Path::new(&manifest_dir).join("../../plugins");
 
     println!("cargo:rerun-if-changed=../../plugins");
+    println!("cargo:rerun-if-changed=../../config/catalog");
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("builtin_plugins.rs");
@@ -14,7 +15,7 @@ fn main() {
     if let Ok(dir) = fs::read_dir(&plugins_dir) {
         let mut paths: Vec<_> = dir
             .flatten()
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "toml"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
             .collect();
         paths.sort_by_key(|e| e.path());
 

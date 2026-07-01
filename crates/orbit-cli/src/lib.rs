@@ -48,7 +48,21 @@ impl Cli {
     }
 }
 
+fn needs_setup(cmd: &Option<Commands>) -> bool {
+    !matches!(
+        cmd,
+        Some(Commands::Setup(_)) | Some(Commands::Completions(_)) | Some(Commands::Update(_)) | None
+    )
+}
+
 pub async fn run(cli: Cli) -> Result<()> {
+    if needs_setup(&cli.command) && !UserConfig::path().exists() {
+        eprintln!();
+        eprintln!("  No config found. Run `orbit setup` to get started.");
+        eprintln!();
+        std::process::exit(1);
+    }
+
     match cli.command {
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
         Some(Commands::Config(args)) => commands::config::run(args),

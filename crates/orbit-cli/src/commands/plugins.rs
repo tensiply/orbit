@@ -485,7 +485,7 @@ fn resolve_engine(engine: Option<&str>, supported: &[String]) -> Result<String> 
     let cfg = orbit_core::user_config::UserConfig::load();
     let default = cfg.engine.default.clone();
 
-    if !supported.is_empty() && !supported.iter().any(|s| *s == default) {
+    if !supported.is_empty() && !supported.contains(&default) {
         bail!(
             "default engine '{default}' not supported by this plugin\nsupported: {}\nPass --engine <name> to override.",
             supported.join(", ")
@@ -571,25 +571,23 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
             confirm(&format!("    Install {}?", p.name), false)?
         };
 
-        if should_install {
-            if let Some(m) = p.best_install_method() {
-                println!("    Installing {}...", p.name);
-                let status = Command::new(&m.cmd[0]).args(&m.cmd[1..]).status();
-                match status {
-                    Ok(s) if s.success() => {
-                        println!("    \x1b[32m✓\x1b[0m done");
-                        if p.has_mcp() {
-                            println!(
-                                "      Run `orbit plugins enable {}` to activate MCP servers.",
-                                p.name
-                            );
-                        }
+        if should_install && let Some(m) = p.best_install_method() {
+            println!("    Installing {}...", p.name);
+            let status = Command::new(&m.cmd[0]).args(&m.cmd[1..]).status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("    \x1b[32m✓\x1b[0m done");
+                    if p.has_mcp() {
+                        println!(
+                            "      Run `orbit plugins enable {}` to activate MCP servers.",
+                            p.name
+                        );
                     }
-                    _ => println!(
-                        "    \x1b[31m✗\x1b[0m failed — run: {}",
-                        m.cmd.join(" ")
-                    ),
                 }
+                _ => println!(
+                    "    \x1b[31m✗\x1b[0m failed — run: {}",
+                    m.cmd.join(" ")
+                ),
             }
         }
 

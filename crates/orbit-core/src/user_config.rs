@@ -31,6 +31,8 @@ pub struct EngineSection {
     pub default: String,
     /// Default tenant when none is specified on the CLI.
     pub default_tenant: String,
+    /// Default workspace name when none is specified on the CLI.
+    pub default_workspace: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +68,7 @@ impl Default for EngineSection {
         Self {
             default: "opencode".to_string(),
             default_tenant: String::new(),
+            default_workspace: String::new(),
         }
     }
 }

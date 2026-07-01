@@ -1,0 +1,29 @@
+[[engines]]
+name = "opencode"
+bin = "opencode"
+npm_package = "opencode-ai"
+description = "Agentic coding engine — supports multiple AI providers"
+auth_hint = "Run `opencode auth` or set OPENAI_API_KEY / provider keys"
+auth_cmd = "opencode auth"
+auth_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
+auth_config_dirs = [".config/opencode"]
+
+[[engines]]
+name = "gemini"
+bin = "gemini"
+npm_package = "@google/gemini-cli"
+description = "Google Gemini CLI — agentic AI with Google's models"
+auth_hint = "Run `gemini auth` or set GOOGLE_API_KEY / GEMINI_API_KEY"
+auth_cmd = "gemini auth"
+auth_env_vars = ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
+auth_config_dirs = [".config/gemini"]
+
+[[engines]]
+name = "claude"
+bin = "claude"
+npm_package = "@anthropic-ai/claude-code"
+description = "Claude Code — Anthropic's official CLI for Claude"
+auth_hint = "Run `claude auth login` or set ANTHROPIC_API_KEY"
+auth_cmd = "claude auth login"
+auth_env_vars = ["ANTHROPIC_API_KEY"]
+auth_config_dirs = [".claude", ".config/claude"]

@@ -56,15 +56,21 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     // ── config ────────────────────────────────────────────────────────────────
     section("config");
     println!("  {} {}", dim("file"), UserConfig::path().display());
-    println!("  {} {}", dim("engine.default        "), user_cfg.engine.default);
+    println!("  {} {}", dim("engine.default          "), user_cfg.engine.default);
     let tenant = if user_cfg.engine.default_tenant.is_empty() {
         "(none)".to_string()
     } else {
         user_cfg.engine.default_tenant.clone()
     };
-    println!("  {} {}", dim("engine.default_tenant "), tenant);
-    println!("  {} {}", dim("workspace.ai_root      "), user_cfg.workspace.ai_root.display());
-    println!("  {} {}", dim("install.dir            "), user_cfg.install.dir.display());
+    println!("  {} {}", dim("engine.default_tenant   "), tenant);
+    let workspace = if user_cfg.engine.default_workspace.is_empty() {
+        "(none)".to_string()
+    } else {
+        user_cfg.engine.default_workspace.clone()
+    };
+    println!("  {} {}", dim("engine.default_workspace"), workspace);
+    println!("  {} {}", dim("workspace.ai_root       "), user_cfg.workspace.ai_root.display());
+    println!("  {} {}", dim("install.dir             "), user_cfg.install.dir.display());
     println!();
 
     // ── daemon ────────────────────────────────────────────────────────────────
