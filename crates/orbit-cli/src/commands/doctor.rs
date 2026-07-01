@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::Args;
-use orbit_core::{ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig};
+use orbit_core::{catalog, ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig};
 use std::process::Command;
 
+use super::auth::{detect_auth, AuthStatus};
 use super::plugins::print_plugins_section;
 
 #[derive(Debug, Args)]
@@ -17,9 +18,9 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
 
     // ── engines ───────────────────────────────────────────────────────────────
     section("engines");
-    check_engine("opencode", "npm install -g opencode-ai");
-    check_engine("gemini", "npm install -g @google/gemini-cli");
-    check_engine("claude", "npm install -g @anthropic-ai/claude-code");
+    for engine in catalog::engines() {
+        check_engine_full(&engine);
+    }
     println!();
 
     // ── dependencies ──────────────────────────────────────────────────────────
@@ -135,19 +136,31 @@ fn check<E: std::fmt::Display>(label: &str, result: Result<(), E>, hint: Option<
     }
 }
 
-fn check_engine(bin: &str, install_cmd: &str) {
-    if Command::new("which")
-        .arg(bin)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
-        println!("  \x1b[32m✓\x1b[0m  {bin}");
-    } else {
-        println!("  \x1b[31m✗\x1b[0m  {bin}  — not found in PATH");
-        println!("      \x1b[2minstall: {install_cmd}\x1b[0m");
+fn check_engine_full(engine: &orbit_core::catalog::EngineEntry) {
+    let installed = check_bin(&engine.bin).is_ok();
+    let auth = detect_auth(engine);
+
+    let install_mark = if installed { "\x1b[32m✓\x1b[0m" } else { "\x1b[31m✗\x1b[0m" };
+    let auth_tag = match &auth {
+        AuthStatus::Configured(signal) => format!("  \x1b[32m✓ auth\x1b[0m  \x1b[2m{signal}\x1b[0m"),
+        AuthStatus::NotConfigured if installed => {
+            "  \x1b[33m○ auth\x1b[0m  \x1b[2mnot configured\x1b[0m".to_string()
+        }
+        AuthStatus::NotConfigured => String::new(),
+    };
+
+    println!("  {install_mark}  {}{auth_tag}", engine.name);
+
+    if !installed {
+        println!(
+            "      \x1b[2minstall: npm install -g {}\x1b[0m",
+            engine.npm_package
+        );
+    } else if matches!(auth, AuthStatus::NotConfigured) {
+        println!(
+            "      \x1b[2mauth: orbit auth {}\x1b[0m",
+            engine.name
+        );
     }
 }
 

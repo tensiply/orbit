@@ -19,6 +19,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Check and manage engine authentication
+    Auth(commands::auth::AuthArgs),
     /// First-time setup: write config and install the binary
     Setup(commands::setup::SetupArgs),
     /// Get, set, or list config values
@@ -84,6 +86,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     auto_update::spawn(ws_cfg.clone(), user_cfg.clone(), cli.no_update);
 
     match cli.command {
+        Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
         Some(Commands::Config(args)) => commands::config::run(args),
         Some(Commands::Mode(args)) => commands::mode::run(args).await,

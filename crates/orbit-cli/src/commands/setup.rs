@@ -12,6 +12,7 @@ use std::{
     process::Command,
 };
 
+use super::auth::{detect_auth, AuthStatus};
 use super::plugins::setup_plugins;
 
 #[derive(Debug, Args)]
@@ -269,7 +270,15 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
             }
         }
 
-        println!("      \x1b[2mauth: {}\x1b[0m", engine.auth_hint);
+        match detect_auth(engine) {
+            AuthStatus::Configured(signal) => {
+                println!("      \x1b[32m✓ auth\x1b[0m  {signal}");
+            }
+            AuthStatus::NotConfigured => {
+                println!("      \x1b[33m○ auth\x1b[0m  not configured");
+                println!("      \x1b[2mrun: orbit auth {}\x1b[0m", engine.name);
+            }
+        }
     }
 
     Ok(())
