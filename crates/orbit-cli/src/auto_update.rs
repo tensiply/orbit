@@ -178,12 +178,7 @@ async fn download_and_install_silent(
         .user_agent(concat!("orbit-cli/", env!("CARGO_PKG_VERSION")))
         .build()?;
 
-    let checksums_text = dl_client
-        .get(&checksums_url)
-        .send()
-        .await?
-        .text()
-        .await?;
+    let checksums_text = dl_client.get(&checksums_url).send().await?.text().await?;
     let expected = parse_checksum(&checksums_text, &artifact_name)
         .ok_or_else(|| anyhow::anyhow!("artifact not in checksums"))?;
 
@@ -249,7 +244,10 @@ fn cache_expired(path: &Path) -> bool {
     let Ok(modified) = meta.modified() else {
         return true;
     };
-    modified.elapsed().map(|e| e.as_secs() >= CACHE_TTL_SECS).unwrap_or(true)
+    modified
+        .elapsed()
+        .map(|e| e.as_secs() >= CACHE_TTL_SECS)
+        .unwrap_or(true)
 }
 
 fn write_cache(path: &Path) {
@@ -280,7 +278,11 @@ fn log_error(msg: &str) {
         let _ = std::fs::create_dir_all(parent);
     }
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+    {
         let _ = writeln!(f, "[auto-update] {msg}");
     }
 }

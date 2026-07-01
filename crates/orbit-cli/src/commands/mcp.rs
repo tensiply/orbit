@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{catalog, catalog::McpEntry, context::OrbitScope};
 use orbit_engine::resolver;
@@ -84,15 +84,16 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     for m in &mcps {
         let enabled_at = find_enabled_scope(&m.name, &scope, scope_override);
         let (status, tag) = match &enabled_at {
-            Some(lvl) => (
-                "\x1b[32m●\x1b[0m",
-                format!("  \x1b[32m[{lvl}]\x1b[0m"),
-            ),
+            Some(lvl) => ("\x1b[32m●\x1b[0m", format!("  \x1b[32m[{lvl}]\x1b[0m")),
             None => ("\x1b[2m○\x1b[0m", "\x1b[2m  [disabled]\x1b[0m".to_string()),
         };
 
         let vars_hint = if !m.required_vars.is_empty() {
-            format!("  \x1b[33m({} var{})\x1b[0m", m.required_vars.len(), if m.required_vars.len() == 1 { "" } else { "s" })
+            format!(
+                "  \x1b[33m({} var{})\x1b[0m",
+                m.required_vars.len(),
+                if m.required_vars.len() == 1 { "" } else { "s" }
+            )
         } else {
             String::new()
         };
@@ -106,8 +107,14 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     }
 
     println!();
-    let enabled = mcps.iter().filter(|m| find_enabled_scope(&m.name, &scope, scope_override).is_some()).count();
-    println!("  {enabled}/{total} enabled  ·  orbit mcp enable/disable <name>", total = mcps.len());
+    let enabled = mcps
+        .iter()
+        .filter(|m| find_enabled_scope(&m.name, &scope, scope_override).is_some())
+        .count();
+    println!(
+        "  {enabled}/{total} enabled  ·  orbit mcp enable/disable <name>",
+        total = mcps.len()
+    );
 
     Ok(())
 }
@@ -115,8 +122,9 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── enable ────────────────────────────────────────────────────────────────────
 
 fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    let entry = catalog::mcp_by_name(name)
-        .with_context(|| format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs."))?;
+    let entry = catalog::mcp_by_name(name).with_context(|| {
+        format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.")
+    })?;
 
     let (scope, level) = resolve_write_scope(scope_override)?;
     let path = mcp_json_path(scope.as_ref(), level);
@@ -174,8 +182,9 @@ fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── info ──────────────────────────────────────────────────────────────────────
 
 fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    let entry = catalog::mcp_by_name(name)
-        .with_context(|| format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs."))?;
+    let entry = catalog::mcp_by_name(name).with_context(|| {
+        format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.")
+    })?;
 
     let scope = detect_scope_required(scope_override)?;
 
@@ -188,7 +197,11 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     if !entry.required_vars.is_empty() {
         println!("  Required variables:");
         for v in &entry.required_vars {
-            let secret_tag = if v.secret { "  \x1b[33m[secret]\x1b[0m" } else { "" };
+            let secret_tag = if v.secret {
+                "  \x1b[33m[secret]\x1b[0m"
+            } else {
+                ""
+            };
             println!("    {}{secret_tag}", v.name);
             println!("      {}", v.description);
         }
@@ -198,7 +211,11 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     if !entry.optional_vars.is_empty() {
         println!("  Optional variables:");
         for v in &entry.optional_vars {
-            let default_tag = v.default.as_deref().map(|d| format!("  (default: {d})")).unwrap_or_default();
+            let default_tag = v
+                .default
+                .as_deref()
+                .map(|d| format!("  (default: {d})"))
+                .unwrap_or_default();
             println!("    {}{default_tag}", v.name);
             println!("      {}", v.description);
         }
@@ -208,26 +225,57 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     // Status per scope layer
     println!("  Status:");
     let global_path = global_config_dir().join("orbit/mcps.json");
-    let marker = if mcp_in_file(name, &global_path) { "\x1b[32m● enabled\x1b[0m" } else { "\x1b[2m○ disabled\x1b[0m" };
+    let marker = if mcp_in_file(name, &global_path) {
+        "\x1b[32m● enabled\x1b[0m"
+    } else {
+        "\x1b[2m○ disabled\x1b[0m"
+    };
     println!("    global      {marker}");
 
     if !scope.global_mode {
         if !scope.tenant.is_empty() {
-            let p = scope.ai_context_root.join("tenants").join(&scope.tenant).join("mcp.json");
-            let marker = if mcp_in_file(name, &p) { "\x1b[32m● enabled\x1b[0m" } else { "\x1b[2m○ disabled\x1b[0m" };
+            let p = scope
+                .ai_context_root
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("mcp.json");
+            let marker = if mcp_in_file(name, &p) {
+                "\x1b[32m● enabled\x1b[0m"
+            } else {
+                "\x1b[2m○ disabled\x1b[0m"
+            };
             println!("    tenant      {marker}  ({})", scope.tenant);
         }
         if !scope.project.is_empty() {
-            let p = scope.ai_context_root.join("tenants").join(&scope.tenant)
-                .join("projects").join(&scope.project).join("mcp.json");
-            let marker = if mcp_in_file(name, &p) { "\x1b[32m● enabled\x1b[0m" } else { "\x1b[2m○ disabled\x1b[0m" };
+            let p = scope
+                .ai_context_root
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("projects")
+                .join(&scope.project)
+                .join("mcp.json");
+            let marker = if mcp_in_file(name, &p) {
+                "\x1b[32m● enabled\x1b[0m"
+            } else {
+                "\x1b[2m○ disabled\x1b[0m"
+            };
             println!("    project     {marker}  ({})", scope.project);
         }
         if !scope.repository.is_empty() {
-            let p = scope.ai_context_root.join("tenants").join(&scope.tenant)
-                .join("projects").join(&scope.project)
-                .join("repositories").join(&scope.repository).join("mcp.json");
-            let marker = if mcp_in_file(name, &p) { "\x1b[32m● enabled\x1b[0m" } else { "\x1b[2m○ disabled\x1b[0m" };
+            let p = scope
+                .ai_context_root
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("projects")
+                .join(&scope.project)
+                .join("repositories")
+                .join(&scope.repository)
+                .join("mcp.json");
+            let marker = if mcp_in_file(name, &p) {
+                "\x1b[32m● enabled\x1b[0m"
+            } else {
+                "\x1b[2m○ disabled\x1b[0m"
+            };
             println!("    repo        {marker}  ({})", scope.repository);
         }
     }
@@ -252,7 +300,9 @@ fn detect_scope_required(scope_override: Option<ScopeLevel>) -> Result<OrbitScop
 
 /// Returns (scope, level) for write operations.
 /// For global scope, scope fields are unused (only global_config_dir is needed).
-fn resolve_write_scope(scope_override: Option<ScopeLevel>) -> Result<(Option<OrbitScope>, ScopeLevel)> {
+fn resolve_write_scope(
+    scope_override: Option<ScopeLevel>,
+) -> Result<(Option<OrbitScope>, ScopeLevel)> {
     match scope_override {
         Some(ScopeLevel::Global) => Ok((None, ScopeLevel::Global)),
         other => {
@@ -295,17 +345,23 @@ fn validate_level(scope: &OrbitScope, level: ScopeLevel) -> Result<()> {
 fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> PathBuf {
     match level {
         ScopeLevel::Global => global_config_dir().join("orbit/mcps.json"),
-        ScopeLevel::Tenant => scope.unwrap().ai_context_root
+        ScopeLevel::Tenant => scope
+            .unwrap()
+            .ai_context_root
             .join("tenants")
             .join(&scope.unwrap().tenant)
             .join("mcp.json"),
-        ScopeLevel::Project => scope.unwrap().ai_context_root
+        ScopeLevel::Project => scope
+            .unwrap()
+            .ai_context_root
             .join("tenants")
             .join(&scope.unwrap().tenant)
             .join("projects")
             .join(&scope.unwrap().project)
             .join("mcp.json"),
-        ScopeLevel::Repo => scope.unwrap().ai_context_root
+        ScopeLevel::Repo => scope
+            .unwrap()
+            .ai_context_root
             .join("tenants")
             .join(&scope.unwrap().tenant)
             .join("projects")
@@ -321,13 +377,27 @@ fn scope_description(scope: &OrbitScope, override_level: Option<ScopeLevel>) -> 
         return "global".to_string();
     }
     let mut parts = Vec::new();
-    if !scope.tenant.is_empty() { parts.push(scope.tenant.clone()); }
-    if !scope.project.is_empty() { parts.push(scope.project.clone()); }
-    if !scope.repository.is_empty() { parts.push(scope.repository.clone()); }
-    if parts.is_empty() { "workspace".to_string() } else { parts.join("/") }
+    if !scope.tenant.is_empty() {
+        parts.push(scope.tenant.clone());
+    }
+    if !scope.project.is_empty() {
+        parts.push(scope.project.clone());
+    }
+    if !scope.repository.is_empty() {
+        parts.push(scope.repository.clone());
+    }
+    if parts.is_empty() {
+        "workspace".to_string()
+    } else {
+        parts.join("/")
+    }
 }
 
-fn find_enabled_scope(name: &str, scope: &OrbitScope, override_level: Option<ScopeLevel>) -> Option<String> {
+fn find_enabled_scope(
+    name: &str,
+    scope: &OrbitScope,
+    override_level: Option<ScopeLevel>,
+) -> Option<String> {
     // Global
     let global_path = global_config_dir().join("orbit/mcps.json");
     if mcp_in_file(name, &global_path) {
@@ -338,24 +408,39 @@ fn find_enabled_scope(name: &str, scope: &OrbitScope, override_level: Option<Sco
     }
     // Tenant
     if !scope.tenant.is_empty() {
-        let p = scope.ai_context_root.join("tenants").join(&scope.tenant).join("mcp.json");
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("mcp.json");
         if mcp_in_file(name, &p) {
             return Some(format!("tenant:{}", scope.tenant));
         }
     }
     // Project
     if !scope.project.is_empty() {
-        let p = scope.ai_context_root.join("tenants").join(&scope.tenant)
-            .join("projects").join(&scope.project).join("mcp.json");
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("projects")
+            .join(&scope.project)
+            .join("mcp.json");
         if mcp_in_file(name, &p) {
             return Some(format!("project:{}", scope.project));
         }
     }
     // Repo
     if !scope.repository.is_empty() {
-        let p = scope.ai_context_root.join("tenants").join(&scope.tenant)
-            .join("projects").join(&scope.project)
-            .join("repositories").join(&scope.repository).join("mcp.json");
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("projects")
+            .join(&scope.project)
+            .join("repositories")
+            .join(&scope.repository)
+            .join("mcp.json");
         if mcp_in_file(name, &p) {
             return Some(format!("repo:{}", scope.repository));
         }
@@ -372,7 +457,10 @@ fn collect_vars(entry: &McpEntry) -> Result<std::collections::HashMap<String, St
         println!("Required variables:");
         for v in &entry.required_vars {
             let value = if v.secret {
-                println!("  {} — {} \x1b[33m[secret: consider using an env var]\x1b[0m", v.name, v.description);
+                println!(
+                    "  {} — {} \x1b[33m[secret: consider using an env var]\x1b[0m",
+                    v.name, v.description
+                );
                 prompt_required(&v.name)?
             } else {
                 println!("  {} — {}", v.name, v.description);
@@ -385,7 +473,11 @@ fn collect_vars(entry: &McpEntry) -> Result<std::collections::HashMap<String, St
     if !entry.optional_vars.is_empty() {
         println!("Optional variables (press Enter to skip):");
         for v in &entry.optional_vars {
-            let default_display = v.default.as_deref().map(|d| format!(" [default: {d}]")).unwrap_or_default();
+            let default_display = v
+                .default
+                .as_deref()
+                .map(|d| format!(" [default: {d}]"))
+                .unwrap_or_default();
             println!("  {} — {}{}", v.name, v.description, default_display);
             let value = prompt_optional(&v.name)?;
             if let Some(val) = value {
@@ -419,13 +511,23 @@ fn prompt_optional(name: &str) -> Result<Option<String>> {
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
     let trimmed = line.trim().to_string();
-    Ok(if trimmed.is_empty() { None } else { Some(trimmed) })
+    Ok(if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    })
 }
 
 // ── mcp.json read / write ─────────────────────────────────────────────────────
 
-fn build_server_entry(command: &[String], env: &std::collections::HashMap<String, String>) -> Value {
-    let (cmd, args) = command.split_first().map(|(c, a)| (c.as_str(), a)).unwrap_or(("", &[]));
+fn build_server_entry(
+    command: &[String],
+    env: &std::collections::HashMap<String, String>,
+) -> Value {
+    let (cmd, args) = command
+        .split_first()
+        .map(|(c, a)| (c.as_str(), a))
+        .unwrap_or(("", &[]));
     let mut obj = serde_json::json!({
         "command": cmd,
         "args": args,

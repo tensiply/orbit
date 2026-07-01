@@ -86,7 +86,12 @@ fn list() -> Result<()> {
 
     println!("plugins\n");
 
-    let name_w = plugins.iter().map(|p| p.name.len()).max().unwrap_or(8).max(8);
+    let name_w = plugins
+        .iter()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let cat_w = plugins
         .iter()
         .map(|p| p.category.len())
@@ -152,11 +157,7 @@ fn list() -> Result<()> {
         .count();
     let mcp_count = plugins.iter().filter(|p| p.has_mcp()).count();
 
-    print!(
-        "  {}/{} installed",
-        installed_count,
-        plugins.len()
-    );
+    print!("  {}/{} installed", installed_count, plugins.len());
     if mcp_count > 0 {
         print!("  ·  {}/{} MCP active", enabled_count, mcp_count);
     }
@@ -169,9 +170,7 @@ fn list() -> Result<()> {
 
 fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
-        bail!(
-            "plugin not found: {name}\nRun `orbit plugins list` to see available plugins."
-        )
+        bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
 
     if plugin.is_installed() {
@@ -184,15 +183,13 @@ fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
     println!();
 
     let method = if let Some(mn) = method_name {
-        plugin
-            .install_method_by_name(mn)
-            .ok_or_else(|| {
-                let available: Vec<_> = plugin.install.iter().map(|m| m.method.as_str()).collect();
-                anyhow::anyhow!(
-                    "unknown method '{mn}' for plugin '{name}'\navailable: {}",
-                    available.join(", ")
-                )
-            })?
+        plugin.install_method_by_name(mn).ok_or_else(|| {
+            let available: Vec<_> = plugin.install.iter().map(|m| m.method.as_str()).collect();
+            anyhow::anyhow!(
+                "unknown method '{mn}' for plugin '{name}'\navailable: {}",
+                available.join(", ")
+            )
+        })?
     } else if plugin.install.len() == 1 || yes {
         plugin
             .best_install_method()
@@ -205,9 +202,7 @@ fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
 
     if plugin.has_mcp() {
         println!();
-        println!(
-            "  \x1b[2mRun `orbit plugins enable {name}` to activate MCP servers.\x1b[0m"
-        );
+        println!("  \x1b[2mRun `orbit plugins enable {name}` to activate MCP servers.\x1b[0m");
     }
 
     Ok(())
@@ -276,9 +271,7 @@ fn run_install(name: &str, method: &InstallMethod) -> Result<()> {
 
 fn enable(name: &str) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
-        bail!(
-            "plugin not found: {name}\nRun `orbit plugins list` to see available plugins."
-        )
+        bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
 
     let mut state = PluginState::load();
@@ -294,9 +287,7 @@ fn enable(name: &str) -> Result<()> {
 
     if !plugin.is_installed() {
         println!("  \x1b[33m!\x1b[0m  {name} is not installed.");
-        println!(
-            "     Run `orbit plugins install {name}` first, then enable."
-        );
+        println!("     Run `orbit plugins install {name}` first, then enable.");
         println!();
         println!("     Registering anyway — MCP may not work until the tool is installed.");
         println!();
@@ -310,10 +301,7 @@ fn enable(name: &str) -> Result<()> {
         let mcp_names: Vec<_> = plugin.mcp.iter().map(|m| m.name.as_str()).collect();
         println!("  \x1b[32m●\x1b[0m  {name} enabled");
         println!("     MCP registered: {}", mcp_names.join(", "));
-        println!(
-            "     Config: {}",
-            plugin::plugins_mcp_path().display()
-        );
+        println!("     Config: {}", plugin::plugins_mcp_path().display());
         println!("     Active in new orbit sessions.");
     } else {
         println!("  \x1b[32m✓\x1b[0m  {name} enabled.");
@@ -326,9 +314,7 @@ fn enable(name: &str) -> Result<()> {
 
 fn disable(name: &str) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
-        bail!(
-            "plugin not found: {name}\nRun `orbit plugins list` to see available plugins."
-        )
+        bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
 
     let mut state = PluginState::load();
@@ -359,9 +345,7 @@ fn disable(name: &str) -> Result<()> {
 
 fn info(name: &str) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
-        bail!(
-            "plugin not found: {name}\nRun `orbit plugins list` to see available plugins."
-        )
+        bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
 
     let state = PluginState::load();
@@ -409,7 +393,10 @@ fn info(name: &str) -> Result<()> {
             println!("    {}  —  {}", label, cmd_parts.join(" "));
         }
         if enabled {
-            println!("    \x1b[32m[active]\x1b[0m  {}", plugin::plugins_mcp_path().display());
+            println!(
+                "    \x1b[32m[active]\x1b[0m  {}",
+                plugin::plugins_mcp_path().display()
+            );
         } else {
             println!("    \x1b[2m[inactive — run: orbit plugins enable {name}]\x1b[0m");
         }
@@ -584,10 +571,7 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
                         );
                     }
                 }
-                _ => println!(
-                    "    \x1b[31m✗\x1b[0m failed — run: {}",
-                    m.cmd.join(" ")
-                ),
+                _ => println!("    \x1b[31m✗\x1b[0m failed — run: {}", m.cmd.join(" ")),
             }
         }
 

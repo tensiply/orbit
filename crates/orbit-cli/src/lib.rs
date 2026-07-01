@@ -64,7 +64,10 @@ impl Cli {
 fn needs_setup(cmd: &Option<Commands>) -> bool {
     !matches!(
         cmd,
-        Some(Commands::Setup(_)) | Some(Commands::Completions(_)) | Some(Commands::Update(_)) | None
+        Some(Commands::Setup(_))
+            | Some(Commands::Completions(_))
+            | Some(Commands::Update(_))
+            | None
     )
 }
 

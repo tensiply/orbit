@@ -59,7 +59,10 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         Some(e) => Engine::from(e),
         None => {
             let cfg = UserConfig::load();
-            cfg.engine.default.parse::<Engine>().unwrap_or(Engine::Opencode)
+            cfg.engine
+                .default
+                .parse::<Engine>()
+                .unwrap_or(Engine::Opencode)
         }
     };
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::user_config::UserConfig;
 use std::path::PathBuf;
@@ -94,7 +94,11 @@ fn get_value(cfg: &UserConfig, key: &str) -> Result<String> {
         "install.dir" => cfg.install.dir.to_string_lossy().into_owned(),
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",
-            VALID_KEYS.iter().map(|k| format!("    {k}")).collect::<Vec<_>>().join("\n")
+            VALID_KEYS
+                .iter()
+                .map(|k| format!("    {k}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         ),
     })
 }
@@ -108,10 +112,7 @@ fn set_value(cfg: &mut UserConfig, key: &str, value: &str) -> Result<()> {
                 .map(|e| e.name)
                 .collect();
             if !valid.contains(&value.to_string()) {
-                bail!(
-                    "invalid engine: {value}  (valid: {})",
-                    valid.join(", ")
-                );
+                bail!("invalid engine: {value}  (valid: {})", valid.join(", "));
             }
             cfg.engine.default = value.to_string();
         }
@@ -136,7 +137,11 @@ fn set_value(cfg: &mut UserConfig, key: &str, value: &str) -> Result<()> {
         "install.dir" => cfg.install.dir = PathBuf::from(value),
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",
-            VALID_KEYS.iter().map(|k| format!("    {k}")).collect::<Vec<_>>().join("\n")
+            VALID_KEYS
+                .iter()
+                .map(|k| format!("    {k}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         ),
     }
     Ok(())

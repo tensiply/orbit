@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Args;
 use orbit_core::{catalog, catalog::EngineEntry};
 use std::process::Command;
@@ -70,7 +70,12 @@ fn cmd_status_all(check_mode: bool) -> Result<()> {
         println!("auth status\n");
     }
 
-    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let name_w = engines
+        .iter()
+        .map(|e| e.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let mut any_missing = false;
 
     for engine in &engines {
@@ -112,9 +117,7 @@ fn cmd_status_all(check_mode: bool) -> Result<()> {
 
     if !check_mode {
         println!();
-        println!(
-            "  \x1b[2morbit auth <engine>  to start the engine's auth flow\x1b[0m"
-        );
+        println!("  \x1b[2morbit auth <engine>  to start the engine's auth flow\x1b[0m");
     } else if any_missing {
         std::process::exit(1);
     }
@@ -125,8 +128,7 @@ fn cmd_status_all(check_mode: bool) -> Result<()> {
 // ── check one engine ──────────────────────────────────────────────────────────
 
 fn cmd_check_one(name: &str) -> Result<()> {
-    let engine = catalog::engine_by_name(name)
-        .ok_or_else(|| engine_not_found_err(name))?;
+    let engine = catalog::engine_by_name(name).ok_or_else(|| engine_not_found_err(name))?;
 
     match detect_auth(&engine) {
         AuthStatus::Configured(_) => Ok(()),
@@ -137,8 +139,7 @@ fn cmd_check_one(name: &str) -> Result<()> {
 // ── run native auth flow ──────────────────────────────────────────────────────
 
 fn cmd_run_auth(name: &str) -> Result<()> {
-    let engine = catalog::engine_by_name(name)
-        .ok_or_else(|| engine_not_found_err(name))?;
+    let engine = catalog::engine_by_name(name).ok_or_else(|| engine_not_found_err(name))?;
 
     if !bin_available(&engine.bin) {
         bail!(
@@ -163,9 +164,7 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     println!("Running: {}", engine.auth_cmd);
     println!();
 
-    let status = Command::new(parts[0])
-        .args(&parts[1..])
-        .status()?;
+    let status = Command::new(parts[0]).args(&parts[1..]).status()?;
 
     if !status.success() {
         bail!("{} auth exited with non-zero status", engine.auth_cmd);
@@ -178,10 +177,7 @@ fn cmd_run_auth(name: &str) -> Result<()> {
 
 fn engine_not_found_err(name: &str) -> anyhow::Error {
     let names: Vec<String> = catalog::engines().into_iter().map(|e| e.name).collect();
-    anyhow::anyhow!(
-        "unknown engine: {name}\n  Available: {}",
-        names.join(", ")
-    )
+    anyhow::anyhow!("unknown engine: {name}\n  Available: {}", names.join(", "))
 }
 
 fn bin_available(bin: &str) -> bool {

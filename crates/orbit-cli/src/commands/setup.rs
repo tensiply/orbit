@@ -12,7 +12,7 @@ use std::{
     process::Command,
 };
 
-use super::auth::{detect_auth, AuthStatus};
+use super::auth::{AuthStatus, detect_auth};
 use super::plugins::setup_plugins;
 
 #[derive(Debug, Args)]
@@ -249,7 +249,8 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
             if !has_npm {
                 println!("      install Node.js first: https://nodejs.org");
             } else {
-                let should_install = yes || engine.name == default_engine
+                let should_install = yes
+                    || engine.name == default_engine
                     || confirm(&format!("    Install {}?", engine.name), false)?;
 
                 if should_install {

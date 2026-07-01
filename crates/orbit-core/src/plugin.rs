@@ -7,8 +7,7 @@ use std::{
     process::Command,
 };
 
-const BUILTIN_PLUGINS: &[(&str, &str)] =
-    include!(concat!(env!("OUT_DIR"), "/builtin_plugins.rs"));
+const BUILTIN_PLUGINS: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/builtin_plugins.rs"));
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -169,8 +168,12 @@ pub fn load_all() -> Vec<Plugin> {
         paths.sort_by_key(|e| e.path());
 
         for entry in paths {
-            let Ok(content) = fs::read_to_string(entry.path()) else { continue };
-            let Ok(p) = toml::from_str::<Plugin>(&content) else { continue };
+            let Ok(content) = fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            let Ok(p) = toml::from_str::<Plugin>(&content) else {
+                continue;
+            };
             plugins.retain(|existing| existing.name != p.name);
             plugins.push(p);
         }

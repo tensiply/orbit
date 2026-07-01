@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use orbit_core::{context::OrbitScope, user_config::UserConfig};
 use orbit_engine::resolver;
@@ -41,7 +41,10 @@ pub fn run(args: SnapshotArgs) -> Result<()> {
     let scope = resolver::resolve_from_cwd()
         .context("could not resolve scope from cwd — are you inside a workspace?")?;
 
-    let dest = args.output.clone().unwrap_or_else(|| governance_path(&scope));
+    let dest = args
+        .output
+        .clone()
+        .unwrap_or_else(|| governance_path(&scope));
 
     // ── read source content ───────────────────────────────────────────────────
     let (content, source_label) = if args.stdin {
@@ -49,8 +52,8 @@ pub fn run(args: SnapshotArgs) -> Result<()> {
         io::stdin().read_to_string(&mut buf)?;
         (buf, "stdin".to_string())
     } else if let Some(ref path) = args.file {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("cannot read {}", path.display()))?;
+        let content =
+            fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
         (content, path.display().to_string())
     } else {
         // Auto-detect engine context file in cwd
@@ -70,7 +73,11 @@ pub fn run(args: SnapshotArgs) -> Result<()> {
                     .collect();
                 bail!(
                     "no context file found in current directory\n\n  tried:\n{}\n\n  Generate one first:\n    claude → /init\n    opencode → /init\n    gemini → /init\n\n  or pass --file <path> or --stdin",
-                    tried.iter().map(|p| format!("    {p}")).collect::<Vec<_>>().join("\n")
+                    tried
+                        .iter()
+                        .map(|p| format!("    {p}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 );
             }
         }

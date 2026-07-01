@@ -2,15 +2,12 @@ use anyhow::Result;
 use clap::Args;
 use orbit_client::ipc as client_ipc;
 use orbit_core::{
-    catalog,
-    ipc::socket_path,
-    user_config::UserConfig,
-    workspace_config::WorkspaceConfig,
+    catalog, ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig,
 };
 use orbit_engine::resolver;
 use std::time::Duration;
 
-use super::auth::{detect_auth, AuthStatus};
+use super::auth::{AuthStatus, detect_auth};
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -178,7 +175,11 @@ fn print_human(d: &StatusData) {
     } else {
         format!("\x1b[2m{}\x1b[0m", d.workspace_path)
     };
-    row("workspace", label_w, &format!("{}  {}", d.workspace_name, ws_detail));
+    row(
+        "workspace",
+        label_w,
+        &format!("{}  {}", d.workspace_name, ws_detail),
+    );
 
     // engine
     let install_tag = if d.engine_installed {
@@ -189,9 +190,16 @@ fn print_human(d: &StatusData) {
     let auth_tag = match (&d.engine_auth, &d.engine_auth_signal) {
         (true, Some(s)) => format!("  \x1b[32m✓ auth\x1b[0m  \x1b[2m{s}\x1b[0m"),
         (true, None) => "  \x1b[32m✓ auth\x1b[0m".to_string(),
-        (false, _) => format!("  \x1b[33m○ auth\x1b[0m  \x1b[2morbit auth {}\x1b[0m", d.engine),
+        (false, _) => format!(
+            "  \x1b[33m○ auth\x1b[0m  \x1b[2morbit auth {}\x1b[0m",
+            d.engine
+        ),
     };
-    row("engine", label_w, &format!("{}  {install_tag}{auth_tag}", d.engine));
+    row(
+        "engine",
+        label_w,
+        &format!("{}  {install_tag}{auth_tag}", d.engine),
+    );
 
     // tenant
     if !d.tenant.is_empty() {
@@ -204,7 +212,11 @@ fn print_human(d: &StatusData) {
     } else {
         format!("  \x1b[2m{}\x1b[0m", d.scope_label)
     };
-    row("scope", label_w, &format!("{}{}", d.scope_level, scope_detail));
+    row(
+        "scope",
+        label_w,
+        &format!("{}{}", d.scope_level, scope_detail),
+    );
 
     // daemon
     let daemon_detail = if d.daemon_running {

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::catalog::{self, EngineEntry};
 use std::{
@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use super::auth::{detect_auth, AuthStatus};
+use super::auth::{AuthStatus, detect_auth};
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -60,7 +60,12 @@ fn cmd_list() -> Result<()> {
     let engines = catalog::engines();
     println!("engines\n");
 
-    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let name_w = engines
+        .iter()
+        .map(|e| e.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
 
     for engine in &engines {
         let installed = bin_available(&engine.bin);
@@ -99,7 +104,10 @@ fn cmd_list() -> Result<()> {
 
     println!();
     let installed_count = engines.iter().filter(|e| bin_available(&e.bin)).count();
-    println!("  {installed_count}/{total} installed  ·  orbit engines install/update <name>", total = engines.len());
+    println!(
+        "  {installed_count}/{total} installed  ·  orbit engines install/update <name>",
+        total = engines.len()
+    );
 
     Ok(())
 }
@@ -114,7 +122,10 @@ fn cmd_install(name: &str, yes: bool) -> Result<()> {
         // doesn't guarantee the extension is installed — just proceed.
         if engine.install_cmd.is_empty() {
             let ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
-            println!("  \x1b[32m✓\x1b[0m  {} is already installed (v{ver})", engine.name);
+            println!(
+                "  \x1b[32m✓\x1b[0m  {} is already installed (v{ver})",
+                engine.name
+            );
             return Ok(());
         }
     }
@@ -193,7 +204,9 @@ fn cmd_update(name: Option<&str>) -> Result<()> {
     }
 
     // Verify npm is available for any npm-based engine in the target set
-    let needs_npm = targets.iter().any(|e| e.update_cmd.is_empty() && !e.npm_package.is_empty());
+    let needs_npm = targets
+        .iter()
+        .any(|e| e.update_cmd.is_empty() && !e.npm_package.is_empty());
     if needs_npm && !bin_available("npm") {
         bail!("npm is not available — install Node.js first: https://nodejs.org");
     }
@@ -272,7 +285,10 @@ fn cmd_info(name: &str) -> Result<()> {
     if installed {
         let ver_detail = match &latest_ver {
             Some(l) if l != &installed_ver => {
-                format!("v{installed_ver}  \x1b[33m→ v{l} available\x1b[0m  run: orbit engines update {}", engine.name)
+                format!(
+                    "v{installed_ver}  \x1b[33m→ v{l} available\x1b[0m  run: orbit engines update {}",
+                    engine.name
+                )
             }
             Some(_) => format!("v{installed_ver}  \x1b[32mup to date\x1b[0m"),
             None => format!("v{installed_ver}"),
@@ -280,7 +296,11 @@ fn cmd_info(name: &str) -> Result<()> {
         info_row("installed", info_w, &ver_detail);
     } else {
         info_row("installed", info_w, "\x1b[31mnot installed\x1b[0m");
-        info_row("install", info_w, &format!("npm install -g {}", engine.npm_package));
+        info_row(
+            "install",
+            info_w,
+            &format!("npm install -g {}", engine.npm_package),
+        );
     }
 
     // Auth status
@@ -322,8 +342,12 @@ fn installed_version(bin: &str) -> Option<String> {
 /// Return cached npm version if available (no network call).
 fn cached_npm_version(package: &str) -> Option<String> {
     let path = npm_cache_path(package);
-    let Ok(meta) = fs::metadata(&path) else { return None };
-    let Ok(modified) = meta.modified() else { return None };
+    let Ok(meta) = fs::metadata(&path) else {
+        return None;
+    };
+    let Ok(modified) = meta.modified() else {
+        return None;
+    };
     // Return cached value regardless of age (for list command — fast path)
     if modified.elapsed().is_ok() {
         let text = fs::read_to_string(&path).ok()?;
@@ -413,10 +437,7 @@ fn print_auth_hint(engine: &EngineEntry) {
 
 fn engine_not_found(name: &str) -> anyhow::Error {
     let names: Vec<String> = catalog::engines().into_iter().map(|e| e.name).collect();
-    anyhow::anyhow!(
-        "unknown engine: {name}\n  Available: {}",
-        names.join(", ")
-    )
+    anyhow::anyhow!("unknown engine: {name}\n  Available: {}", names.join(", "))
 }
 
 fn bin_available(bin: &str) -> bool {

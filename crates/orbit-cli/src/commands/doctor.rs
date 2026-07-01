@@ -1,9 +1,11 @@
 use anyhow::Result;
 use clap::Args;
-use orbit_core::{catalog, ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig};
+use orbit_core::{
+    catalog, ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig,
+};
 use std::process::Command;
 
-use super::auth::{detect_auth, AuthStatus};
+use super::auth::{AuthStatus, detect_auth};
 use super::plugins::print_plugins_section;
 
 #[derive(Debug, Args)]
@@ -25,7 +27,11 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
 
     // ── dependencies ──────────────────────────────────────────────────────────
     section("dependencies");
-    check("tmux", check_bin("tmux"), Some("https://github.com/tmux/tmux/wiki/Installing"));
+    check(
+        "tmux",
+        check_bin("tmux"),
+        Some("https://github.com/tmux/tmux/wiki/Installing"),
+    );
     check("node", check_bin("node"), Some("https://nodejs.org"));
     println!();
 
@@ -57,7 +63,11 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     // ── config ────────────────────────────────────────────────────────────────
     section("config");
     println!("  {} {}", dim("file"), UserConfig::path().display());
-    println!("  {} {}", dim("engine.default          "), user_cfg.engine.default);
+    println!(
+        "  {} {}",
+        dim("engine.default          "),
+        user_cfg.engine.default
+    );
     let tenant = if user_cfg.engine.default_tenant.is_empty() {
         "(none)".to_string()
     } else {
@@ -70,8 +80,16 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
         user_cfg.engine.default_workspace.clone()
     };
     println!("  {} {}", dim("engine.default_workspace"), workspace);
-    println!("  {} {}", dim("workspace.ai_root       "), user_cfg.workspace.ai_root.display());
-    println!("  {} {}", dim("install.dir             "), user_cfg.install.dir.display());
+    println!(
+        "  {} {}",
+        dim("workspace.ai_root       "),
+        user_cfg.workspace.ai_root.display()
+    );
+    println!(
+        "  {} {}",
+        dim("install.dir             "),
+        user_cfg.install.dir.display()
+    );
     println!();
 
     // ── daemon ────────────────────────────────────────────────────────────────
@@ -140,9 +158,15 @@ fn check_engine_full(engine: &orbit_core::catalog::EngineEntry) {
     let installed = check_bin(&engine.bin).is_ok();
     let auth = detect_auth(engine);
 
-    let install_mark = if installed { "\x1b[32m✓\x1b[0m" } else { "\x1b[31m✗\x1b[0m" };
+    let install_mark = if installed {
+        "\x1b[32m✓\x1b[0m"
+    } else {
+        "\x1b[31m✗\x1b[0m"
+    };
     let auth_tag = match &auth {
-        AuthStatus::Configured(signal) => format!("  \x1b[32m✓ auth\x1b[0m  \x1b[2m{signal}\x1b[0m"),
+        AuthStatus::Configured(signal) => {
+            format!("  \x1b[32m✓ auth\x1b[0m  \x1b[2m{signal}\x1b[0m")
+        }
         AuthStatus::NotConfigured if installed => {
             "  \x1b[33m○ auth\x1b[0m  \x1b[2mnot configured\x1b[0m".to_string()
         }
@@ -157,10 +181,7 @@ fn check_engine_full(engine: &orbit_core::catalog::EngineEntry) {
             engine.npm_package
         );
     } else if matches!(auth, AuthStatus::NotConfigured) {
-        println!(
-            "      \x1b[2mauth: orbit auth {}\x1b[0m",
-            engine.name
-        );
+        println!("      \x1b[2mauth: orbit auth {}\x1b[0m", engine.name);
     }
 }
 
