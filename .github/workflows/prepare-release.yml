@@ -2,10 +2,11 @@ name: Prepare Release
 
 # ── Usage ──────────────────────────────────────────────────────────────────────
 # 1. Actions → Prepare Release → Run workflow → enter version (X.Y.Z)
-# 2. "Preview" job runs immediately and writes a summary to the Actions UI.
-# 3. "Release" job waits for manual approval (Environment: release).
-# 4. Review the summary → "Review pending deployments" → Approve.
-# 5. Commit + tag are pushed, triggering release.yml automatically.
+# 2. "CI" job runs immediately — fmt, clippy, tests, build on the current main.
+# 3. "Preview" job runs after CI and writes a summary to the Actions UI.
+# 4. "Release" job waits for manual approval (Environment: release).
+# 5. Review the summary → "Review pending deployments" → Approve.
+# 6. Commit + tag are pushed, triggering release.yml automatically.
 #
 # One-time setup: Settings → Environments → "release" → Required reviewers → add yourself
 
@@ -18,9 +19,17 @@ on:
         type: string
 
 jobs:
-  # ── Job 1: validate + show summary ────────────────────────────────────────────
+  # ── Job 1: CI gate ────────────────────────────────────────────────────────────
+  # All checks must pass before the release preview is shown or the release runs.
+  ci:
+    name: CI gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # ── Job 2: validate + show summary ───────────────────────────────────────────
   preview:
     name: Preview v${{ inputs.version }}
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +59,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: python3 .github/scripts/preview_release.py
 
-  # ── Job 2: execute release (waits for manual approval) ────────────────────────
+  # ── Job 3: execute release (waits for manual approval) ───────────────────────
   release:
     name: Release v${{ inputs.version }}
     needs: preview
@@ -78,7 +87,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           git config user.name  "Eloir Corona"
-          git config user.email "eloircoronah@outlook.com"
+          git config user.email "ecorona@better.com.mx"
           git add CHANGELOG.md Cargo.toml Cargo.lock
           git commit -m "chore: release v${VERSION}"
           git tag "v${VERSION}"

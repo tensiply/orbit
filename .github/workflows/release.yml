@@ -14,10 +14,43 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ── Verify the tag matches the version in Cargo.toml ─────────────────────────
+  verify:
+    name: Verify version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Extract version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}"     >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check Cargo.toml matches tag
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          CARGO_VER=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "v${CARGO_VER}" != "${TAG}" ]; then
+            echo "::error::Version mismatch — Cargo.toml has v${CARGO_VER} but tag is ${TAG}"
+            exit 1
+          fi
+          echo "Version verified: ${TAG}"
+
+  # ── Build static binaries for all target platforms ────────────────────────────
   build:
     name: Build — ${{ matrix.artifact }}
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -76,9 +109,10 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+  # ── Publish GitHub release ────────────────────────────────────────────────────
   release:
     name: Publish release
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,21 +133,40 @@ jobs:
           sha256sum orbit-* > checksums.txt
           cat checksums.txt
 
+      - name: Extract release notes from CHANGELOG
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          python3 - <<'EOF'
+          import re, os
+          v = os.environ["VERSION"]
+          with open("CHANGELOG.md") as f:
+              cl = f.read()
+          m = re.search(
+              rf"(?m)^## \[{re.escape(v)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              cl, re.DOTALL
+          )
+          body = m.group(1).strip() if m else "_No changelog entry found._"
+          with open("release_notes.md", "w") as f:
+              f.write(body + "\n")
+          EOF
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.verify.outputs.tag }}
+          body_path: release_notes.md
           files: |
             artifacts/orbit-linux-x86_64
             artifacts/orbit-linux-aarch64
             artifacts/orbit-macos-x86_64
             artifacts/orbit-macos-aarch64
             artifacts/checksums.txt
-          generate_release_notes: true
 
+  # ── Update docs & wiki ────────────────────────────────────────────────────────
   docs:
     name: Update docs & wiki
-    needs: release
+    needs: [verify, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -124,31 +177,29 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
-        id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
       - name: Update CHANGELOG footer and README
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
           REPO: ${{ github.repository }}
         run: python3 .github/scripts/update_docs.py
 
       - name: Commit docs updates to main
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
         run: |
           git config user.name  "Eloir Corona"
           git config user.email "ecorona@better.com.mx"
           git add CHANGELOG.md README.md
-          git diff --cached --quiet || git commit -m "docs: update links for ${{ github.ref_name }}"
+          git diff --cached --quiet || git commit -m "docs: update links for ${TAG}"
           git pull --rebase
           git push
 
       - name: Update wiki
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" wiki 2>/dev/null || {
