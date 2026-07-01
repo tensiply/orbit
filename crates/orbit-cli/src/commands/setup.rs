@@ -176,12 +176,16 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         println!("  Binary already at {} — skipping copy", target.display());
     } else {
         fs::create_dir_all(&install_dir_expanded)?;
-        fs::copy(&current_exe, &target)?;
+        // Write to a temp file first then rename — avoids ETXTBSY (error 26)
+        // when the running binary is already at the target path.
+        let tmp = target.with_extension("tmp");
+        fs::copy(&current_exe, &tmp)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
         }
+        fs::rename(&tmp, &target)?;
         println!("  Binary installed → {}", target.display());
     }
 
