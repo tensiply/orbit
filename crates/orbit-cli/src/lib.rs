@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
 
+pub mod auto_update;
 pub mod commands;
 mod update_check;
 
@@ -10,6 +11,10 @@ mod update_check;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
+
+    /// Skip background update checks for this invocation
+    #[arg(long, global = true)]
+    pub no_update: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -56,12 +61,25 @@ fn needs_setup(cmd: &Option<Commands>) -> bool {
 }
 
 pub async fn run(cli: Cli) -> Result<()> {
+    // First-run detection: guide new users before any command runs.
     if needs_setup(&cli.command) && !UserConfig::path().exists() {
         eprintln!();
         eprintln!("  No config found. Run `orbit setup` to get started.");
         eprintln!();
         std::process::exit(1);
     }
+
+    let user_cfg = UserConfig::load();
+    let ws_cfg = {
+        let ai_root = user_cfg.ai_root_expanded();
+        WorkspaceConfig::load(&ai_root)
+    };
+
+    // Notify if a previous background update installed a new binary.
+    auto_update::print_pending_notification();
+
+    // Fire-and-forget background update (governance pull + binary).
+    auto_update::spawn(ws_cfg.clone(), user_cfg.clone(), cli.no_update);
 
     match cli.command {
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
@@ -78,10 +96,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         None => {
-            let ws_cfg = {
-                let ai_root = UserConfig::load().ai_root_expanded();
-                WorkspaceConfig::load(&ai_root)
-            };
             update_check::check_and_print(&ws_cfg).await;
 
             if let Some(params) = orbit_tui::run().await? {

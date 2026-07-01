@@ -15,6 +15,16 @@ pub struct UserConfig {
     pub workspace: WorkspaceSection,
     pub engine: EngineSection,
     pub install: InstallSection,
+    pub update: UserUpdateSection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UserUpdateSection {
+    /// Pull the governance repo automatically in background on every invocation.
+    pub auto_update_governance: bool,
+    /// Download and install a new orbit binary in background when one is available.
+    pub auto_update_binary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +54,15 @@ pub struct InstallSection {
 
 // ── defaults ──────────────────────────────────────────────────────────────────
 
+impl Default for UserUpdateSection {
+    fn default() -> Self {
+        Self {
+            auto_update_governance: true,
+            auto_update_binary: true,
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for UserConfig {
     fn default() -> Self {
@@ -51,6 +70,7 @@ impl Default for UserConfig {
             workspace: WorkspaceSection::default(),
             engine: EngineSection::default(),
             install: InstallSection::default(),
+            update: UserUpdateSection::default(),
         }
     }
 }
