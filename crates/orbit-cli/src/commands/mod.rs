@@ -12,4 +12,5 @@ pub mod plugins;
 pub mod session;
 pub mod setup;
 pub mod snapshot;
+pub mod status;
 pub mod update;

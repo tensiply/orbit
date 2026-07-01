@@ -45,6 +45,8 @@ pub enum Commands {
     Mcp(commands::mcp::McpArgs),
     /// Manage orbit plugins (install, list, wrap)
     Plugins(commands::plugins::PluginsArgs),
+    /// Quick snapshot of current state: workspace, engine, scope, daemon, sessions
+    Status(commands::status::StatusArgs),
     /// Run environment diagnostics
     Doctor(commands::doctor::DoctorArgs),
     /// Save a context snapshot for the current scope to the governance repo
@@ -99,6 +101,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Completions(args)) => commands::completions::run(args),
         Some(Commands::Mcp(args)) => commands::mcp::run(args),
         Some(Commands::Plugins(args)) => commands::plugins::run(args),
+        Some(Commands::Status(args)) => commands::status::run(args).await,
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         None => {
