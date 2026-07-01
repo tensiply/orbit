@@ -11,14 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Plugin system (`orbit plugins list/install/enable/disable/info/wrap/unwrap`) — optional external tools with their own install lifecycle. Plugins defined as TOML files in `plugins/`; add a file and rebuild to register a new plugin. Users can also drop `.toml` files into `~/.config/orbit/plugins/` without rebuilding.
+- **Engine catalog** — curated list of engines and MCPs embedded in the binary at compile time (`config/catalog/engines.toml`, `config/catalog/mcps.toml`). Updated only on release; no dynamic fetching. Powers `orbit setup`, `orbit engines`, `orbit mcp`, `orbit auth`, and `orbit doctor`.
+- **GitHub Copilot CLI support** — `copilot` added to the engine catalog. Installed via `gh extension install github/gh-copilot`; updated via `gh extension upgrade gh-copilot`. Auth detected from `GITHUB_TOKEN`/`GH_TOKEN` env vars or `~/.config/gh`. Supports `orbit engines install/update/info copilot` and `orbit auth copilot`.
+- **`orbit mcp`** — manage MCP servers per scope. Subcommands: `list` (catalog MCPs with enabled/disabled status), `enable <name>` (prompts for required vars, writes to scope's `mcp.json`), `disable <name>`, `info <name>` (description, vars, per-layer status). Scope auto-detected from cwd; use `--scope global|tenant|project|repo` to target a specific layer. Secret vars flagged with hint to use env vars.
+- **`orbit auth`** — engine auth detection and management. `orbit auth` shows configured/not-configured status for all engines (checks env vars and config dirs — no network calls). `orbit auth <engine>` proxies to the engine's native auth flow. `orbit auth --check` exits 1 if any engine is not configured (CI-friendly).
+- **`orbit status`** — quick operational snapshot in ≤ 8 lines: workspace, engine (install + auth), tenant, scope from cwd, daemon status with session count, version. `orbit status --json` outputs the same as structured JSON for scripts and shell prompts. Exit code 1 on critical issues. Runs in < 200ms (no network, 150ms daemon timeout).
+- **`orbit engines`** — engine lifecycle management. Subcommands: `list` (all catalog engines with installed version and cached update availability), `install <name>` (npm or custom install command), `update [name]` (one or all installed engines), `info <name>` (description, installed vs. latest npm version, auth status). Installed version detected via `<bin> --version` with semver token extraction. Npm latest cached 24h in `~/.local/share/orbit/engine-versions/`.
+- **`orbit config list`** — shows all active config values. `orbit config set engine.default_workspace <name>` configures a default workspace applied like the default tenant.
+- **Auto-update** — `orbit` now pulls the governance repo and updates its own binary in the background on every invocation (24h TTL, skipped in dev mode or during git operations). Controlled via `update.auto_update_governance` and `update.auto_update_binary` in config. Use `--no-update` to skip for a single invocation. A notification is printed on the next run when a new binary is installed.
+- **`orbit doctor`** engines section now shows install + auth status per engine from the catalog, with `orbit auth <engine>` hint for unconfigured engines.
+- **`orbit setup`** engine loop now shows detected auth status live (env var or config dir found), with `orbit auth <engine>` suggestion when not configured. MCP configuration step added: select from catalog MCPs, collect required vars, write to `~/.config/orbit/mcps.json`.
+- Engine catalog supports non-npm engines via `install_cmd` and `update_cmd` fields (used by `copilot`).
+- **Plugin system** (`orbit plugins list/install/enable/disable/info/wrap/unwrap`) — optional external tools with their own install lifecycle. Plugins defined as TOML files in `plugins/`; users can also drop `.toml` files into `~/.config/orbit/plugins/` without rebuilding.
 - `orbit plugins enable/disable` — registers or removes a plugin's MCP servers in `~/.config/orbit/plugins.mcp.json`, loaded as the baseline MCP layer in every orbit session. State persisted in `~/.config/orbit/plugin-state.toml`.
 - Built-in plugin: `headroom` — context compression layer (60–95% fewer tokens). Supports `orbit plugins wrap headroom` to proxy the active engine.
 - Built-in plugin: `playwright` — browser automation via `@playwright/mcp`. MCP server runs `npx -y @playwright/mcp@latest` when enabled.
 - `orbit doctor` and `orbit setup` now include a plugins section.
 
+### Fixed
+
+- Gemini auth detection: `auth_config_dirs` corrected from `.config/gemini` to `.gemini` (the actual location of `oauth_creds.json` used by `@google/gemini-cli`). `orbit auth` and `orbit doctor` now correctly detect gemini as configured when `~/.gemini/` exists.
+
 ### Changed
 
+- `orbit doctor` engines section driven by the catalog instead of hardcoded engine list.
+- `orbit setup` auth hints replaced by live `detect_auth` detection.
 - README: simplified to core concepts (what it does, install, workspace model, quick reference). Full documentation moved to the wiki.
 - Wiki: comprehensive pages generated at release — Commands, Plugins, Workspace.
 

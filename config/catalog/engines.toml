@@ -16,7 +16,7 @@ description = "Google Gemini CLI — agentic AI with Google's models"
 auth_hint = "Run `gemini auth` or set GOOGLE_API_KEY / GEMINI_API_KEY"
 auth_cmd = "gemini auth"
 auth_env_vars = ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
-auth_config_dirs = [".config/gemini"]
+auth_config_dirs = [".gemini"]
 
 [[engines]]
 name = "claude"
@@ -27,3 +27,14 @@ auth_hint = "Run `claude auth login` or set ANTHROPIC_API_KEY"
 auth_cmd = "claude auth login"
 auth_env_vars = ["ANTHROPIC_API_KEY"]
 auth_config_dirs = [".claude", ".config/claude"]
+
+[[engines]]
+name = "copilot"
+bin = "gh"
+install_cmd = ["gh", "extension", "install", "github/gh-copilot"]
+update_cmd = ["gh", "extension", "upgrade", "gh-copilot"]
+description = "GitHub Copilot in the terminal — AI pair programmer via gh CLI"
+auth_hint = "Run `gh auth login` — GitHub account with Copilot access required"
+auth_cmd = "gh auth login"
+auth_env_vars = ["GITHUB_TOKEN", "GH_TOKEN"]
+auth_config_dirs = [".config/gh"]

@@ -14,7 +14,17 @@ struct EngineCatalogFile {
 pub struct EngineEntry {
     pub name: String,
     pub bin: String,
+    /// npm package name. Empty for engines installed via other means.
+    #[serde(default)]
     pub npm_package: String,
+    /// Override install command for non-npm engines (e.g. gh extension install).
+    /// When non-empty, used instead of `npm install -g <npm_package>`.
+    #[serde(default)]
+    pub install_cmd: Vec<String>,
+    /// Override update command for non-npm engines.
+    /// When non-empty, used instead of `npm install -g <npm_package>@latest`.
+    #[serde(default)]
+    pub update_cmd: Vec<String>,
     pub description: String,
     pub auth_hint: String,
     pub auth_cmd: String,

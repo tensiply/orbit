@@ -67,13 +67,18 @@ fn cmd_list() -> Result<()> {
 
         if installed {
             let installed_ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
-            let cached_latest = cached_npm_version(&engine.npm_package);
+            let cached_latest = if engine.npm_package.is_empty() {
+                None
+            } else {
+                cached_npm_version(&engine.npm_package)
+            };
 
             let update_tag = match &cached_latest {
                 Some(latest) if latest != &installed_ver && !installed_ver.starts_with('?') => {
                     format!("  \x1b[33m→ {latest} available\x1b[0m")
                 }
                 Some(_) => "  \x1b[32mup to date\x1b[0m".to_string(),
+                None if engine.npm_package.is_empty() => String::new(),
                 None => "  \x1b[2mrun orbit engines info for latest\x1b[0m".to_string(),
             };
 
@@ -105,13 +110,31 @@ fn cmd_install(name: &str, yes: bool) -> Result<()> {
     let engine = catalog::engine_by_name(name).ok_or_else(|| engine_not_found(name))?;
 
     if bin_available(&engine.bin) {
-        let ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
-        println!("  \x1b[32m✓\x1b[0m  {} is already installed (v{ver})", engine.name);
-        return Ok(());
+        // For extension-based engines (e.g. copilot via gh), bin existing
+        // doesn't guarantee the extension is installed — just proceed.
+        if engine.install_cmd.is_empty() {
+            let ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
+            println!("  \x1b[32m✓\x1b[0m  {} is already installed (v{ver})", engine.name);
+            return Ok(());
+        }
     }
 
-    if !bin_available("npm") {
-        bail!("npm is not available — install Node.js first: https://nodejs.org");
+    // Validate prerequisites
+    if !engine.install_cmd.is_empty() {
+        // Custom install — verify the prerequisite binary exists
+        let prereq = &engine.install_cmd[0];
+        if !bin_available(prereq) {
+            bail!(
+                "`{prereq}` is not available — install it first before running `orbit engines install {name}`"
+            );
+        }
+    } else {
+        if !bin_available("npm") {
+            bail!("npm is not available — install Node.js first: https://nodejs.org");
+        }
+        if engine.npm_package.is_empty() {
+            bail!("no install command defined for {name}");
+        }
     }
 
     if !yes && !confirm(&format!("Install {}?", engine.name))? {
@@ -122,9 +145,14 @@ fn cmd_install(name: &str, yes: bool) -> Result<()> {
     print!("  Installing {}...", engine.name);
     io::stdout().flush()?;
 
-    let status = Command::new("npm")
-        .args(["install", "-g", &engine.npm_package])
-        .status()?;
+    let status = if !engine.install_cmd.is_empty() {
+        let (cmd, args) = engine.install_cmd.split_first().unwrap();
+        Command::new(cmd).args(args).status()?
+    } else {
+        Command::new("npm")
+            .args(["install", "-g", &engine.npm_package])
+            .status()?
+    };
 
     if status.success() {
         let ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
@@ -133,7 +161,12 @@ fn cmd_install(name: &str, yes: bool) -> Result<()> {
         print_auth_hint(&engine);
     } else {
         println!(" \x1b[31mfailed\x1b[0m");
-        bail!("npm install -g {} failed", engine.npm_package);
+        let cmd_str = if !engine.install_cmd.is_empty() {
+            engine.install_cmd.join(" ")
+        } else {
+            format!("npm install -g {}", engine.npm_package)
+        };
+        bail!("{cmd_str} failed");
     }
 
     Ok(())
@@ -142,10 +175,6 @@ fn cmd_install(name: &str, yes: bool) -> Result<()> {
 // ── update ────────────────────────────────────────────────────────────────────
 
 fn cmd_update(name: Option<&str>) -> Result<()> {
-    if !bin_available("npm") {
-        bail!("npm is not available — install Node.js first: https://nodejs.org");
-    }
-
     let engines = catalog::engines();
 
     let targets: Vec<&EngineEntry> = if let Some(n) = name {
@@ -163,16 +192,34 @@ fn cmd_update(name: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
+    // Verify npm is available for any npm-based engine in the target set
+    let needs_npm = targets.iter().any(|e| e.update_cmd.is_empty() && !e.npm_package.is_empty());
+    if needs_npm && !bin_available("npm") {
+        bail!("npm is not available — install Node.js first: https://nodejs.org");
+    }
+
     for engine in &targets {
         let before = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
         print!("  Updating {}...", engine.name);
         io::stdout().flush()?;
 
-        let status = Command::new("npm")
-            .args(["install", "-g", &format!("{}@latest", engine.npm_package)])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()?;
+        let status = if !engine.update_cmd.is_empty() {
+            let (cmd, args) = engine.update_cmd.split_first().unwrap();
+            Command::new(cmd)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()?
+        } else if !engine.npm_package.is_empty() {
+            Command::new("npm")
+                .args(["install", "-g", &format!("{}@latest", engine.npm_package)])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()?
+        } else {
+            println!(" \x1b[33mskipped\x1b[0m  no update command defined");
+            continue;
+        };
 
         if status.success() {
             let after = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
@@ -203,15 +250,24 @@ fn cmd_info(name: &str) -> Result<()> {
         String::new()
     };
 
-    // Fetch latest from npm (with timeout) and cache
-    let latest_ver = fetch_npm_version(&engine.npm_package);
+    // Fetch latest from npm (with timeout) and cache — only for npm-based engines
+    let latest_ver = if engine.npm_package.is_empty() {
+        None
+    } else {
+        fetch_npm_version(&engine.npm_package)
+    };
 
     println!("\x1b[1m{}\x1b[0m", engine.name);
     println!("  {}", engine.description);
     println!();
 
     let info_w = 14usize;
-    info_row("package", info_w, &engine.npm_package);
+    if !engine.npm_package.is_empty() {
+        info_row("package", info_w, &engine.npm_package);
+    }
+    if !engine.install_cmd.is_empty() {
+        info_row("install via", info_w, &engine.install_cmd.join(" "));
+    }
 
     if installed {
         let ver_detail = match &latest_ver {
@@ -219,7 +275,7 @@ fn cmd_info(name: &str) -> Result<()> {
                 format!("v{installed_ver}  \x1b[33m→ v{l} available\x1b[0m  run: orbit engines update {}", engine.name)
             }
             Some(_) => format!("v{installed_ver}  \x1b[32mup to date\x1b[0m"),
-            None => format!("v{installed_ver}  \x1b[2mlatest unknown\x1b[0m"),
+            None => format!("v{installed_ver}"),
         };
         info_row("installed", info_w, &ver_detail);
     } else {
