@@ -21,6 +21,8 @@ pub struct Cli {
 pub enum Commands {
     /// Check and manage engine authentication
     Auth(commands::auth::AuthArgs),
+    /// Manage AI engines: list, install, update, info
+    Engines(commands::engines::EnginesArgs),
     /// First-time setup: write config and install the binary
     Setup(commands::setup::SetupArgs),
     /// Get, set, or list config values
@@ -89,6 +91,7 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Some(Commands::Auth(args)) => commands::auth::run(args),
+        Some(Commands::Engines(args)) => commands::engines::run(args),
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
         Some(Commands::Config(args)) => commands::config::run(args),
         Some(Commands::Mode(args)) => commands::mode::run(args).await,

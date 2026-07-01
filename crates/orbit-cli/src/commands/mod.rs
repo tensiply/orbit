@@ -3,6 +3,7 @@ pub mod completions;
 pub mod config;
 pub mod daemon;
 pub mod doctor;
+pub mod engines;
 pub mod init;
 pub mod launch;
 pub mod ls;
