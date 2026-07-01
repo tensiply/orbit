@@ -5,7 +5,7 @@ pub mod tmux;
 
 use anyhow::{Result, bail};
 use orbit_core::{context::OrbitScope, engine::Engine, session::Session};
-use std::{fs, os::unix::process::CommandExt, path::Path, process::Command};
+use std::{fs, io::Write, os::unix::process::CommandExt, path::Path, process::Command};
 
 use crate::config::MergedConfig;
 
@@ -69,8 +69,11 @@ pub fn launch(
     // 7. cd into work_dir, then exec
     std::env::set_current_dir(&scope.work_dir)?;
 
+    let title = window_title(scope, engine);
+    set_terminal_title(&title);
+
     if use_tmux {
-        exec_with_tmux(engine, &paths.config_file, &tmux_name)
+        exec_with_tmux(engine, &paths.config_file, &tmux_name, &title)
     } else {
         exec_engine(engine, &paths.config_file)
     }
@@ -95,7 +98,12 @@ pub fn tmux_session_name(scope: &OrbitScope, engine: Engine) -> String {
     format!("orbit-{}", parts.join("-"))
 }
 
-fn exec_with_tmux(engine: Engine, config_file: &Path, session_name: &str) -> Result<()> {
+fn exec_with_tmux(
+    engine: Engine,
+    config_file: &Path,
+    session_name: &str,
+    window_name: &str,
+) -> Result<()> {
     if tmux::session_exists(session_name) {
         // Session already exists — reattach
         tracing::debug!("reattaching to tmux session {session_name}");
@@ -108,11 +116,16 @@ fn exec_with_tmux(engine: Engine, config_file: &Path, session_name: &str) -> Res
     // Build the engine command args for tmux
     let (bin, extra_args) = engine_cmd(engine, config_file);
 
-    // tmux new-session -s <name> <bin> [args...]
+    // tmux new-session -s <name> -n <window> -- <bin> [args...]
     // Env vars already set in process environment — tmux inherits them.
     let mut cmd = Command::new("tmux");
-    cmd.arg("new-session").arg("-s").arg(session_name);
-    cmd.arg("--").arg(&bin);
+    cmd.arg("new-session")
+        .arg("-s")
+        .arg(session_name)
+        .arg("-n")
+        .arg(window_name)
+        .arg("--")
+        .arg(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
     }
@@ -319,6 +332,34 @@ fn tmux_pane_pid(session_name: &str) -> Option<u32> {
         .ok()
 }
 
+// ── terminal title ────────────────────────────────────────────────────────────
+
+/// Build a human-readable title: `orbit · <engine> · <tenant>/<project>/<repo>`.
+fn window_title(scope: &OrbitScope, engine: Engine) -> String {
+    if scope.global_mode {
+        format!("orbit · {}", engine.as_str())
+    } else {
+        let mut segments: Vec<&str> = vec![&scope.tenant];
+        if !scope.project.is_empty() {
+            segments.push(&scope.project);
+        }
+        if !scope.repository.is_empty() {
+            segments.push(&scope.repository);
+        }
+        format!("orbit · {} · {}", engine.as_str(), segments.join("/"))
+    }
+}
+
+/// Emit an xterm OSC escape to set the terminal window/tab title.
+/// No-ops when stdout is not a TTY (CI, pipes).
+fn set_terminal_title(title: &str) {
+    use std::io::IsTerminal;
+    if std::io::stdout().is_terminal() {
+        print!("\x1b]0;{title}\x07");
+        let _ = std::io::stdout().flush();
+    }
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -435,5 +476,42 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(tmux_session_name(&scope, Engine::Claude), "orbit-claude");
+    }
+
+    #[test]
+    fn window_title_global() {
+        let scope = OrbitScope {
+            global_mode: true,
+            ..Default::default()
+        };
+        assert_eq!(window_title(&scope, Engine::Claude), "orbit · claude");
+    }
+
+    #[test]
+    fn window_title_full_scope() {
+        let scope = OrbitScope {
+            tenant: "AIDEV".into(),
+            project: "AI-ECOSYSTEM".into(),
+            repository: "orbit".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            window_title(&scope, Engine::Opencode),
+            "orbit · opencode · AIDEV/AI-ECOSYSTEM/orbit"
+        );
+    }
+
+    #[test]
+    fn window_title_tenant_only() {
+        let scope = OrbitScope {
+            tenant: "AIDEV".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            window_title(&scope, Engine::Gemini),
+            "orbit · gemini · AIDEV"
+        );
     }
 }
