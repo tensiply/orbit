@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
 
 pub mod auto_update;
+pub mod banner;
 pub mod commands;
 mod update_check;
 

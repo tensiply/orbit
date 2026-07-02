@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Args, ValueEnum};
 use orbit_core::{engine::Engine, user_config::UserConfig};
 use orbit_engine::{
-    config,
+    config::{self, ScopeReport},
     launcher::{self, LaunchOptions},
     resolver,
 };
@@ -97,10 +97,11 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         "config loaded"
     );
 
-    // Dry-run: print rendered config and exit without launching
+    // Dry-run: print human-readable scope + context report
     if args.dry_run {
-        let rendered = launcher::render::render(&merged, engine);
-        println!("{}", serde_json::to_string_pretty(&rendered)?);
+        crate::banner::print();
+        let (_, report) = config::inspect(&scope, engine)?;
+        print_dry_run(&scope, engine, &merged, &report);
         return Ok(());
     }
 
@@ -187,4 +188,145 @@ fn attach_tmux(session_name: &str) -> Result<()> {
         .args([cmd, "-t", session_name])
         .exec();
     anyhow::bail!("failed to exec tmux {cmd}: {err}");
+}
+
+// ── dry-run report ────────────────────────────────────────────────────────────
+
+fn print_dry_run(
+    scope: &orbit_core::context::OrbitScope,
+    engine: Engine,
+    merged: &orbit_engine::config::MergedConfig,
+    report: &ScopeReport,
+) {
+    let ok = "\x1b[32m✓\x1b[0m";
+    let skip = "\x1b[2m·\x1b[0m";
+    let missing = "\x1b[31m✗\x1b[0m";
+
+    let bold = |s: &str| format!("\x1b[1m{s}\x1b[0m");
+    let dim = |s: &str| format!("\x1b[2m{s}\x1b[0m");
+
+    // ── scope ─────────────────────────────────────────────────────────────────
+    println!("{}", bold("scope"));
+    let lw = 12usize;
+    let row = |label: &str, val: &str| {
+        let pad = " ".repeat(lw.saturating_sub(label.len()));
+        println!("  {}{}  {}", dim(label), pad, val);
+    };
+    row("workspace", &scope.workspace_root.to_string_lossy());
+    if !scope.tenant.is_empty() {
+        row("tenant", &scope.tenant);
+    }
+    if !scope.project.is_empty() {
+        row("project", &scope.project);
+    }
+    if !scope.repository.is_empty() {
+        row("repository", &scope.repository);
+    }
+    row("engine", engine.as_str());
+    row("work dir", &scope.work_dir.to_string_lossy());
+    println!();
+
+    // ── config layers ─────────────────────────────────────────────────────────
+    println!("{}", bold("config layers"));
+    for entry in &report.config_layers {
+        let mark = if entry.exists { ok } else { skip };
+        let note = if entry.exists {
+            String::new()
+        } else {
+            format!("  {}", dim("not found"))
+        };
+        println!(
+            "  {}  {}  {}{}",
+            mark,
+            entry.path.display(),
+            dim(&format!("({})", entry.label)),
+            note
+        );
+    }
+    println!();
+
+    // ── agent overlays ────────────────────────────────────────────────────────
+    if !report.agent_overlay_dirs.is_empty() {
+        println!("{}", bold("agent overlays"));
+        for entry in &report.agent_overlay_dirs {
+            let mark = if entry.exists { ok } else { skip };
+            let note = if entry.exists {
+                String::new()
+            } else {
+                format!("  {}", dim("no opencode/ dir"))
+            };
+            println!(
+                "  {}  {}/  {}{}",
+                mark,
+                entry.path.display(),
+                dim(&format!("({})", entry.label)),
+                note
+            );
+        }
+        println!();
+    }
+
+    // ── MCP layers ────────────────────────────────────────────────────────────
+    println!("{}", bold("mcp layers"));
+    for entry in &report.mcp_layers {
+        let mark = if entry.exists { ok } else { skip };
+        let note = if entry.exists {
+            String::new()
+        } else {
+            format!("  {}", dim("not found"))
+        };
+        println!(
+            "  {}  {}  {}{}",
+            mark,
+            entry.path.display(),
+            dim(&format!("({})", entry.label)),
+            note
+        );
+    }
+    println!();
+
+    // ── instructions ──────────────────────────────────────────────────────────
+    let miss_count = report.instructions.iter().filter(|(_, ok)| !ok).count();
+    let miss_note = if miss_count > 0 {
+        format!("  \x1b[33m{miss_count} missing\x1b[0m")
+    } else {
+        String::new()
+    };
+    println!(
+        "{}  {}{}",
+        bold("instructions"),
+        dim(&format!("({})", report.instructions.len())),
+        miss_note
+    );
+    for (path, exists) in &report.instructions {
+        let mark = if *exists { ok } else { missing };
+        println!("  {}  {}", mark, path.display());
+    }
+    println!();
+
+    // ── mcp servers ───────────────────────────────────────────────────────────
+    println!(
+        "{}  {}",
+        bold("mcp servers"),
+        dim(&format!("({})", report.mcp_servers.len()))
+    );
+    if report.mcp_servers.is_empty() {
+        println!("  {}  none", skip);
+    } else {
+        let name_w = report
+            .mcp_servers
+            .iter()
+            .map(|(n, _)| n.len())
+            .max()
+            .unwrap_or(0);
+        for (name, cmd) in &report.mcp_servers {
+            let pad = " ".repeat(name_w.saturating_sub(name.len()));
+            println!("  {}  {}{pad}  {}", ok, name, cmd.join(" "));
+        }
+    }
+    println!();
+
+    // Suppress unused warning — `merged` is available if we want to add
+    // a raw-config section in the future.
+    let _ = merged;
 }

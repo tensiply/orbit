@@ -16,7 +16,7 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     let ai_root = user_cfg.ai_root_expanded();
     let ws_cfg = WorkspaceConfig::load(&ai_root);
 
-    println!("orbit doctor\n");
+    crate::banner::print();
 
     // ── engines ───────────────────────────────────────────────────────────────
     section("engines");

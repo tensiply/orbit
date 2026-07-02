@@ -163,7 +163,7 @@ async fn daemon_status() -> (bool, usize) {
 // ── human output ──────────────────────────────────────────────────────────────
 
 fn print_human(d: &StatusData) {
-    println!("orbit status\n");
+    crate::banner::print();
 
     let label_w = 12usize;
 

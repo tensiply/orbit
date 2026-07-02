@@ -59,9 +59,7 @@ pub struct SetupArgs {
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
-    println!();
-    println!("  Welcome to Orbit — AI ecosystem CLI");
-    println!();
+    crate::banner::print();
 
     let current = UserConfig::load();
     let engines = catalog::engines();

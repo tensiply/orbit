@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-01
+
+### Added
+
+- **ASCII art banner** — all user-facing commands (`launch --dry-run`, `setup`, `doctor`, `status`) now print a bold-cyan ORBIT banner on startup. Suppressed automatically when stdout is not a TTY (pipes, CI).
+- **Human-readable `--dry-run`** — `orbit launch --dry-run` no longer outputs raw JSON. Prints a structured report: resolved scope, config layers (with ✓/· per path), agent overlay directories, MCP layers, instruction files (✓/✗), and active MCP servers.
+- **`config::inspect()` API** — new public function in `orbit-engine` that returns `(MergedConfig, ScopeReport)` with full layer visibility, used by the dry-run report and available for future tooling.
+- **Dual-layer governance loading** — config and instruction loading now mirrors MCP's existing dual-root pattern at every scope level. When `global_ai_root ≠ ai_context_root` (multi-workspace setup), orbit loads governance from `~/AI` first, then `~/<WORKSPACE>/AI`, at root, tenant, project, and repository levels. When both roots are the same (default), `canonicalize()` deduplication ensures a single pass — fully backward compatible.
+
 ## [0.8.0] - 2026-07-01
 
 ### Added
