@@ -1,10 +1,11 @@
 pub mod agents;
+pub mod plugin_hooks;
 pub mod render;
 pub mod runtime;
 pub mod tmux;
 
 use anyhow::{Result, bail};
-use orbit_core::{context::OrbitScope, engine::Engine, session::Session};
+use orbit_core::{context::OrbitScope, engine::Engine, jira::TaskContext, session::Session};
 use std::{fs, io::Write, os::unix::process::CommandExt, path::Path, process::Command};
 
 use crate::config::MergedConfig;
@@ -29,6 +30,7 @@ pub fn launch(
     config: &MergedConfig,
     engine: Engine,
     opts: LaunchOptions,
+    task_context: Option<&TaskContext>,
 ) -> Result<()> {
     // 1. Runtime dirs
     let paths = runtime::setup(scope, engine)?;
@@ -36,8 +38,32 @@ pub fn launch(
     // 2. Agent materialisation
     agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
 
+    // 2b. Plugin context + pre-launch hooks
+    let mut config = config.clone();
+    let state = orbit_core::plugin::PluginState::load();
+    let plugins = orbit_core::plugin::load_all();
+    plugin_hooks::inject_context(&state, &plugins, &mut config, &paths.runtime_dir)?;
+    for path in plugin_hooks::run_pre_launch(&state, &plugins, &paths.runtime_dir) {
+        if !config.instructions.contains(&path) {
+            config.instructions.push(path);
+        }
+    }
+
+    // 2c. Task context injection — fetch full detail (description + comments).
+    if let Some(task) = task_context {
+        let md = match orbit_core::jira::fetch_issue_detail(&task.key) {
+            Ok(detail) => orbit_core::jira::render_task_detail_instructions(&detail),
+            Err(_) => orbit_core::jira::render_task_instructions(task),
+        };
+        let path = paths.runtime_dir.join("task-context.md");
+        fs::write(&path, &md)?;
+        if !config.instructions.contains(&path) {
+            config.instructions.push(path);
+        }
+    }
+
     // 3. Write config file
-    let rendered = render::render(config, engine);
+    let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
     // 4. Decide tmux strategy before registering the session
@@ -246,6 +272,7 @@ pub fn spawn_background(
     scope: &OrbitScope,
     config: &MergedConfig,
     engine: Engine,
+    task_context: Option<&TaskContext>,
 ) -> Result<orbit_core::session::Session> {
     // 1. Runtime dirs
     let paths = runtime::setup(scope, engine)?;
@@ -253,8 +280,32 @@ pub fn spawn_background(
     // 2. Agent materialisation
     agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
 
+    // 2b. Plugin context + pre-launch hooks
+    let mut config = config.clone();
+    let state = orbit_core::plugin::PluginState::load();
+    let plugins = orbit_core::plugin::load_all();
+    plugin_hooks::inject_context(&state, &plugins, &mut config, &paths.runtime_dir)?;
+    for path in plugin_hooks::run_pre_launch(&state, &plugins, &paths.runtime_dir) {
+        if !config.instructions.contains(&path) {
+            config.instructions.push(path);
+        }
+    }
+
+    // 2c. Task context injection — fetch full detail (description + comments).
+    if let Some(task) = task_context {
+        let md = match orbit_core::jira::fetch_issue_detail(&task.key) {
+            Ok(detail) => orbit_core::jira::render_task_detail_instructions(&detail),
+            Err(_) => orbit_core::jira::render_task_instructions(task),
+        };
+        let path = paths.runtime_dir.join("task-context.md");
+        fs::write(&path, &md)?;
+        if !config.instructions.contains(&path) {
+            config.instructions.push(path);
+        }
+    }
+
     // 3. Write config file
-    let rendered = render::render(config, engine);
+    let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
     // 4. Tmux session name

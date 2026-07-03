@@ -25,6 +25,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
 }
 
 fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let dim = app.palette.dim;
+    let accent = app.palette.accent;
     let active = app.sessions.iter().filter(|s| s.is_running()).count();
     let dead = app.sessions.iter().filter(|s| !s.is_running()).count();
 
@@ -39,38 +41,43 @@ fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Span::styled(
             " orbit ",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("─", Style::default().fg(Color::DarkGray)),
-        Span::styled(status_text, Style::default().fg(Color::DarkGray)),
+        Span::styled("─", Style::default().fg(dim)),
+        Span::styled(status_text, Style::default().fg(dim)),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(dim));
 
     f.render_widget(Paragraph::new(line).block(block).alignment(Alignment::Left), area);
 }
 
 fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let dim = app.palette.dim;
+    let accent = app.palette.accent;
+    let label = app.palette.label;
+    let success = app.palette.success;
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Sessions ", Style::default().fg(Color::DarkGray)));
+        .border_style(Style::default().fg(dim))
+        .title(Span::styled(" Sessions ", Style::default().fg(dim)));
 
     if app.sessions.is_empty() {
         let text = vec![
             Line::from(""),
             Line::from(Span::styled(
                 "  No sessions running.",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(dim),
             )),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Run ", Style::default().fg(Color::DarkGray)),
-                Span::styled("orbit launch", Style::default().fg(Color::Cyan)),
-                Span::styled(" to start a session.", Style::default().fg(Color::DarkGray)),
+                Span::styled("  Run ", Style::default().fg(dim)),
+                Span::styled("orbit launch", Style::default().fg(accent)),
+                Span::styled(" to start a session.", Style::default().fg(dim)),
             ]),
         ];
         f.render_widget(Paragraph::new(text).block(block), area);
@@ -80,27 +87,27 @@ fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let header = Row::new(vec![
         Cell::from("ENGINE").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("SCOPE").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("STATUS").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("TMUX").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("STARTED").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
     ])
@@ -113,21 +120,21 @@ fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             let alive = s.is_running();
 
             let status_cell = if alive {
-                Cell::from("● alive").style(Style::default().fg(Color::Green))
+                Cell::from("● alive").style(Style::default().fg(success))
             } else {
-                Cell::from("○ dead").style(Style::default().fg(Color::DarkGray))
+                Cell::from("○ dead").style(Style::default().fg(dim))
             };
 
             let tmux_cell = if s.has_tmux() {
-                Cell::from("yes").style(Style::default().fg(Color::Cyan))
+                Cell::from("yes").style(Style::default().fg(accent))
             } else {
-                Cell::from("no").style(Style::default().fg(Color::DarkGray))
+                Cell::from("no").style(Style::default().fg(dim))
             };
 
             let row_style = if alive {
                 Style::default()
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(dim)
             };
 
             Row::new(vec![
@@ -154,7 +161,7 @@ fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .block(block)
         .row_highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(app.palette.selected_bg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -163,24 +170,26 @@ fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 }
 
 fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let accent = app.palette.accent;
+    let warning = app.palette.warning;
     let line = if let Some(msg) = &app.status_msg {
         Line::from(vec![
-            Span::styled(" ! ", Style::default().fg(Color::Yellow)),
-            Span::styled(msg.clone(), Style::default().fg(Color::Yellow)),
+            Span::styled(" ! ", Style::default().fg(warning)),
+            Span::styled(msg.clone(), Style::default().fg(warning)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" [↑↓/jk]", Style::default().fg(Color::Cyan)),
+            Span::styled(" [↑↓/jk]", Style::default().fg(accent)),
             Span::raw(" nav  "),
-            Span::styled("[a/↵]", Style::default().fg(Color::Cyan)),
+            Span::styled("[a/↵]", Style::default().fg(accent)),
             Span::raw(" attach  "),
-            Span::styled("[K]", Style::default().fg(Color::Cyan)),
+            Span::styled("[K]", Style::default().fg(accent)),
             Span::raw(" kill  "),
-            Span::styled("[c]", Style::default().fg(Color::Cyan)),
+            Span::styled("[c]", Style::default().fg(accent)),
             Span::raw(" clean  "),
-            Span::styled("[r]", Style::default().fg(Color::Cyan)),
+            Span::styled("[r]", Style::default().fg(accent)),
             Span::raw(" refresh  "),
-            Span::styled("[q/Esc]", Style::default().fg(Color::Cyan)),
+            Span::styled("[q/Esc]", Style::default().fg(accent)),
             Span::raw(" quit"),
         ])
     };

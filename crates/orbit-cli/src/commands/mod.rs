@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod jira;
 pub mod completions;
 pub mod config;
 pub mod daemon;

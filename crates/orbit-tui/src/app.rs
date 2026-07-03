@@ -24,19 +24,47 @@ pub enum Tab {
     Sessions,
     Launch,
     System,
+    Tasks,
 }
 
 impl Tab {
-    pub fn next(self) -> Self {
+    pub fn next(self, jira_enabled: bool) -> Self {
         match self {
             Tab::Sessions => Tab::Launch,
             Tab::Launch => Tab::System,
-            Tab::System => Tab::Sessions,
+            Tab::System => {
+                if jira_enabled {
+                    Tab::Tasks
+                } else {
+                    Tab::Sessions
+                }
+            }
+            Tab::Tasks => Tab::Sessions,
+        }
+    }
+
+    pub fn prev(self, jira_enabled: bool) -> Self {
+        match self {
+            Tab::Sessions => {
+                if jira_enabled {
+                    Tab::Tasks
+                } else {
+                    Tab::System
+                }
+            }
+            Tab::Launch => Tab::Sessions,
+            Tab::System => Tab::Launch,
+            Tab::Tasks => Tab::System,
         }
     }
 }
 
 // ── mode (popup overlays) ─────────────────────────────────────────────────────
+
+pub struct WriteJiraState {
+    pub key: String,
+    pub input: TextInput,
+}
 
 pub enum Mode {
     Normal,
@@ -46,6 +74,116 @@ pub enum Mode {
     AddMcp(Box<AddMcpState>),
     ConfirmRemoveMcp(crate::mcp::McpEntry),
     FieldSelect(FieldSelectState),
+    TaskDetailsLoading,
+    TaskDetails(Box<orbit_core::jira::JiraIssueDetail>),
+    TaskDetailsError(String),
+    AddComment(Box<WriteJiraState>),
+}
+
+// ── tasks state ───────────────────────────────────────────────────────────────
+
+pub struct TasksState {
+    pub issues: Vec<orbit_core::jira::JiraIssue>,
+    pub selected: usize,
+    pub table_state: ratatui::widgets::TableState,
+    pub loading: bool,
+    pub loaded: bool,
+    pub error: Option<String>,
+    pub org_filter_idx: usize,
+    pub last_cache_mtime: Option<std::time::SystemTime>,
+}
+
+impl TasksState {
+    pub fn new() -> Self {
+        Self {
+            issues: vec![],
+            selected: 0,
+            table_state: ratatui::widgets::TableState::default(),
+            loading: false,
+            loaded: false,
+            error: None,
+            org_filter_idx: 0,
+            last_cache_mtime: None,
+        }
+    }
+
+    pub fn orgs(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut orgs = Vec::new();
+        for issue in &self.issues {
+            if seen.insert(issue.org.clone()) {
+                orgs.push(issue.org.clone());
+            }
+        }
+        orgs
+    }
+
+    pub fn filtered_count(&self) -> usize {
+        if self.org_filter_idx == 0 {
+            return self.issues.len();
+        }
+        let orgs = self.orgs();
+        if let Some(org) = orgs.get(self.org_filter_idx - 1) {
+            self.issues.iter().filter(|i| &i.org == org).count()
+        } else {
+            self.issues.len()
+        }
+    }
+
+    pub fn filtered_issues(&self) -> Vec<&orbit_core::jira::JiraIssue> {
+        if self.org_filter_idx == 0 {
+            return self.issues.iter().collect();
+        }
+        let orgs = self.orgs();
+        if let Some(org) = orgs.get(self.org_filter_idx - 1) {
+            self.issues.iter().filter(|i| &i.org == org).collect()
+        } else {
+            self.issues.iter().collect()
+        }
+    }
+
+    pub fn selected_issue(&self) -> Option<orbit_core::jira::JiraIssue> {
+        let filtered = self.filtered_issues();
+        filtered.get(self.selected).map(|i| (*i).clone())
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.filtered_count();
+        if n == 0 {
+            return;
+        }
+        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        self.table_state.select(Some(self.selected));
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.filtered_count();
+        if n == 0 {
+            return;
+        }
+        self.selected = (self.selected + 1) % n;
+        self.table_state.select(Some(self.selected));
+    }
+
+    pub fn cycle_org_right(&mut self) {
+        let n = self.orgs().len() + 1;
+        if n <= 1 {
+            return;
+        }
+        self.org_filter_idx = (self.org_filter_idx + 1) % n;
+        self.selected = 0;
+        self.table_state.select(Some(0));
+    }
+
+    pub fn cycle_org_left(&mut self) {
+        let n = self.orgs().len() + 1;
+        if n <= 1 {
+            return;
+        }
+        self.org_filter_idx = (self.org_filter_idx + n - 1) % n;
+        self.selected = 0;
+        self.table_state.select(Some(0));
+    }
 }
 
 // ── engines ───────────────────────────────────────────────────────────────────
@@ -61,6 +199,7 @@ pub enum LaunchField {
     Tenant,
     Project,
     Repository,
+    Task,
     NoTmux,
     Launch,
 }
@@ -72,7 +211,8 @@ impl LaunchField {
             LaunchField::Workspace => LaunchField::Tenant,
             LaunchField::Tenant => LaunchField::Project,
             LaunchField::Project => LaunchField::Repository,
-            LaunchField::Repository => LaunchField::NoTmux,
+            LaunchField::Repository => LaunchField::Task,
+            LaunchField::Task => LaunchField::NoTmux,
             LaunchField::NoTmux => LaunchField::Launch,
             LaunchField::Launch => LaunchField::Engine,
         }
@@ -85,7 +225,8 @@ impl LaunchField {
             LaunchField::Tenant => LaunchField::Workspace,
             LaunchField::Project => LaunchField::Tenant,
             LaunchField::Repository => LaunchField::Project,
-            LaunchField::NoTmux => LaunchField::Repository,
+            LaunchField::Task => LaunchField::Repository,
+            LaunchField::NoTmux => LaunchField::Task,
             LaunchField::Launch => LaunchField::NoTmux,
         }
     }
@@ -107,6 +248,8 @@ pub struct LaunchState {
     pub repository: TextInput,
     pub no_tmux: bool,
     pub focused: LaunchField,
+    /// Task selected from the Jira Tasks tab; pre-fills context at launch.
+    pub task_context: Option<orbit_core::jira::TaskContext>,
 }
 
 impl LaunchState {
@@ -127,6 +270,7 @@ impl LaunchState {
             repository: TextInput::new("Repo", "(optional)"),
             no_tmux: false,
             focused: LaunchField::Engine,
+            task_context: None,
         }
     }
 
@@ -173,6 +317,7 @@ impl LaunchState {
             project: self.project.as_str().to_string(),
             repository: self.repository.as_str().to_string(),
             no_tmux: self.no_tmux,
+            task_context: self.task_context.clone(),
         }
     }
 
@@ -501,6 +646,12 @@ fn is_dev_mode(install_dir: &Path) -> bool {
 pub enum AsyncAction {
     DaemonStart,
     DaemonStop,
+    /// Load tasks from cache; falls back to direct acli call if no cache exists.
+    RefreshTasks,
+    /// Force a direct acli call, bypassing cache (triggered by [r]).
+    ForceRefreshTasks,
+    FetchTaskDetail(String),
+    AddComment { key: String, body: String },
 }
 
 // ── post-exit actions ─────────────────────────────────────────────────────────
@@ -519,10 +670,13 @@ pub struct App {
     pub table_state: TableState,
     pub launch: LaunchState,
     pub sys: SystemState,
+    pub tasks: TasksState,
+    pub jira_enabled: bool,
     pub status_msg: Option<String>,
     pub pending_async: Option<AsyncAction>,
     pub workspaces: Vec<PathBuf>,
     pub workspace_idx: usize,
+    pub palette: crate::theme::Palette,
     should_quit: bool,
     post_action: Option<PostAction>,
 }
@@ -531,6 +685,11 @@ impl App {
     fn new() -> Self {
         let sys = SystemState::load();
         let launch = LaunchState::new(&sys.default_tenant, &sys.default_engine);
+        let jira_enabled = orbit_core::plugin::load_all()
+            .iter()
+            .find(|p| p.name == "jira")
+            .map(|p| p.is_installed())
+            .unwrap_or(false);
 
         let sessions = Session::load_all();
         let mut table_state = TableState::default();
@@ -552,10 +711,13 @@ impl App {
             table_state,
             launch,
             sys,
+            tasks: TasksState::new(),
+            jira_enabled,
             status_msg: None,
             pending_async: None,
             workspaces,
             workspace_idx,
+            palette: crate::theme::Palette::detect(),
             should_quit: false,
             post_action: None,
         }
@@ -702,8 +864,18 @@ impl App {
         let in_text_input = self.tab == Tab::Launch && self.launch.focused.is_text_input();
         if !in_text_input {
             match code {
-                KeyCode::Tab | KeyCode::BackTab => {
-                    self.tab = self.tab.next();
+                KeyCode::Tab => {
+                    self.tab = self.tab.next(self.jira_enabled);
+                    if self.tab == Tab::Tasks && !self.tasks.loaded && !self.tasks.loading {
+                        self.pending_async = Some(AsyncAction::RefreshTasks);
+                    }
+                    return;
+                }
+                KeyCode::BackTab => {
+                    self.tab = self.tab.prev(self.jira_enabled);
+                    if self.tab == Tab::Tasks && !self.tasks.loaded && !self.tasks.loading {
+                        self.pending_async = Some(AsyncAction::RefreshTasks);
+                    }
                     return;
                 }
                 KeyCode::Char('1') => {
@@ -718,6 +890,13 @@ impl App {
                     self.tab = Tab::System;
                     return;
                 }
+                KeyCode::Char('4') if self.jira_enabled => {
+                    self.tab = Tab::Tasks;
+                    if !self.tasks.loaded && !self.tasks.loading {
+                        self.pending_async = Some(AsyncAction::RefreshTasks);
+                    }
+                    return;
+                }
                 KeyCode::Char('w') => {
                     self.switch_workspace_next();
                     return;
@@ -730,6 +909,7 @@ impl App {
             Tab::Sessions => self.handle_sessions_key(code),
             Tab::Launch => self.handle_launch_key(code),
             Tab::System => self.handle_system_key(code),
+            Tab::Tasks => self.handle_tasks_key(code),
         }
     }
 
@@ -883,6 +1063,41 @@ impl App {
                     }
                 }
             }
+            Mode::TaskDetailsLoading | Mode::TaskDetailsError(_) => {
+                // any key closes the popup
+            }
+            Mode::TaskDetails(detail) => match code {
+                KeyCode::Char('c') => {
+                    self.mode = Mode::AddComment(Box::new(WriteJiraState {
+                        key: detail.key.clone(),
+                        input: TextInput::new("comment", "Write a comment…"),
+                    }));
+                }
+                KeyCode::Char('e') => {
+                    // Open in browser to preserve rich content (tables, images, etc.)
+                    let key = detail.key.clone();
+                    let _ = std::process::Command::new("acli")
+                        .args(["jira", "workitem", "view", &key, "--web"])
+                        .spawn();
+                }
+                _ => {} // any other key closes
+            },
+            Mode::AddComment(mut state) => match code {
+                KeyCode::Esc => {} // closes, mode already Normal
+                KeyCode::Enter => {
+                    let body = state.input.value.trim().to_string();
+                    if !body.is_empty() {
+                        self.pending_async = Some(AsyncAction::AddComment {
+                            key: state.key.clone(),
+                            body,
+                        });
+                    }
+                }
+                other => {
+                    state.input.handle_key(other);
+                    self.mode = Mode::AddComment(state);
+                }
+            },
             Mode::Normal => {}
         }
     }
@@ -910,6 +1125,24 @@ impl App {
     }
 
     fn handle_launch_key(&mut self, code: KeyCode) {
+        // Special handling for the read-only Task field
+        if self.launch.focused == LaunchField::Task {
+            match code {
+                KeyCode::Esc if self.launch.task_context.is_some() => {
+                    self.launch.task_context = None;
+                    return;
+                }
+                KeyCode::Char('t') if self.jira_enabled => {
+                    self.tab = Tab::Tasks;
+                    if !self.tasks.loaded && !self.tasks.loading {
+                        self.pending_async = Some(AsyncAction::RefreshTasks);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // ↓ on a text field opens the field selector if options are available
         if code == KeyCode::Down && self.launch.focused.is_text_input() {
             let options = load_field_options(self.launch.focused, &self.launch, &self.sys.ai_root);
@@ -1003,6 +1236,41 @@ impl App {
             _ => {}
         }
     }
+
+    fn handle_tasks_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => self.tasks.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.tasks.move_down(),
+            KeyCode::Left => self.tasks.cycle_org_left(),
+            KeyCode::Right => self.tasks.cycle_org_right(),
+            KeyCode::Enter => {
+                if let Some(issue) = self.tasks.selected_issue() {
+                    self.launch.task_context =
+                        Some(orbit_core::jira::TaskContext::from(issue));
+                    self.tab = Tab::Launch;
+                    self.launch.focused = LaunchField::Task;
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Some(issue) = self.tasks.selected_issue() {
+                    self.mode = Mode::TaskDetailsLoading;
+                    self.pending_async = Some(AsyncAction::FetchTaskDetail(issue.key));
+                }
+            }
+            KeyCode::Char('e') => {
+                if let Some(issue) = self.tasks.selected_issue() {
+                    let _ = std::process::Command::new("acli")
+                        .args(["jira", "workitem", "view", &issue.key, "--web"])
+                        .spawn();
+                }
+            }
+            KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::ForceRefreshTasks);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
 }
 
 // ── field options loader ──────────────────────────────────────────────────────
@@ -1078,6 +1346,132 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 app.sys.refresh();
             }
         },
+        AsyncAction::RefreshTasks => {
+            use orbit_core::jira;
+
+            // Try cache first (populated by daemon's background poller).
+            let cached = jira::read_issues_cache();
+            if !cached.is_empty() {
+                let n = cached.len();
+                app.tasks.issues = cached;
+                app.tasks.loaded = true;
+                app.tasks.loading = false;
+                app.tasks.error = None;
+                app.tasks.last_cache_mtime = jira::cache_mtime();
+                app.tasks.selected = 0;
+                app.tasks.table_state.select(if n > 0 { Some(0) } else { None });
+                return;
+            }
+
+            // No cache yet — fall back to a direct acli call.
+            app.tasks.loading = true;
+            app.tasks.error = None;
+
+            let result = tokio::task::spawn_blocking(move || {
+                let jira_installed = orbit_core::plugin::load_all()
+                    .iter()
+                    .find(|p| p.name == "jira")
+                    .map(|p| p.is_installed())
+                    .unwrap_or(false);
+                if !jira_installed {
+                    return (vec![], Some("acli not found — install Jira plugin first.".to_string()));
+                }
+                let orgs = jira::load_orgs();
+                if orgs.is_empty() {
+                    return (vec![], Some("No Jira orgs configured.".to_string()));
+                }
+                let issues = jira::fetch_issues(&orgs);
+                // Persist so future loads are instant.
+                jira::write_issues_cache(&issues);
+                (issues, None)
+            })
+            .await;
+
+            app.tasks.loading = false;
+            app.tasks.loaded = true;
+            match result {
+                Ok((issues, err)) => {
+                    let has = !issues.is_empty();
+                    app.tasks.last_cache_mtime = jira::cache_mtime();
+                    app.tasks.issues = issues;
+                    app.tasks.selected = 0;
+                    app.tasks.table_state.select(if has { Some(0) } else { None });
+                    app.tasks.error = err;
+                }
+                Err(e) => {
+                    app.tasks.error = Some(format!("Refresh failed: {e}"));
+                }
+            }
+        }
+
+        AsyncAction::ForceRefreshTasks => {
+            use orbit_core::jira;
+            app.tasks.loading = true;
+            app.tasks.error = None;
+
+            let result = tokio::task::spawn_blocking(move || {
+                let jira_installed = orbit_core::plugin::load_all()
+                    .iter()
+                    .find(|p| p.name == "jira")
+                    .map(|p| p.is_installed())
+                    .unwrap_or(false);
+                if !jira_installed {
+                    return (vec![], Some("acli not found — install Jira plugin first.".to_string()));
+                }
+                let orgs = jira::load_orgs();
+                if orgs.is_empty() {
+                    return (vec![], Some("No Jira orgs configured.".to_string()));
+                }
+                let issues = jira::fetch_issues(&orgs);
+                jira::write_issues_cache(&issues);
+                (issues, None)
+            })
+            .await;
+
+            app.tasks.loading = false;
+            app.tasks.loaded = true;
+            match result {
+                Ok((issues, err)) => {
+                    let has = !issues.is_empty();
+                    app.tasks.last_cache_mtime = orbit_core::jira::cache_mtime();
+                    app.tasks.issues = issues;
+                    app.tasks.selected = 0;
+                    app.tasks.table_state.select(if has { Some(0) } else { None });
+                    app.tasks.error = err;
+                }
+                Err(e) => {
+                    app.tasks.error = Some(format!("Refresh failed: {e}"));
+                }
+            }
+        }
+
+        AsyncAction::FetchTaskDetail(key) => {
+            let key_clone = key.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                orbit_core::jira::fetch_issue_detail(&key_clone)
+            })
+            .await;
+
+            app.mode = match result {
+                Ok(Ok(detail)) => Mode::TaskDetails(Box::new(detail)),
+                Ok(Err(msg)) => Mode::TaskDetailsError(msg),
+                Err(e) => Mode::TaskDetailsError(format!("Task error: {e}")),
+            };
+        }
+
+        AsyncAction::AddComment { key, body } => {
+            let (k, b) = (key.clone(), body.clone());
+            let result = tokio::task::spawn_blocking(move || {
+                orbit_core::jira::add_comment(&k, &b)
+            })
+            .await;
+            app.status_msg = Some(match result {
+                Ok(Ok(())) => format!("Comment added to {key}"),
+                Ok(Err(e)) => format!("Error: {e}"),
+                Err(e) => format!("Error: {e}"),
+            });
+        }
+
     }
 }
 
@@ -1125,6 +1519,25 @@ async fn run_app<B: ratatui::backend::Backend>(
             } else {
                 app.refresh_sessions();
             }
+
+            // Watch Jira cache file for changes written by the daemon poller.
+            if app.jira_enabled {
+                let mtime = orbit_core::jira::cache_mtime();
+                if mtime.is_some() && mtime != app.tasks.last_cache_mtime {
+                    app.tasks.last_cache_mtime = mtime;
+                    let fresh = orbit_core::jira::read_issues_cache();
+                    if !fresh.is_empty() {
+                        let n = fresh.len();
+                        let sel = app.tasks.selected.min(n.saturating_sub(1));
+                        app.tasks.issues = fresh;
+                        app.tasks.loaded = true;
+                        app.tasks.loading = false;
+                        app.tasks.selected = sel;
+                        app.tasks.table_state.select(if n > 0 { Some(sel) } else { None });
+                    }
+                }
+            }
+
             last_refresh = Instant::now();
         }
 

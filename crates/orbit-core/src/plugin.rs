@@ -25,6 +25,12 @@ pub struct Plugin {
     /// MCP servers contributed by this plugin when enabled.
     #[serde(default)]
     pub mcp: Vec<PluginMcp>,
+    /// TUI tab contributed by this plugin when enabled.
+    pub tui: Option<TuiSpec>,
+    /// Static context (prompt + instruction files) injected at every session launch.
+    pub context: Option<ContextSpec>,
+    /// Command run before launching a session; output optionally injected as context.
+    pub pre_launch: Option<PreLaunchSpec>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +55,45 @@ pub struct WrapSpec {
     pub cmd_template: String,
     pub unwrap_cmd_template: Option<String>,
     pub engines: Vec<String>,
+    /// When true, wrap is applied automatically on `orbit plugins enable`.
+    #[serde(default)]
+    pub auto_wrap: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TuiSpec {
+    pub tab_title: String,
+    #[serde(default)]
+    pub can_be_primary: bool,
+    pub data_cmd: String,
+    #[serde(default = "default_data_refresh_secs")]
+    pub data_refresh_secs: u64,
+    pub scope_key: String,
+}
+
+fn default_data_refresh_secs() -> u64 {
+    300
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContextSpec {
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub instructions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PreLaunchSpec {
+    pub cmd: String,
+    /// How to use stdout: "context" | "env" | "none"
+    #[serde(default = "default_output_mode")]
+    pub output: String,
+    pub timeout_secs: Option<u64>,
+    pub cache_ttl_secs: Option<u64>,
+}
+
+fn default_output_mode() -> String {
+    "none".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -264,7 +309,7 @@ fn empty_mcp_json() -> serde_json::Value {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn user_config_dir() -> PathBuf {
+pub fn user_config_dir() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg)
     } else {

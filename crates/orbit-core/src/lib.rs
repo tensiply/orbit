@@ -4,6 +4,7 @@ pub mod context;
 pub mod engine;
 pub mod error;
 pub mod ipc;
+pub mod jira;
 pub mod plugin;
 pub mod session;
 pub mod user_config;

@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table},
 };
 use std::path::Path;
 
@@ -23,9 +23,9 @@ fn subdirs_limited(dir: &Path, max: usize) -> Vec<String> {
     names
 }
 
-fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
+fn workspace_tree_lines(ai_root: &Path, dim: Color) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let dim = Style::default().fg(Color::DarkGray);
+    let dim = Style::default().fg(dim);
 
     let tenants = subdirs_limited(&ai_root.join("tenants"), 5);
     if tenants.is_empty() {
@@ -40,7 +40,7 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {t_prefix} "), dim),
-            Span::styled(tenant.clone(), Style::default().fg(Color::White)),
+            Span::styled(tenant.clone(), Style::default().fg(Color::Reset)),
         ]));
 
         let projects_dir = ai_root.join("tenants").join(tenant).join("projects");
@@ -55,7 +55,7 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  {t_cont}  {p_prefix} "), dim),
-                Span::styled(project.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(project.clone(), dim),
             ]));
 
             let repos_dir = projects_dir.join(project).join("repositories");
@@ -70,7 +70,7 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
                 };
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {t_cont}  {p_cont}  {r_prefix} "), dim),
-                    Span::styled(repo.clone(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(repo.clone(), dim),
                 ]));
             }
         }
@@ -80,6 +80,10 @@ fn workspace_tree_lines(ai_root: &Path) -> Vec<Line<'static>> {
 }
 
 pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let accent = app.palette.accent;
+    let dim = app.palette.dim;
+    let label = app.palette.label;
+    let success = app.palette.success;
     let active = app.sessions.iter().filter(|s| s.is_running()).count();
     let dead = app.sessions.iter().filter(|s| !s.is_running()).count();
 
@@ -92,31 +96,32 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(title, Style::default().fg(Color::DarkGray)));
+        .border_style(Style::default().fg(dim))
+        .title(Span::styled(title, Style::default().fg(dim)))
+        .padding(Padding::horizontal(1));
 
     if app.sessions.is_empty() {
         let mut lines = vec![
             Line::from(""),
             Line::from(Span::styled(
                 "  No sessions running.",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(dim),
             )),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
-                Span::styled("[2]", Style::default().fg(Color::Cyan)),
-                Span::styled(" or ", Style::default().fg(Color::DarkGray)),
-                Span::styled("[Tab]", Style::default().fg(Color::Cyan)),
+                Span::styled("  Press ", Style::default().fg(dim)),
+                Span::styled("[2]", Style::default().fg(accent)),
+                Span::styled(" or ", Style::default().fg(dim)),
+                Span::styled("[Tab]", Style::default().fg(accent)),
                 Span::styled(
                     " to open the Launch tab.",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(dim),
                 ),
             ]),
         ];
 
         // Workspace tree overview
-        let tree = workspace_tree_lines(&app.sys.ai_root);
+        let tree = workspace_tree_lines(&app.sys.ai_root, dim);
         if !tree.is_empty() {
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -128,7 +133,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         .and_then(|n| n.to_str())
                         .unwrap_or("?")
                 ),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(label),
             )));
             lines.extend(tree);
         }
@@ -145,27 +150,27 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let header = Row::new(vec![
         Cell::from("ENGINE").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("SCOPE").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("STATUS").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("TMUX").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("STARTED").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(label)
                 .add_modifier(Modifier::BOLD),
         ),
     ])
@@ -177,19 +182,19 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .map(|s| {
             let alive = s.is_running();
             let status_cell = if alive {
-                Cell::from("● alive").style(Style::default().fg(Color::Green))
+                Cell::from("● alive").style(Style::default().fg(success))
             } else {
-                Cell::from("○ dead").style(Style::default().fg(Color::DarkGray))
+                Cell::from("○ dead").style(Style::default().fg(dim))
             };
             let tmux_cell = if s.has_tmux() {
-                Cell::from("yes").style(Style::default().fg(Color::Cyan))
+                Cell::from("yes").style(Style::default().fg(accent))
             } else {
-                Cell::from("no").style(Style::default().fg(Color::DarkGray))
+                Cell::from("no").style(Style::default().fg(dim))
             };
             let row_style = if alive {
                 Style::default()
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(dim)
             };
             Row::new(vec![
                 Cell::from(s.engine.clone()),
@@ -210,12 +215,15 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         Constraint::Length(12),
     ];
 
+    let sel_bg = app.palette.selected_bg;
+    let sel_fg = app.palette.selected_fg;
     let table = Table::new(rows, widths)
         .header(header)
         .block(block)
         .row_highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(sel_bg)
+                .fg(sel_fg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");

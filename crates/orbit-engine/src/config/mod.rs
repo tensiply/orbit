@@ -15,7 +15,7 @@ pub use mcp::McpServer;
 /// Merged config accumulated from all scope layers.
 /// Engine-agnostic at this stage — rendering to opencode/gemini/claude format
 /// happens in `orbit-engine::launcher`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MergedConfig {
     /// Ordered instruction file paths (accumulated, no duplicates).
     pub instructions: Vec<PathBuf>,
@@ -24,9 +24,6 @@ pub struct MergedConfig {
     /// All other keys (model, agent, compaction, …) — last writer wins.
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
-
-// ── MCP names that must never leak across workspaces ─────────────────────────
-const LEAKED_MCP: &[&str] = &["jira_betterware", "jira_jaframexico", "jira_jafraace"];
 
 // ── scope inspection (dry-run) ────────────────────────────────────────────────
 
@@ -305,8 +302,7 @@ pub fn load(scope: &OrbitScope, engine: Engine) -> Result<MergedConfig> {
     // 1. Global opencode config (~/.config/opencode/opencode.jsonc)
     let global_opencode = dirs_global_config().join("opencode/opencode.jsonc");
     if global_opencode.is_file() {
-        let mut val = jsonc::load_file(&global_opencode);
-        filter_leaked_mcp(&mut val);
+        let val = jsonc::load_file(&global_opencode);
         merge_value_into(&mut cfg, val, &global_opencode, engine);
     }
 
@@ -528,13 +524,7 @@ fn config_candidates(engine: Engine) -> &'static [&'static str] {
     }
 }
 
-fn filter_leaked_mcp(val: &mut serde_json::Value) {
-    if let Some(mcp) = val.get_mut("mcp").and_then(|v| v.as_object_mut()) {
-        for key in LEAKED_MCP {
-            mcp.remove(*key);
-        }
-    }
-}
+
 
 fn dirs_global_config() -> PathBuf {
     // Respect XDG_CONFIG_HOME if set, otherwise ~/.config
@@ -654,17 +644,4 @@ mod tests {
         assert_eq!(cfg.instructions[0], tmp.path().join("README.md"));
     }
 
-    #[test]
-    fn filters_leaked_mcp_from_global_config() {
-        let mut val = serde_json::json!({
-            "mcp": {
-                "jira_betterware": { "command": "x" },
-                "my_server": { "command": "y" }
-            }
-        });
-        filter_leaked_mcp(&mut val);
-        let mcp = val["mcp"].as_object().unwrap();
-        assert!(!mcp.contains_key("jira_betterware"));
-        assert!(mcp.contains_key("my_server"));
-    }
 }

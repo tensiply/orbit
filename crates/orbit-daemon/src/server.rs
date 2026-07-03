@@ -133,7 +133,7 @@ impl ServerState {
                     }
                 };
 
-                match launcher::spawn_background(&scope, &merged, engine_val) {
+                match launcher::spawn_background(&scope, &merged, engine_val, None) {
                     Ok(session) => Response::Launched {
                         tmux_name: session.tmux_session.unwrap_or_default(),
                         session_id: session.id,
@@ -197,6 +197,19 @@ pub async fn run() -> Result<()> {
         Duration::from_secs(60),
         shutdown_tx.subscribe(),
     ));
+
+    // Background: poll Jira and write cache if plugin is installed
+    let jira_installed = orbit_core::plugin::load_all()
+        .iter()
+        .any(|p| p.name == "jira" && p.is_installed());
+    if jira_installed {
+        let interval_secs = orbit_core::jira::poll_interval_secs();
+        info!("jira poller enabled: every {interval_secs}s");
+        tokio::spawn(crate::jira_poller::run_poll_loop(
+            Duration::from_secs(interval_secs),
+            shutdown_tx.subscribe(),
+        ));
+    }
 
     let mut shutdown_rx = shutdown_tx.subscribe();
 

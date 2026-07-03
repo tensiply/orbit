@@ -52,6 +52,14 @@ pub struct LaunchArgs {
     /// Launch the engine directly without wrapping in a tmux session
     #[arg(long)]
     pub no_tmux: bool,
+
+    /// Attach a specific Jira issue to this session (e.g. ORBIT-123)
+    #[arg(long)]
+    pub task: Option<String>,
+
+    /// Skip the Jira task prompt for this launch
+    #[arg(long)]
+    pub no_task: bool,
 }
 
 pub async fn run(args: LaunchArgs) -> Result<()> {
@@ -97,11 +105,17 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         "config loaded"
     );
 
+    // Resolve Jira task (if plugin enabled and not skipped)
+    let task_context = super::jira::resolve_task_for_launch(
+        args.task.as_deref(),
+        args.no_task,
+    );
+
     // Dry-run: print human-readable scope + context report
     if args.dry_run {
         crate::banner::print();
         let (_, report) = config::inspect(&scope, engine)?;
-        print_dry_run(&scope, engine, &merged, &report);
+        print_dry_run(&scope, engine, &merged, &report, task_context.as_ref());
         return Ok(());
     }
 
@@ -158,6 +172,7 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         LaunchOptions {
             no_tmux: args.no_tmux,
         },
+        task_context.as_ref(),
     )
 }
 
@@ -197,6 +212,7 @@ fn print_dry_run(
     engine: Engine,
     merged: &orbit_engine::config::MergedConfig,
     report: &ScopeReport,
+    task: Option<&orbit_core::jira::TaskContext>,
 ) {
     let ok = "\x1b[32m✓\x1b[0m";
     let skip = "\x1b[2m·\x1b[0m";
@@ -224,6 +240,23 @@ fn print_dry_run(
     }
     row("engine", engine.as_str());
     row("work dir", &scope.work_dir.to_string_lossy());
+    println!();
+
+    // ── task context ──────────────────────────────────────────────────────────
+    println!("{}", bold("task"));
+    match task {
+        Some(t) => {
+            let pad = " ".repeat(lw.saturating_sub("task".len()));
+            println!("  {}{}  {} — {}", dim("task"), pad, t.key, t.summary);
+            let pad = " ".repeat(lw.saturating_sub("status".len()));
+            println!("  {}{}  {}", dim("status"), pad, t.status);
+            let pad = " ".repeat(lw.saturating_sub("priority".len()));
+            println!("  {}{}  {}", dim("priority"), pad, t.priority);
+        }
+        None => {
+            println!("  {}  none", skip);
+        }
+    }
     println!();
 
     // ── config layers ─────────────────────────────────────────────────────────

@@ -54,6 +54,8 @@ pub enum Commands {
     Doctor(commands::doctor::DoctorArgs),
     /// Save a context snapshot for the current scope to the governance repo
     Snapshot(commands::snapshot::SnapshotArgs),
+    /// Manage Jira integration: board mappings, orgs
+    Jira(commands::jira::JiraArgs),
 }
 
 impl Cli {
@@ -111,6 +113,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Status(args)) => commands::status::run(args).await,
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
+        Some(Commands::Jira(args)) => commands::jira::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 
@@ -144,6 +147,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                     }),
                     dry_run: false,
                     no_tmux: params.no_tmux,
+                    task: params.task_context.as_ref().map(|t| t.key.clone()),
+                    no_task: params.task_context.is_none(),
                 })
                 .await?;
             }

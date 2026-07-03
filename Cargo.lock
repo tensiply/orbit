@@ -945,6 +945,7 @@ dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
+ "crossterm",
  "directories",
  "futures-util",
  "hex",
