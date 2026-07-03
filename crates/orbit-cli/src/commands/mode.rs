@@ -160,8 +160,9 @@ async fn switch_to_stable() -> Result<()> {
     let checksums_url = make_checksums_url(&tag);
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");
-    remove_binary_or_symlink()?;
-    update::update_binary_to(
+    let backup = backup_binary(&install_path)?;
+
+    let result = update::update_binary_to(
         &client,
         &binary_url,
         &checksums_url,
@@ -169,11 +170,20 @@ async fn switch_to_stable() -> Result<()> {
         &tag,
         &install_path,
     )
-    .await?;
+    .await;
 
-    write_mode("stable")?;
-    println!("  Switched to stable mode ({tag}).");
-    Ok(())
+    match result {
+        Ok(()) => {
+            cleanup_backup(backup);
+            write_mode("stable")?;
+            println!("  Switched to stable mode ({tag}).");
+            Ok(())
+        }
+        Err(e) => {
+            restore_backup(backup, &install_path);
+            Err(e)
+        }
+    }
 }
 
 // ── dev ───────────────────────────────────────────────────────────────────────
@@ -201,7 +211,9 @@ fn switch_to_dev(path_arg: Option<PathBuf>) -> Result<()> {
     let install_dir = UserConfig::load().install_dir_expanded();
     let orbit_bin = install_dir.join("orbit");
 
-    remove_binary_or_symlink()?;
+    if orbit_bin.symlink_metadata().is_ok() {
+        fs::remove_file(&orbit_bin)?;
+    }
     std::os::unix::fs::symlink(&build_path, &orbit_bin)?;
     write_dev_path(&build_path)?;
     write_mode("dev")?;
@@ -234,8 +246,9 @@ async fn switch_to_beta() -> Result<()> {
     let checksums_url = make_checksums_url(&tag);
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");
-    remove_binary_or_symlink()?;
-    update::update_binary_to(
+    let backup = backup_binary(&install_path)?;
+
+    let result = update::update_binary_to(
         &client,
         &binary_url,
         &checksums_url,
@@ -243,11 +256,20 @@ async fn switch_to_beta() -> Result<()> {
         &tag,
         &install_path,
     )
-    .await?;
+    .await;
 
-    write_mode("beta")?;
-    println!("  Switched to beta mode ({tag}).");
-    Ok(())
+    match result {
+        Ok(()) => {
+            cleanup_backup(backup);
+            write_mode("beta")?;
+            println!("  Switched to beta mode ({tag}).");
+            Ok(())
+        }
+        Err(e) => {
+            restore_backup(backup, &install_path);
+            Err(e)
+        }
+    }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -259,10 +281,33 @@ fn build_client() -> Result<reqwest::Client> {
         .context("failed to build HTTP client")
 }
 
-fn remove_binary_or_symlink() -> Result<()> {
-    let orbit_bin = UserConfig::load().install_dir_expanded().join("orbit");
-    if orbit_bin.symlink_metadata().is_ok() {
-        fs::remove_file(&orbit_bin)?;
+/// Move the current binary/symlink to a `.bak` side-car before downloading a
+/// replacement. Returns the backup path if something was moved.
+fn backup_binary(install_path: &std::path::Path) -> Result<Option<PathBuf>> {
+    if install_path.symlink_metadata().is_err() {
+        return Ok(None);
     }
-    Ok(())
+    let backup = install_path.with_extension("bak");
+    fs::rename(install_path, &backup)
+        .with_context(|| format!("failed to back up {}", install_path.display()))?;
+    Ok(Some(backup))
+}
+
+/// Remove the backup after a successful install.
+fn cleanup_backup(backup: Option<PathBuf>) {
+    if let Some(p) = backup {
+        let _ = fs::remove_file(p);
+    }
+}
+
+/// Restore the backup after a failed install.
+fn restore_backup(backup: Option<PathBuf>, install_path: &std::path::Path) {
+    if let Some(p) = backup {
+        if let Err(e) = fs::rename(&p, install_path) {
+            eprintln!("  warning: could not restore previous binary: {e}");
+            eprintln!("  backup is at: {}", p.display());
+        } else {
+            eprintln!("  Previous binary restored.");
+        }
+    }
 }
