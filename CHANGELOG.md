@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-07-06
+
+### Added
+
+- **`orbit.json` config format** — `orbit.json` / `orbit.jsonc` are now the preferred config filenames for all engines, with priority over legacy `opencode.json`. Backwards compatible: existing `opencode.json` files continue to work.
+
+### Fixed
+
+- **Case-insensitive scope resolution** — workspace, tenant, project, and repository names are matched case-insensitively against the filesystem at every level.
+- **Auto-create SOT entries** — if a project or repository exists in the code tree but not in the SOT directory, orbit creates the SOT entry automatically.
+- **Workspace-scoped tenant config** — tenant, project, and repository config layers now only load from the workspace AI root (`~/WORKSPACE/AI`). The global `~/AI` root is only consulted at the workspace root level, since workspace-specific tenants do not belong under `~/AI`.
+- **Config labels** — dry-run report now correctly labels `~/AI` entries as `(global)` and `~/WORKSPACE/AI` entries as `(workspace)`.
+- **`opencode global` layer hidden for non-opencode engines** — `~/.config/opencode/opencode.jsonc` is no longer shown or loaded when using `-e claude` or `-e gemini`.
+- **Dry-run shows only loaded entries** — config layers, MCP layers, agent overlays, and instructions with no matching file on disk are no longer shown.
+- **`merge_layer` first-match semantics** — each scope directory now loads only the highest-priority matching config file instead of all candidates.
+- **Load order** — removed a redundant pre-load of the tenant config that caused the workspace root to incorrectly override tenant-level settings.
+
 ## [0.10.4] - 2026-07-05
 
 ### Changed

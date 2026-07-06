@@ -243,12 +243,16 @@ fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<Orbit
     let tenant_input = args.tenant.as_deref().unwrap_or(default_tenant);
     let tenant = resolve_name(&tenants_root, tenant_input);
 
+    // Resolve code_root with icase so tenant names in SOT and on-disk don't need to match.
+    let code_root = find_dir_icase(&workspace_root, &tenant)
+        .unwrap_or_else(|| workspace_root.join(&tenant));
+
     // ── resolve project ───────────────────────────────────────────────────────
     let project = match &args.project {
         None => String::new(),
         Some(p) => {
             let projects_root = tenants_root.join(&tenant).join("projects");
-            resolve_name(&projects_root, p)
+            resolve_name_with_code_fallback(&projects_root, &code_root, p)
         }
     };
 
@@ -260,13 +264,13 @@ fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<Orbit
                 .join("projects")
                 .join(&project)
                 .join("repositories");
-            resolve_name(&repos_root, r)
+            let repo_code_root = code_root.join(&project);
+            resolve_name_with_code_fallback(&repos_root, &repo_code_root, r)
         }
         _ => String::new(),
     };
 
     // ── derive paths ──────────────────────────────────────────────────────────
-    let code_root = workspace_root.join(&tenant);
     let tenant_dir = ai_context_root.join("tenants").join(&tenant);
 
     let work_dir = if !repository.is_empty() {
@@ -276,7 +280,6 @@ fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<Orbit
     } else {
         code_root.clone()
     };
-
     Ok(OrbitScope {
         workspace_root,
         ai_context_root,
@@ -292,6 +295,24 @@ fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<Orbit
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Like `resolve_name` but falls back to a case-insensitive lookup in `code_root`
+/// when `sot_root` has no matching entry. Auto-creates the SOT directory when the
+/// name is found only in code, so subsequent launches find it in SOT.
+fn resolve_name_with_code_fallback(sot_root: &Path, code_root: &Path, target: &str) -> String {
+    if let Some(name) = find_dir_icase(sot_root, target)
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+    {
+        return name;
+    }
+    if let Some(name) = find_dir_icase(code_root, target)
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+    {
+        let _ = std::fs::create_dir_all(sot_root.join(&name));
+        return name;
+    }
+    target.to_string()
+}
 
 /// Find a direct subdirectory of `root` whose name matches `target` ignoring case.
 /// Returns the original on-disk name, or `target` itself if not found.
@@ -410,6 +431,62 @@ mod tests {
         };
         let scope = resolve_with_home(args, home.path()).unwrap();
         assert_eq!(scope.work_dir, home.path().join("AI/AIDEV/AI-ECOSYSTEM"));
+    }
+
+    #[test]
+    fn resolves_project_from_code_when_not_in_sot() {
+        let home = TempDir::new().unwrap();
+        // Mirrors real structure: workspace=BeFra, SOT at ~/BeFra/AI/tenants, code at ~/BeFra/JAFRAUS
+        let code_project = home.path().join("BeFra/JAFRAUS/MULESOFT");
+        fs::create_dir_all(&code_project).unwrap();
+        // SOT has the tenant dir but projects/ is empty — no MULESOFT entry yet
+        fs::create_dir_all(home.path().join("BeFra/AI/tenants/JAFRAUS/projects")).unwrap();
+
+        let args = ResolveArgs {
+            workspace: Some("befra".to_string()),
+            tenant: Some("jafraus".to_string()),
+            project: Some("mulesoft".to_string()),
+            repository: None,
+        };
+        let scope = resolve_with_home(args, home.path()).unwrap();
+        assert_eq!(scope.project, "MULESOFT");
+        assert_eq!(scope.work_dir, code_project);
+        // SOT entry must be auto-created with the on-disk name
+        assert!(home
+            .path()
+            .join("BeFra/AI/tenants/JAFRAUS/projects/MULESOFT")
+            .is_dir());
+    }
+
+    #[test]
+    fn resolves_repository_from_code_when_not_in_sot() {
+        let home = TempDir::new().unwrap();
+        // code: ~/BeFra/JAFRAUS/MULESOFT/jafra-us-mulesoft-file-transfer
+        let code_repo = home
+            .path()
+            .join("BeFra/JAFRAUS/MULESOFT/jafra-us-mulesoft-file-transfer");
+        fs::create_dir_all(&code_repo).unwrap();
+        // SOT has projects/MULESOFT/repositories/ but no entry for the repo
+        fs::create_dir_all(
+            home.path()
+                .join("BeFra/AI/tenants/JAFRAUS/projects/MULESOFT/repositories"),
+        )
+        .unwrap();
+
+        let args = ResolveArgs {
+            workspace: Some("befra".to_string()),
+            tenant: Some("jafraus".to_string()),
+            project: Some("mulesoft".to_string()),
+            repository: Some("jafra-us-mulesoft-file-transfer".to_string()),
+        };
+        let scope = resolve_with_home(args, home.path()).unwrap();
+        assert_eq!(scope.project, "MULESOFT");
+        assert_eq!(scope.repository, "jafra-us-mulesoft-file-transfer");
+        assert_eq!(scope.work_dir, code_repo);
+        assert!(home
+            .path()
+            .join("BeFra/AI/tenants/JAFRAUS/projects/MULESOFT/repositories/jafra-us-mulesoft-file-transfer")
+            .is_dir());
     }
 
     #[test]
