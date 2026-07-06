@@ -64,95 +64,100 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
     // ── config layers (mirrors load() order) ─────────────────────────────────
     let mut config_layers: Vec<LayerEntry> = Vec::new();
 
-    let global_opencode = dirs_global_config().join("opencode/opencode.jsonc");
-    config_layers.push(LayerEntry {
-        exists: global_opencode.is_file(),
-        path: shorten_path(&home, &global_opencode),
-        label: "opencode global".into(),
-    });
+    if engine == Engine::Opencode {
+        let global_opencode = dirs_global_config().join("opencode/opencode.jsonc");
+        config_layers.push(LayerEntry {
+            exists: global_opencode.is_file(),
+            path: shorten_path(&home, &global_opencode),
+            label: "opencode global".into(),
+        });
+    }
 
     if !scope.global_mode {
         let global = scope.global_ai_root.as_path();
         let local = scope.ai_context_root.as_path();
-        let same_root = local.canonicalize().ok() == global.canonicalize().ok();
 
-        // helper: push one or two entries (global + optional local) for a dir pair
-        let push_config_dual =
-            |layers: &mut Vec<LayerEntry>, shared: &Path, loc: &Path, level: &str| {
-                let find_config = |dir: &Path| -> (PathBuf, bool) {
-                    let found = config_candidates(engine)
-                        .iter()
-                        .map(|c| dir.join(c))
-                        .find(|p| p.is_file());
-                    let path = found
-                        .clone()
-                        .unwrap_or_else(|| dir.join("opencode.json"));
-                    (path, found.is_some())
-                };
+        let find_config = |dir: &Path| -> (PathBuf, bool) {
+            let found = config_candidates(engine)
+                .iter()
+                .map(|c| dir.join(c))
+                .find(|p| p.is_file());
+            let path = found.clone().unwrap_or_else(|| dir.join("orbit.json"));
+            (path, found.is_some())
+        };
 
-                let (sp, se) = find_config(shared);
-                let same = loc.canonicalize().ok() == shared.canonicalize().ok();
-                if same {
-                    layers.push(LayerEntry {
-                        exists: se,
-                        path: shorten_path(&home, &sp),
-                        label: level.to_string(),
-                    });
-                } else {
-                    layers.push(LayerEntry {
-                        exists: se,
-                        path: shorten_path(&home, &sp),
-                        label: format!("{level} (global)"),
-                    });
-                    let (lp, le) = find_config(loc);
-                    layers.push(LayerEntry {
-                        exists: le,
-                        path: shorten_path(&home, &lp),
-                        label: format!("{level} (workspace)"),
-                    });
-                }
-            };
+        // workspace root — both global AI root and workspace AI root
+        if local == global {
+            let (p, e) = find_config(global);
+            config_layers.push(LayerEntry {
+                exists: e,
+                path: shorten_path(&home, &p),
+                label: "workspace".into(),
+            });
+        } else {
+            let (gp, ge) = find_config(global);
+            config_layers.push(LayerEntry {
+                exists: ge,
+                path: shorten_path(&home, &gp),
+                label: "global".into(),
+            });
+            let (lp, le) = find_config(local);
+            config_layers.push(LayerEntry {
+                exists: le,
+                path: shorten_path(&home, &lp),
+                label: "workspace".into(),
+            });
+        }
 
-        push_config_dual(&mut config_layers, global, local, "workspace");
-
-        let global_tenant = global.join("tenants").join(&scope.tenant);
-        push_config_dual(
-            &mut config_layers,
-            &global_tenant,
-            &scope.tenant_dir,
-            "tenant",
-        );
+        // tenant/project/repo — workspace AI root only (tenant config is workspace-scoped)
+        {
+            let (p, e) = find_config(&scope.tenant_dir);
+            config_layers.push(LayerEntry {
+                exists: e,
+                path: shorten_path(&home, &p),
+                label: "tenant".into(),
+            });
+        }
 
         if !scope.project.is_empty() {
-            let global_project = global
+            let proj_dir = local
                 .join("tenants")
                 .join(&scope.tenant)
                 .join("projects")
                 .join(&scope.project);
-            let local_project = local
-                .join("tenants")
-                .join(&scope.tenant)
-                .join("projects")
-                .join(&scope.project);
-            push_config_dual(&mut config_layers, &global_project, &local_project, "project");
+            let (p, e) = find_config(&proj_dir);
+            config_layers.push(LayerEntry {
+                exists: e,
+                path: shorten_path(&home, &p),
+                label: "project".into(),
+            });
 
             if !scope.repository.is_empty() {
-                let global_repo = global_project.join("repositories").join(&scope.repository);
-                let local_repo = local_project.join("repositories").join(&scope.repository);
-                push_config_dual(&mut config_layers, &global_repo, &local_repo, "repo");
+                let repo_dir = proj_dir.join("repositories").join(&scope.repository);
+                let (p, e) = find_config(&repo_dir);
+                config_layers.push(LayerEntry {
+                    exists: e,
+                    path: shorten_path(&home, &p),
+                    label: "repo".into(),
+                });
             }
         }
 
-        // suppress unused warning when same_root (no dual entries emitted)
-        let _ = same_root;
     }
 
-    let global_cfg = scope.global_ai_root.join("opencode.json");
-    config_layers.push(LayerEntry {
-        exists: global_cfg.is_file(),
-        path: shorten_path(&home, &global_cfg),
-        label: "global root (always wins)".into(),
-    });
+    {
+        let dir = scope.global_ai_root.as_path();
+        let found = config_candidates(engine)
+            .iter()
+            .map(|c| dir.join(c))
+            .find(|p| p.is_file());
+        let path = found.clone().unwrap_or_else(|| dir.join("orbit.json"));
+        config_layers.push(LayerEntry {
+            exists: found.is_some(),
+            path: shorten_path(&home, &path),
+            label: "global root (always wins)".into(),
+        });
+    }
 
     // ── MCP layers ────────────────────────────────────────────────────────────
     let mut mcp_layers: Vec<LayerEntry> = Vec::new();
@@ -164,48 +169,56 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         label: "catalog".into(),
     });
 
-    let push_dual = |layers: &mut Vec<LayerEntry>,
-                     shared: &Path,
-                     local: &Path,
-                     rel: &str,
-                     label: &str| {
-        let sp = shared.join(rel);
-        let lp = local.join(rel);
-        layers.push(LayerEntry {
-            exists: sp.is_file(),
-            path: shorten_path(&home, &sp),
-            label: format!("{label} (shared)"),
-        });
-        if lp.canonicalize().ok() != sp.canonicalize().ok() {
-            layers.push(LayerEntry {
-                exists: lp.is_file(),
-                path: shorten_path(&home, &lp),
-                label: format!("{label} (local)"),
-            });
-        }
-    };
+    let global_mcp = scope.global_ai_root.as_path();
+    let ws_mcp = scope.ai_context_root.as_path();
 
-    let shared = scope.global_ai_root.as_path();
-    let local = scope.ai_context_root.as_path();
-    push_dual(&mut mcp_layers, shared, local, "mcp.json", "workspace");
+    // workspace root — global AI root + workspace AI root
+    if global_mcp == ws_mcp {
+        mcp_layers.push(LayerEntry {
+            exists: global_mcp.join("mcp.json").is_file(),
+            path: shorten_path(&home, &global_mcp.join("mcp.json")),
+            label: "workspace".into(),
+        });
+    } else {
+        mcp_layers.push(LayerEntry {
+            exists: global_mcp.join("mcp.json").is_file(),
+            path: shorten_path(&home, &global_mcp.join("mcp.json")),
+            label: "global".into(),
+        });
+        mcp_layers.push(LayerEntry {
+            exists: ws_mcp.join("mcp.json").is_file(),
+            path: shorten_path(&home, &ws_mcp.join("mcp.json")),
+            label: "workspace".into(),
+        });
+    }
 
     if !scope.global_mode {
-        let tenant_rel = format!("tenants/{}/mcp.json", scope.tenant);
-        push_dual(&mut mcp_layers, shared, local, &tenant_rel, "tenant");
+        // tenant/project/repo — workspace AI root only
+        mcp_layers.push(LayerEntry {
+            exists: ws_mcp.join("tenants").join(&scope.tenant).join("mcp.json").is_file(),
+            path: shorten_path(&home, &ws_mcp.join("tenants").join(&scope.tenant).join("mcp.json")),
+            label: "tenant".into(),
+        });
 
         if !scope.project.is_empty() {
-            let proj_rel = format!(
-                "tenants/{}/projects/{}/mcp.json",
-                scope.tenant, scope.project
-            );
-            push_dual(&mut mcp_layers, shared, local, &proj_rel, "project");
+            let proj_base = ws_mcp
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("projects")
+                .join(&scope.project);
+            mcp_layers.push(LayerEntry {
+                exists: proj_base.join("mcp.json").is_file(),
+                path: shorten_path(&home, &proj_base.join("mcp.json")),
+                label: "project".into(),
+            });
 
             if !scope.repository.is_empty() {
-                let repo_rel = format!(
-                    "tenants/{}/projects/{}/repositories/{}/mcp.json",
-                    scope.tenant, scope.project, scope.repository
-                );
-                push_dual(&mut mcp_layers, shared, local, &repo_rel, "repo");
+                let repo_base = proj_base.join("repositories").join(&scope.repository);
+                mcp_layers.push(LayerEntry {
+                    exists: repo_base.join("mcp.json").is_file(),
+                    path: shorten_path(&home, &repo_base.join("mcp.json")),
+                    label: "repo".into(),
+                });
             }
         }
     }
@@ -286,75 +299,55 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
 /// Load and merge config from all scope layers for the given engine.
 ///
 /// Loading order (each layer wins over the previous):
-/// 1. `~/.config/opencode/opencode.jsonc`  (global opencode config)
-/// 2. workspace config (`ai_context_root/opencode.json` or tenant-level)
-/// 3. Dual-layer scope configs: for each scope level (workspace → tenant →
-///    project → repo), `global_ai_root` is merged first, then
-///    `ai_context_root` (so workspace-specific config wins over global).
-///    When both roots point to the same directory only one pass runs.
-/// 4. `global_ai_root/opencode.json`       (always last → always wins)
+/// 1. `~/.config/opencode/opencode.jsonc`  (global opencode config, opencode engine only)
+/// 2. Scope configs — global AI root then workspace AI root at each level:
+///    - workspace root: dual-layer (global_ai_root then ai_context_root)
+///    - tenant / project / repo: workspace AI root only (tenant config is
+///      workspace-scoped — ~/AI does not hold workspace-specific tenants)
+/// 3. `global_ai_root/orbit.json` (or opencode.json) — always last → always wins
 ///
-/// MCP servers are loaded from `mcp.json` files at each layer (same dual
-/// pattern — mirrors this function exactly).
+/// `orbit.json` / `orbit.jsonc` take priority over legacy `opencode.json` names.
+/// MCP servers are loaded from `mcp.json` files at each layer.
 pub fn load(scope: &OrbitScope, engine: Engine) -> Result<MergedConfig> {
     let mut cfg = MergedConfig::default();
 
-    // 1. Global opencode config (~/.config/opencode/opencode.jsonc)
-    let global_opencode = dirs_global_config().join("opencode/opencode.jsonc");
-    if global_opencode.is_file() {
-        let val = jsonc::load_file(&global_opencode);
-        merge_value_into(&mut cfg, val, &global_opencode, engine);
+    // 1. Global opencode config — only for the opencode engine
+    if engine == Engine::Opencode {
+        let global_opencode = dirs_global_config().join("opencode/opencode.jsonc");
+        if global_opencode.is_file() {
+            let val = jsonc::load_file(&global_opencode);
+            merge_value_into(&mut cfg, val, &global_opencode, engine);
+        }
     }
 
-    // 2. Workspace / tenant config
-    let ws_config = if scope.global_mode {
-        scope.ai_context_root.join("opencode.json")
-    } else {
-        scope.tenant_dir.join("opencode.json")
-    };
-    merge_file_into(&mut cfg, &ws_config, engine);
-
-    // 3. Scope layers — dual pattern: global_ai_root first, then
-    //    ai_context_root at every level so workspace-specific config wins.
-    //    When both roots are the same directory, only one pass runs.
+    // 2. Scope configs
     if !scope.global_mode {
         let global = &scope.global_ai_root;
         let local = &scope.ai_context_root;
 
-        // workspace root
+        // workspace root — both global and workspace AI root
         merge_layer_dual(&mut cfg, global, local, engine);
 
-        // tenant
-        let global_tenant = global.join("tenants").join(&scope.tenant);
-        merge_layer_dual(&mut cfg, &global_tenant, &scope.tenant_dir, engine);
+        // tenant and below — workspace AI root only
+        merge_layer(&mut cfg, &scope.tenant_dir, engine);
 
         if !scope.project.is_empty() {
-            let global_project = global
-                .join("tenants")
-                .join(&scope.tenant)
-                .join("projects")
-                .join(&scope.project);
             let local_project = local
                 .join("tenants")
                 .join(&scope.tenant)
                 .join("projects")
                 .join(&scope.project);
-            merge_layer_dual(&mut cfg, &global_project, &local_project, engine);
+            merge_layer(&mut cfg, &local_project, engine);
 
             if !scope.repository.is_empty() {
-                let global_repo = global_project.join("repositories").join(&scope.repository);
                 let local_repo = local_project.join("repositories").join(&scope.repository);
-                merge_layer_dual(&mut cfg, &global_repo, &local_repo, engine);
+                merge_layer(&mut cfg, &local_repo, engine);
             }
         }
     }
 
-    // 4. Global AI root config (always wins)
-    merge_file_into(
-        &mut cfg,
-        &scope.global_ai_root.join("opencode.json"),
-        engine,
-    );
+    // 3. Global AI root config (always wins — overrides tenant/project/repo)
+    merge_layer(&mut cfg, &scope.global_ai_root, engine);
 
     // Load MCP from mcp.json files at each layer
     load_mcp_layers(scope, &mut cfg.mcp);
@@ -364,12 +357,13 @@ pub fn load(scope: &OrbitScope, engine: Engine) -> Result<MergedConfig> {
 
 // ── layer helpers ─────────────────────────────────────────────────────────────
 
-/// Try every candidate filename for this engine in `dir` and merge the first hit.
+/// Load the highest-priority config file found in `dir` (first candidate that exists).
 fn merge_layer(cfg: &mut MergedConfig, dir: &Path, engine: Engine) {
     for candidate in config_candidates(engine) {
         let path = dir.join(candidate);
         if path.is_file() {
             merge_file_into(cfg, &path, engine);
+            return;
         }
     }
 }
@@ -378,7 +372,7 @@ fn merge_layer(cfg: &mut MergedConfig, dir: &Path, engine: Engine) {
 /// When both paths resolve to the same directory only one pass runs.
 fn merge_layer_dual(cfg: &mut MergedConfig, shared: &Path, local: &Path, engine: Engine) {
     merge_layer(cfg, shared, engine);
-    if local.canonicalize().ok() != shared.canonicalize().ok() {
+    if local != shared {
         merge_layer(cfg, local, engine);
     }
 }
@@ -454,28 +448,32 @@ fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) 
     let plugins_mcp = dirs_global_config().join("orbit/plugins.mcp.json");
     mcp::merge_file(target, &plugins_mcp);
 
-    let shared = &scope.global_ai_root;
+    let global = &scope.global_ai_root;
     let local = &scope.ai_context_root;
 
-    merge_dual_mcp(target, shared, local, "mcp.json");
+    // workspace root — both global and workspace AI root
+    merge_dual_mcp(target, global, local, "mcp.json");
 
     if !scope.global_mode {
-        let tenant_rel = format!("tenants/{}/mcp.json", scope.tenant);
-        merge_dual_mcp(target, shared, local, &tenant_rel);
+        // tenant and below — workspace AI root only
+        mcp::merge_file(target, &local.join("tenants").join(&scope.tenant).join("mcp.json"));
 
         if !scope.project.is_empty() {
-            let proj_rel = format!(
-                "tenants/{}/projects/{}/mcp.json",
-                scope.tenant, scope.project
-            );
-            merge_dual_mcp(target, shared, local, &proj_rel);
+            let proj_base = local
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("projects")
+                .join(&scope.project);
+            mcp::merge_file(target, &proj_base.join("mcp.json"));
 
             if !scope.repository.is_empty() {
-                let repo_rel = format!(
-                    "tenants/{}/projects/{}/repositories/{}/mcp.json",
-                    scope.tenant, scope.project, scope.repository
+                mcp::merge_file(
+                    target,
+                    &proj_base
+                        .join("repositories")
+                        .join(&scope.repository)
+                        .join("mcp.json"),
                 );
-                merge_dual_mcp(target, shared, local, &repo_rel);
             }
         }
     }
@@ -490,8 +488,8 @@ fn merge_dual_mcp(
     let shared = shared_root.join(relative);
     let local = local_root.join(relative);
     mcp::merge_file(target, &shared);
-    // avoid merging the same file twice when shared == local
-    if local.canonicalize().ok() != shared.canonicalize().ok() {
+    // avoid merging the same file twice when shared_root == local_root
+    if local_root != shared_root {
         mcp::merge_file(target, &local);
     }
 }
@@ -499,15 +497,20 @@ fn merge_dual_mcp(
 // ── misc helpers ──────────────────────────────────────────────────────────────
 
 /// Config file candidates to probe per engine, in priority order.
+/// `orbit.json` / `orbit.jsonc` take precedence over legacy `opencode.json` names.
 fn config_candidates(engine: Engine) -> &'static [&'static str] {
     match engine {
         Engine::Opencode => &[
+            "orbit.jsonc",
+            "orbit.json",
             "opencode.jsonc",
             "opencode.json",
             ".opencode/opencode.jsonc",
             ".opencode/opencode.json",
         ],
         Engine::Gemini => &[
+            "orbit.jsonc",
+            "orbit.json",
             "opencode.jsonc",
             "opencode.json",
             "gemini.jsonc",
@@ -515,6 +518,8 @@ fn config_candidates(engine: Engine) -> &'static [&'static str] {
             ".gemini/settings.json",
         ],
         Engine::Claude => &[
+            "orbit.jsonc",
+            "orbit.json",
             "opencode.jsonc",
             "opencode.json",
             "claude.json",

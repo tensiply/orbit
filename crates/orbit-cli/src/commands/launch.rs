@@ -216,7 +216,6 @@ fn print_dry_run(
 ) {
     let ok = "\x1b[32m✓\x1b[0m";
     let skip = "\x1b[2m·\x1b[0m";
-    let missing = "\x1b[31m✗\x1b[0m";
 
     let bold = |s: &str| format!("\x1b[1m{s}\x1b[0m");
     let dim = |s: &str| format!("\x1b[2m{s}\x1b[0m");
@@ -261,39 +260,26 @@ fn print_dry_run(
 
     // ── config layers ─────────────────────────────────────────────────────────
     println!("{}", bold("config layers"));
-    for entry in &report.config_layers {
-        let mark = if entry.exists { ok } else { skip };
-        let note = if entry.exists {
-            String::new()
-        } else {
-            format!("  {}", dim("not found"))
-        };
+    for entry in report.config_layers.iter().filter(|e| e.exists) {
         println!(
-            "  {}  {}  {}{}",
-            mark,
+            "  {}  {}  {}",
+            ok,
             entry.path.display(),
             dim(&format!("({})", entry.label)),
-            note
         );
     }
     println!();
 
     // ── agent overlays ────────────────────────────────────────────────────────
-    if !report.agent_overlay_dirs.is_empty() {
+    let loaded_overlays: Vec<_> = report.agent_overlay_dirs.iter().filter(|e| e.exists).collect();
+    if !loaded_overlays.is_empty() {
         println!("{}", bold("agent overlays"));
-        for entry in &report.agent_overlay_dirs {
-            let mark = if entry.exists { ok } else { skip };
-            let note = if entry.exists {
-                String::new()
-            } else {
-                format!("  {}", dim("no opencode/ dir"))
-            };
+        for entry in &loaded_overlays {
             println!(
-                "  {}  {}/  {}{}",
-                mark,
+                "  {}  {}/  {}",
+                ok,
                 entry.path.display(),
                 dim(&format!("({})", entry.label)),
-                note
             );
         }
         println!();
@@ -301,39 +287,25 @@ fn print_dry_run(
 
     // ── MCP layers ────────────────────────────────────────────────────────────
     println!("{}", bold("mcp layers"));
-    for entry in &report.mcp_layers {
-        let mark = if entry.exists { ok } else { skip };
-        let note = if entry.exists {
-            String::new()
-        } else {
-            format!("  {}", dim("not found"))
-        };
+    for entry in report.mcp_layers.iter().filter(|e| e.exists) {
         println!(
-            "  {}  {}  {}{}",
-            mark,
+            "  {}  {}  {}",
+            ok,
             entry.path.display(),
             dim(&format!("({})", entry.label)),
-            note
         );
     }
     println!();
 
     // ── instructions ──────────────────────────────────────────────────────────
-    let miss_count = report.instructions.iter().filter(|(_, ok)| !ok).count();
-    let miss_note = if miss_count > 0 {
-        format!("  \x1b[33m{miss_count} missing\x1b[0m")
-    } else {
-        String::new()
-    };
+    let loaded_instructions: Vec<_> = report.instructions.iter().filter(|(_, e)| *e).collect();
     println!(
-        "{}  {}{}",
+        "{}  {}",
         bold("instructions"),
-        dim(&format!("({})", report.instructions.len())),
-        miss_note
+        dim(&format!("({})", loaded_instructions.len())),
     );
-    for (path, exists) in &report.instructions {
-        let mark = if *exists { ok } else { missing };
-        println!("  {}  {}", mark, path.display());
+    for (path, _) in &loaded_instructions {
+        println!("  {}  {}", ok, path.display());
     }
     println!();
 
