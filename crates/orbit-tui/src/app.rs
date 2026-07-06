@@ -1478,7 +1478,10 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
 async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> Result<Option<PostAction>> {
+) -> Result<Option<PostAction>>
+where
+    B::Error: Send + Sync + 'static,
+{
     let mut last_refresh = Instant::now();
 
     loop {
