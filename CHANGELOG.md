@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-07-05
+
+### Changed
+
+- **Dependency updates** — ratatui 0.29→0.30, crossterm 0.28→0.29, sha2 0.10→0.11, toml 0.8→1, clap_complete 4.6.5→4.6.7. GitHub Actions: checkout v4→v7, upload-artifact v4→v7, download-artifact v4→v8, action-gh-release v2→v3.
+
 ## [0.10.3] - 2026-07-05
 
 ### Added
@@ -178,8 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow: format check, clippy `-D warnings`, tests on every push/PR to `main`
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 
-[Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.10.3...HEAD
-[0.10.3]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.3
+[Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/befraeloircorona/orbit/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/befraeloircorona/orbit/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/befraeloircorona/orbit/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.1
