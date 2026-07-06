@@ -173,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 
 [Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.2
 [0.10.2]: https://github.com/befraeloircorona/orbit/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.1
 [0.10.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.0
