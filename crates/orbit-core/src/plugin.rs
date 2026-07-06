@@ -178,6 +178,7 @@ impl Plugin {
                 "cargo" => "cargo",
                 "brew" => "brew",
                 "apt" | "apt-get" => "apt-get",
+                "rustup" => "rustup",
                 _ => continue,
             };
             if bin_available(prereq) {
@@ -199,9 +200,10 @@ impl Plugin {
 pub fn load_all() -> Vec<Plugin> {
     let mut plugins: Vec<Plugin> = Vec::new();
 
-    for (_, content) in BUILTIN_PLUGINS {
-        if let Ok(p) = toml::from_str::<Plugin>(content) {
-            plugins.push(p);
+    for (name, content) in BUILTIN_PLUGINS {
+        match toml::from_str::<Plugin>(content) {
+            Ok(p) => plugins.push(p),
+            Err(e) => eprintln!("[orbit] failed to parse builtin plugin '{name}': {e}"),
         }
     }
 
