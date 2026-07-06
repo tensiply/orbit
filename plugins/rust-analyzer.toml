@@ -1,0 +1,33 @@
+name = "rust-analyzer"
+description = "Rust language server — code intelligence, diagnostics, and refactoring for Rust projects"
+category = "lsp"
+url = "https://rust-analyzer.github.io"
+
+[check]
+binary = "rust-analyzer"
+
+[[install]]
+method = "rustup"
+cmd = ["rustup", "component", "add", "rust-analyzer"]
+label = "rustup (recommended)"
+
+[[install]]
+method = "cargo"
+cmd = ["cargo", "install", "rust-analyzer"]
+label = "cargo install"
+
+[[install]]
+method = "apt-get"
+cmd = ["apt-get", "install", "-y", "rust-analyzer"]
+label = "apt (Debian/Ubuntu)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "rust-analyzer"]
+label = "Homebrew (macOS)"
+
+[auth]
+hint = "No auth required — runs locally as a language server"
+
+[context]
+prompt = "You are working in a Rust project. Prefer idiomatic Rust: use the type system to encode invariants, avoid unnecessary clones, and handle errors with `?` and `anyhow`/`thiserror`. When suggesting changes, consider borrow checker constraints and lifetime implications."
