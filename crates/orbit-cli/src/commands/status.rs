@@ -8,6 +8,7 @@ use orbit_engine::resolver;
 use std::time::Duration;
 
 use super::auth::{AuthStatus, detect_auth};
+use super::mode::current_mode;
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ struct StatusData {
     daemon_running: bool,
     sessions_active: usize,
     version: String,
+    mode: String,
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -98,6 +100,9 @@ async fn collect() -> StatusData {
     // Version
     let version = env!("CARGO_PKG_VERSION").to_string();
 
+    // Mode
+    let mode = current_mode();
+
     // Suppress unused warning on ws_cfg
     let _ = WorkspaceConfig::load(&ai_root);
 
@@ -116,6 +121,7 @@ async fn collect() -> StatusData {
         daemon_running,
         sessions_active,
         version,
+        mode,
     }
 }
 
@@ -230,6 +236,9 @@ fn print_human(d: &StatusData) {
     };
     row("daemon", label_w, &daemon_detail);
 
+    // mode
+    row("mode", label_w, &d.mode);
+
     // version
     row("version", label_w, &format!("v{}", d.version));
 
@@ -259,6 +268,7 @@ fn print_json(d: &StatusData) {
         "daemon_running": d.daemon_running,
         "sessions_active": d.sessions_active,
         "version": d.version,
+        "mode": d.mode,
     });
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
 }
