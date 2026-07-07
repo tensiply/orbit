@@ -374,18 +374,31 @@ fn print_dry_run(
             }
             println!();
 
-            // Show actual CLAUDE.md files Claude Code will load via traversal
+            // Show actual CLAUDE.md files Claude Code will load via traversal,
+            // plus the @-refs each file injects so context is fully visible.
             let claude_files = find_claude_md_files(&scope.work_dir);
+            let total_refs: usize = claude_files
+                .iter()
+                .map(|f| parse_claude_at_refs(f).len())
+                .sum();
             println!(
                 "{}  {}",
                 bold("claude context"),
-                dim("CLAUDE.md traversal: work dir → home"),
+                dim(&format!(
+                    "CLAUDE.md traversal: work dir → home  ({} files, {} @refs)",
+                    claude_files.len(),
+                    total_refs,
+                )),
             );
             if claude_files.is_empty() {
                 println!("  {}  none found", skip);
             } else {
                 for f in &claude_files {
                     println!("  {}  {}", ok, f.display());
+                    for r in parse_claude_at_refs(f) {
+                        let marker = if r.exists() { ok } else { warn };
+                        println!("     {}  {}", marker, r.display());
+                    }
                 }
             }
             println!();
@@ -415,6 +428,26 @@ fn print_dry_run(
     println!();
 
     let _ = merged;
+}
+
+fn parse_claude_at_refs(claude_md: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(content) = std::fs::read_to_string(claude_md) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            trimmed.strip_prefix('@').and_then(|rest| {
+                let path = rest.trim();
+                if path.starts_with('/') {
+                    Some(std::path::PathBuf::from(path))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
 }
 
 fn find_claude_md_files(work_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
