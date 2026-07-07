@@ -124,20 +124,20 @@ pub fn launch(
 // ── tmux helpers ──────────────────────────────────────────────────────────────
 
 /// Derive a stable tmux session name from scope + engine.
-/// Example: "orbit-opencode-aidev-ai-ecosystem-orbit"
+/// Example: "[orbit][opencode] aidev/ai-ecosystem/orbit"
 pub fn tmux_session_name(scope: &OrbitScope, engine: Engine) -> String {
-    let parts: Vec<String> = if scope.global_mode {
-        vec![engine.as_str().to_string()]
-    } else {
-        let mut p = vec![engine.as_str().to_string()];
-        for seg in [&scope.tenant, &scope.project, &scope.repository] {
-            if !seg.is_empty() {
-                p.push(seg.to_lowercase());
-            }
-        }
-        p
-    };
-    format!("orbit-{}", parts.join("-"))
+    let prefix = format!("[orbit][{}]", engine.as_str());
+    if scope.global_mode {
+        return prefix;
+    }
+    let mut segments: Vec<String> = vec![scope.tenant.to_lowercase()];
+    if !scope.project.is_empty() {
+        segments.push(scope.project.to_lowercase());
+    }
+    if !scope.repository.is_empty() {
+        segments.push(scope.repository.to_lowercase());
+    }
+    format!("{} {}", prefix, segments.join("/"))
 }
 
 fn exec_with_tmux(
@@ -606,7 +606,7 @@ mod tests {
         };
         assert_eq!(
             tmux_session_name(&scope, Engine::Opencode),
-            "orbit-opencode-aidev-ai-ecosystem-orbit"
+            "[orbit][opencode] aidev/ai-ecosystem/orbit"
         );
     }
 
@@ -616,7 +616,7 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(tmux_session_name(&scope, Engine::Claude), "orbit-claude");
+        assert_eq!(tmux_session_name(&scope, Engine::Claude), "[orbit][claude]");
     }
 
     #[test]
