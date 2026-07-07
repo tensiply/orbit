@@ -241,8 +241,15 @@ fn print_dry_run(
     row("engine", engine.as_str());
     row("work dir", &scope.work_dir.to_string_lossy());
     let config_file = orbit_engine::launcher::runtime::config_file_path(scope, engine);
+    let context_file = orbit_engine::launcher::runtime::context_file_path(scope, engine);
     let exec_cmd = match engine {
-        Engine::Claude => format!("claude --mcp-config {}", config_file.display()),
+        Engine::Claude => {
+            let ctx = context_file
+                .as_ref()
+                .map(|p| format!(" --append-system-prompt-file {}", p.display()))
+                .unwrap_or_default();
+            format!("claude --mcp-config {}{ctx}", config_file.display())
+        }
         Engine::Opencode => format!("OPENCODE_CONFIG={} opencode", config_file.display()),
         Engine::Gemini => format!(
             "GEMINI_CLI_SYSTEM_SETTINGS_PATH={} gemini",
@@ -367,10 +374,10 @@ fn print_dry_run(
                 "{}  {}  {}",
                 bold("instructions"),
                 dim(&format!("({})", loaded_instructions.len())),
-                dim("→ not injected (claude reads .claude/CLAUDE.md via dir traversal)"),
+                dim("→ injected via --append-system-prompt-file"),
             );
             for (path, _) in &loaded_instructions {
-                println!("  {}  {}", skip, dim(&path.display().to_string()));
+                println!("  {}  {}", ok, path.display());
             }
             println!();
 

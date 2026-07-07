@@ -66,6 +66,15 @@ pub fn launch(
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
+    // 3b. For Claude: write merged instructions as system prompt context file
+    let context_file = if engine == Engine::Claude {
+        let ctx_path = paths.runtime_dir.join("context.md");
+        build_claude_context(&config.instructions, &ctx_path)?;
+        Some(ctx_path)
+    } else {
+        None
+    };
+
     // 4. Decide tmux strategy before registering the session
     let tmux_name = tmux_session_name(scope, engine);
     let use_tmux = !opts.no_tmux && !tmux::already_inside() && tmux::ensure_available(); // prompts to install if missing + TTY
@@ -99,9 +108,9 @@ pub fn launch(
     set_terminal_title(&title);
 
     if use_tmux {
-        exec_with_tmux(engine, &paths.config_file, &tmux_name, &title)
+        exec_with_tmux(engine, &paths.config_file, context_file.as_deref(), &tmux_name, &title)
     } else {
-        exec_engine(engine, &paths.config_file)
+        exec_engine(engine, &paths.config_file, context_file.as_deref())
     }
 }
 
@@ -127,6 +136,7 @@ pub fn tmux_session_name(scope: &OrbitScope, engine: Engine) -> String {
 fn exec_with_tmux(
     engine: Engine,
     config_file: &Path,
+    context_file: Option<&Path>,
     session_name: &str,
     window_name: &str,
 ) -> Result<()> {
@@ -140,7 +150,7 @@ fn exec_with_tmux(
     }
 
     // Build the engine command args for tmux
-    let (bin, extra_args) = engine_cmd(engine, config_file);
+    let (bin, extra_args) = engine_cmd(engine, config_file, context_file);
 
     // tmux new-session -s <name> -n <window> -- <bin> [args...]
     // Env vars already set in process environment — tmux inherits them.
@@ -162,8 +172,8 @@ fn exec_with_tmux(
 
 // ── direct exec ───────────────────────────────────────────────────────────────
 
-fn exec_engine(engine: Engine, config_file: &Path) -> Result<()> {
-    let (bin, extra_args) = engine_cmd(engine, config_file);
+fn exec_engine(engine: Engine, config_file: &Path, context_file: Option<&Path>) -> Result<()> {
+    let (bin, extra_args) = engine_cmd(engine, config_file, context_file);
     let mut cmd = Command::new(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
@@ -172,17 +182,39 @@ fn exec_engine(engine: Engine, config_file: &Path) -> Result<()> {
     bail!("failed to exec {}: {}", bin, err);
 }
 
-fn engine_cmd(engine: Engine, config_file: &Path) -> (String, Vec<String>) {
+fn engine_cmd(engine: Engine, config_file: &Path, context_file: Option<&Path>) -> (String, Vec<String>) {
     match engine {
-        Engine::Claude => (
-            "claude".to_string(),
-            vec![
+        Engine::Claude => {
+            let mut args = vec![
                 "--mcp-config".to_string(),
                 config_file.to_string_lossy().into_owned(),
-            ],
-        ),
+            ];
+            if let Some(ctx) = context_file {
+                args.push("--append-system-prompt-file".to_string());
+                args.push(ctx.to_string_lossy().into_owned());
+            }
+            ("claude".to_string(), args)
+        }
         Engine::Opencode | Engine::Gemini => (engine.as_str().to_string(), vec![]),
     }
+}
+
+/// Concatenate all instruction files into a single markdown document
+/// for use as Claude's appended system prompt.
+fn build_claude_context(instructions: &[std::path::PathBuf], dest: &Path) -> Result<()> {
+    let mut parts = Vec::with_capacity(instructions.len());
+    for path in instructions {
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                parts.push(format!("<!-- {} -->\n\n{}", path.display(), content.trim()));
+            }
+            Err(e) => {
+                tracing::warn!("skipping instruction {}: {e}", path.display());
+            }
+        }
+    }
+    fs::write(dest, parts.join("\n\n---\n\n"))?;
+    Ok(())
 }
 
 // ── environment ───────────────────────────────────────────────────────────────
@@ -332,6 +364,15 @@ pub fn spawn_background(
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
+    // 3b. For Claude: write merged instructions as system prompt context file
+    let context_file = if engine == Engine::Claude {
+        let ctx_path = paths.runtime_dir.join("context.md");
+        build_claude_context(&config.instructions, &ctx_path)?;
+        Some(ctx_path)
+    } else {
+        None
+    };
+
     // 4. Tmux session name
     let tmux_name = tmux_session_name(scope, engine);
 
@@ -352,7 +393,7 @@ pub fn spawn_background(
     }
 
     // 5. Build command
-    let (bin, extra_args) = engine_cmd(engine, &paths.config_file);
+    let (bin, extra_args) = engine_cmd(engine, &paths.config_file, context_file.as_deref());
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")
         .arg("-d")

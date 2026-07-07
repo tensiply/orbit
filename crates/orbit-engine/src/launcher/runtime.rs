@@ -28,6 +28,16 @@ pub fn config_file_path(scope: &OrbitScope, engine: Engine) -> PathBuf {
     }
 }
 
+/// Path where orbit writes the merged instruction content for Claude's system prompt.
+/// Returns None for engines that use other injection mechanisms.
+pub fn context_file_path(scope: &OrbitScope, engine: Engine) -> Option<PathBuf> {
+    if engine == Engine::Claude {
+        Some(runtime_root(scope, engine).join("context.md"))
+    } else {
+        None
+    }
+}
+
 /// Create the runtime directory tree and return the resolved paths.
 pub fn setup(scope: &OrbitScope, engine: Engine) -> Result<RuntimePaths> {
     let runtime_dir = runtime_root(scope, engine);
