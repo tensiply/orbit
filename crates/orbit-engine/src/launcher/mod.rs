@@ -125,21 +125,10 @@ pub fn launch(
 // ── tmux helpers ──────────────────────────────────────────────────────────────
 
 /// Derive a stable tmux session name from scope + engine.
-/// Uses only tmux-safe characters (alphanumerics, `-`, `.`).
-/// Example: "ecorona@orbit.opencode.aidev.ai-ecosystem.orbit"
-pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
-    let safe = |s: &str| s.to_lowercase().replace(|c: char| !c.is_alphanumeric() && c != '-', "-");
-    let base = if scope.global_mode {
-        format!("orbit.{}", engine.as_str())
-    } else {
-        let mut parts = vec!["orbit".to_string(), engine.as_str().to_string()];
-        for seg in [&scope.tenant, &scope.project, &scope.repository] {
-            if !seg.is_empty() {
-                parts.push(safe(seg));
-            }
-        }
-        parts.join(".")
-    };
+/// Uses only tmux-safe characters (alphanumerics, `.`).
+/// Example: "ecorona@orbit.opencode"
+pub fn tmux_session_name(_scope: &OrbitScope, engine: Engine, username: &str) -> String {
+    let base = format!("orbit.{}", engine.as_str());
     if username.is_empty() {
         base
     } else {
@@ -612,14 +601,8 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(
-            tmux_session_name(&scope, Engine::Opencode, ""),
-            "orbit.opencode.aidev.ai-ecosystem.orbit"
-        );
-        assert_eq!(
-            tmux_session_name(&scope, Engine::Opencode, "ecorona"),
-            "ecorona@orbit.opencode.aidev.ai-ecosystem.orbit"
-        );
+        assert_eq!(tmux_session_name(&scope, Engine::Opencode, ""), "orbit.opencode");
+        assert_eq!(tmux_session_name(&scope, Engine::Opencode, "ecorona"), "ecorona@orbit.opencode");
     }
 
     #[test]
