@@ -231,7 +231,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
             .ai_context_root
             .join("tenants")
             .join(&scope.tenant)
-            .join("source-of-truth/opencode");
+            .join("source-of-truth/orbit");
         agent_overlay_dirs.push(LayerEntry {
             exists: tenant_ov.is_dir(),
             path: shorten_path(&home, &tenant_ov),
@@ -245,7 +245,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
                 .join(&scope.tenant)
                 .join("projects")
                 .join(&scope.project)
-                .join("source-of-truth/opencode");
+                .join("source-of-truth/orbit");
             agent_overlay_dirs.push(LayerEntry {
                 exists: project_ov.is_dir(),
                 path: shorten_path(&home, &project_ov),
@@ -261,7 +261,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
                     .join(&scope.project)
                     .join("repositories")
                     .join(&scope.repository)
-                    .join("source-of-truth/opencode");
+                    .join("source-of-truth/orbit");
                 agent_overlay_dirs.push(LayerEntry {
                     exists: repo_ov.is_dir(),
                     path: shorten_path(&home, &repo_ov),

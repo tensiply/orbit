@@ -31,11 +31,11 @@ pub fn build(
 // ── path helpers ──────────────────────────────────────────────────────────────
 
 fn shared_opencode_dir(scope: &OrbitScope) -> PathBuf {
-    scope.global_ai_root.join("source-of-truth/opencode")
+    scope.global_ai_root.join("source-of-truth/orbit")
 }
 
 fn local_opencode_dir(scope: &OrbitScope) -> PathBuf {
-    scope.ai_context_root.join("source-of-truth/opencode")
+    scope.ai_context_root.join("source-of-truth/orbit")
 }
 
 /// Ordered scope overlay paths for a given kind/name (tenant → project → repo).
@@ -48,7 +48,7 @@ fn overlay_paths(scope: &OrbitScope, kind: &str, name: &str) -> Vec<PathBuf> {
         .ai_context_root
         .join("tenants")
         .join(&scope.tenant)
-        .join("source-of-truth/opencode")
+        .join("source-of-truth/orbit")
         .join(kind)
         .join(format!("{name}.md"));
     paths.push(base);
@@ -61,7 +61,7 @@ fn overlay_paths(scope: &OrbitScope, kind: &str, name: &str) -> Vec<PathBuf> {
                 .join(&scope.tenant)
                 .join("projects")
                 .join(&scope.project)
-                .join("source-of-truth/opencode")
+                .join("source-of-truth/orbit")
                 .join(kind)
                 .join(format!("{name}.md")),
         );
@@ -75,7 +75,7 @@ fn overlay_paths(scope: &OrbitScope, kind: &str, name: &str) -> Vec<PathBuf> {
                     .join(&scope.project)
                     .join("repositories")
                     .join(&scope.repository)
-                    .join("source-of-truth/opencode")
+                    .join("source-of-truth/orbit")
                     .join(kind)
                     .join(format!("{name}.md")),
             );
@@ -572,7 +572,7 @@ mod tests {
 
         let tmp = TempDir::new().unwrap();
         // Create minimal shared opencode dir with manifest and one agent
-        let shared = tmp.path().join("AI/source-of-truth/opencode");
+        let shared = tmp.path().join("AI/source-of-truth/orbit");
         let agents_dir = shared.join("agents");
         fs::create_dir_all(&agents_dir).unwrap();
         fs::write(
