@@ -478,7 +478,7 @@ fn tmux_pane_pid(session_name: &str) -> Option<u32> {
 /// Build a human-readable title: `orbit · <engine> · <tenant>/<project>/<repo>`.
 fn window_title(scope: &OrbitScope, engine: Engine) -> String {
     if scope.global_mode {
-        format!("orbit · {}", engine.as_str())
+        format!("[orbit][{}]", engine.as_str())
     } else {
         let mut segments: Vec<&str> = vec![&scope.tenant];
         if !scope.project.is_empty() {
@@ -487,7 +487,7 @@ fn window_title(scope: &OrbitScope, engine: Engine) -> String {
         if !scope.repository.is_empty() {
             segments.push(&scope.repository);
         }
-        format!("orbit · {} · {}", engine.as_str(), segments.join("/"))
+        format!("[orbit][{}] - {}", engine.as_str(), segments.join("/"))
     }
 }
 
@@ -625,7 +625,7 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(window_title(&scope, Engine::Claude), "orbit · claude");
+        assert_eq!(window_title(&scope, Engine::Claude), "[orbit][claude]");
     }
 
     #[test]
@@ -639,7 +639,7 @@ mod tests {
         };
         assert_eq!(
             window_title(&scope, Engine::Opencode),
-            "orbit · opencode · AIDEV/AI-ECOSYSTEM/orbit"
+            "[orbit][opencode] - AIDEV/AI-ECOSYSTEM/orbit"
         );
     }
 
@@ -652,7 +652,7 @@ mod tests {
         };
         assert_eq!(
             window_title(&scope, Engine::Gemini),
-            "orbit · gemini · AIDEV"
+            "[orbit][gemini] - AIDEV"
         );
     }
 }
