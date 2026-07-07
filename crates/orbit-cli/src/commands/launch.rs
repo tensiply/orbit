@@ -216,6 +216,7 @@ fn print_dry_run(
 ) {
     let ok = "\x1b[32m✓\x1b[0m";
     let skip = "\x1b[2m·\x1b[0m";
+    let warn = "\x1b[33m~\x1b[0m";
 
     let bold = |s: &str| format!("\x1b[1m{s}\x1b[0m");
     let dim = |s: &str| format!("\x1b[2m{s}\x1b[0m");
@@ -239,6 +240,16 @@ fn print_dry_run(
     }
     row("engine", engine.as_str());
     row("work dir", &scope.work_dir.to_string_lossy());
+    let config_file = orbit_engine::launcher::runtime::config_file_path(scope, engine);
+    let exec_cmd = match engine {
+        Engine::Claude => format!("claude --mcp-config {}", config_file.display()),
+        Engine::Opencode => format!("OPENCODE_CONFIG={} opencode", config_file.display()),
+        Engine::Gemini => format!(
+            "GEMINI_CLI_SYSTEM_SETTINGS_PATH={} gemini",
+            config_file.display()
+        ),
+    };
+    row("exec", &exec_cmd);
     println!();
 
     // ── task context ──────────────────────────────────────────────────────────
@@ -297,17 +308,89 @@ fn print_dry_run(
     }
     println!();
 
-    // ── instructions ──────────────────────────────────────────────────────────
+    // ── instructions (engine-specific display) ────────────────────────────────
     let loaded_instructions: Vec<_> = report.instructions.iter().filter(|(_, e)| *e).collect();
-    println!(
-        "{}  {}",
-        bold("instructions"),
-        dim(&format!("({})", loaded_instructions.len())),
-    );
-    for (path, _) in &loaded_instructions {
-        println!("  {}  {}", ok, path.display());
+
+    match engine {
+        Engine::Opencode => {
+            println!(
+                "{}  {}  {}",
+                bold("instructions"),
+                dim(&format!("({})", loaded_instructions.len())),
+                dim("→ injected as instructions array"),
+            );
+            for (path, _) in &loaded_instructions {
+                println!("  {}  {}", ok, path.display());
+            }
+            println!();
+        }
+        Engine::Gemini => {
+            println!(
+                "{}  {}  {}",
+                bold("instructions"),
+                dim(&format!("({})", loaded_instructions.len())),
+                dim("→ parent dirs passed to context.includeDirectories"),
+            );
+            for (path, _) in &loaded_instructions {
+                println!("  {}  {}", skip, path.display());
+            }
+            println!();
+
+            // Show the actual include dirs Gemini will use
+            const GEMINI_FILENAMES: &[&str] = &["README.md", "GEMINI.md", "CONTEXT.md", "AGENTS.md"];
+            let include_dirs = gemini_include_dirs(
+                &loaded_instructions.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>(),
+            );
+            let home = directories::BaseDirs::new()
+                .map(|b| b.home_dir().to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("/"));
+            println!(
+                "{}  {}  {}",
+                bold("include dirs"),
+                dim(&format!("({})", include_dirs.len())),
+                dim(&format!("loads: {}", GEMINI_FILENAMES.join(", "))),
+            );
+            for dir in &include_dirs {
+                let expanded = if let Ok(rest) = dir.strip_prefix("~") {
+                    home.join(rest)
+                } else {
+                    dir.to_path_buf()
+                };
+                let has_match = GEMINI_FILENAMES.iter().any(|f| expanded.join(f).exists());
+                let marker = if has_match { ok } else { warn };
+                println!("  {}  {}", marker, dir.display());
+            }
+            println!();
+        }
+        Engine::Claude => {
+            println!(
+                "{}  {}  {}",
+                bold("instructions"),
+                dim(&format!("({})", loaded_instructions.len())),
+                dim("→ not injected (claude reads .claude/CLAUDE.md via dir traversal)"),
+            );
+            for (path, _) in &loaded_instructions {
+                println!("  {}  {}", skip, dim(&path.display().to_string()));
+            }
+            println!();
+
+            // Show actual CLAUDE.md files Claude Code will load via traversal
+            let claude_files = find_claude_md_files(&scope.work_dir);
+            println!(
+                "{}  {}",
+                bold("claude context"),
+                dim("CLAUDE.md traversal: work dir → home"),
+            );
+            if claude_files.is_empty() {
+                println!("  {}  none found", skip);
+            } else {
+                for f in &claude_files {
+                    println!("  {}  {}", ok, f.display());
+                }
+            }
+            println!();
+        }
     }
-    println!();
 
     // ── mcp servers ───────────────────────────────────────────────────────────
     println!(
@@ -331,7 +414,44 @@ fn print_dry_run(
     }
     println!();
 
-    // Suppress unused warning — `merged` is available if we want to add
-    // a raw-config section in the future.
     let _ = merged;
+}
+
+fn find_claude_md_files(work_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| {
+            std::env::var("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+        });
+    let mut files = Vec::new();
+    let mut current = work_dir.to_path_buf();
+    loop {
+        let candidate = current.join(".claude").join("CLAUDE.md");
+        if candidate.exists() {
+            files.push(candidate);
+        }
+        if current == home {
+            break;
+        }
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    files
+}
+
+fn gemini_include_dirs(paths: &[&std::path::Path]) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut dirs = Vec::new();
+    for p in paths {
+        if let Some(parent) = p.parent() {
+            if seen.insert(parent.to_path_buf()) {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+    dirs
 }

@@ -17,6 +17,17 @@ pub struct RuntimePaths {
     pub xdg_state: PathBuf,
 }
 
+/// Compute the engine config file path without creating any directories.
+/// Used by dry-run to show what would be written.
+pub fn config_file_path(scope: &OrbitScope, engine: Engine) -> PathBuf {
+    let runtime_dir = runtime_root(scope, engine);
+    match engine {
+        Engine::Opencode => runtime_dir.join("config").join("opencode").join("opencode.jsonc"),
+        Engine::Gemini => runtime_dir.join("config").join("gemini").join("settings.json"),
+        Engine::Claude => runtime_dir.join("mcp-config.json"),
+    }
+}
+
 /// Create the runtime directory tree and return the resolved paths.
 pub fn setup(scope: &OrbitScope, engine: Engine) -> Result<RuntimePaths> {
     let runtime_dir = runtime_root(scope, engine);
