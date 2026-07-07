@@ -125,15 +125,24 @@ pub fn launch(
 // ── tmux helpers ──────────────────────────────────────────────────────────────
 
 /// Derive a stable tmux session name from scope + engine.
-/// Uses only tmux-safe characters (alphanumerics, `.`).
-/// Example: "ecorona@orbit.opencode"
-pub fn tmux_session_name(_scope: &OrbitScope, engine: Engine, username: &str) -> String {
-    let base = format!("orbit.{}", engine.as_str());
-    if username.is_empty() {
-        base
-    } else {
-        format!("{username}@{base}")
+/// Uses only tmux-safe characters (alphanumerics, `-`).
+/// Example: "eloir-orbit-claude-jafraus-ecommerce"
+pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
+    let safe = |s: &str| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "-");
+    let mut parts: Vec<String> = Vec::new();
+    if !username.is_empty() {
+        parts.push(safe(username));
     }
+    parts.push("orbit".into());
+    parts.push(engine.as_str().to_string());
+    if !scope.global_mode {
+        for seg in [&scope.tenant, &scope.project, &scope.repository] {
+            if !seg.is_empty() {
+                parts.push(safe(seg));
+            }
+        }
+    }
+    parts.join("-")
 }
 
 fn exec_with_tmux(
@@ -601,8 +610,14 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(tmux_session_name(&scope, Engine::Opencode, ""), "orbit.opencode");
-        assert_eq!(tmux_session_name(&scope, Engine::Opencode, "ecorona"), "ecorona@orbit.opencode");
+        assert_eq!(
+            tmux_session_name(&scope, Engine::Opencode, ""),
+            "orbit-opencode-aidev-ai-ecosystem-orbit"
+        );
+        assert_eq!(
+            tmux_session_name(&scope, Engine::Opencode, "eloir"),
+            "eloir-orbit-opencode-aidev-ai-ecosystem-orbit"
+        );
     }
 
     #[test]
@@ -611,8 +626,8 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(tmux_session_name(&scope, Engine::Claude, ""), "orbit.claude");
-        assert_eq!(tmux_session_name(&scope, Engine::Claude, "ecorona"), "ecorona@orbit.claude");
+        assert_eq!(tmux_session_name(&scope, Engine::Claude, ""), "orbit-claude");
+        assert_eq!(tmux_session_name(&scope, Engine::Claude, "eloir"), "eloir-orbit-claude");
     }
 
     #[test]
