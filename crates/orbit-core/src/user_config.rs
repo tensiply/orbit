@@ -153,6 +153,12 @@ fn home_dir() -> PathBuf {
 }
 
 fn xdg_config_dir() -> PathBuf {
+    // ORBIT_CONFIG_HOME is set by the launcher before it overrides XDG_CONFIG_HOME
+    // for session isolation. Prefer it so that orbit commands run inside a session
+    // still find the real user config instead of the session's runtime config dir.
+    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(orbit_home);
+    }
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg)
     } else {

@@ -194,6 +194,18 @@ fn engine_cmd(engine: Engine, config_file: &Path) -> (String, Vec<String>) {
 /// Safe here: single-threaded, called immediately before exec.
 fn set_env(scope: &OrbitScope, engine: Engine, paths: &runtime::RuntimePaths) {
     unsafe {
+        // Preserve the real config dir so orbit commands run inside this session
+        // can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
+        if std::env::var("ORBIT_CONFIG_HOME").is_err() {
+            let real = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+                directories::BaseDirs::new()
+                    .map(|b| b.home_dir().join(".config"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("/.config"))
+                    .to_string_lossy()
+                    .into_owned()
+            });
+            std::env::set_var("ORBIT_CONFIG_HOME", real);
+        }
         std::env::set_var("XDG_CONFIG_HOME", &paths.xdg_config_home);
         std::env::set_var("XDG_DATA_HOME", &paths.xdg_data);
         std::env::set_var("XDG_CACHE_HOME", &paths.xdg_cache);
@@ -238,7 +250,19 @@ fn apply_env_to_cmd(
     engine: Engine,
     paths: &runtime::RuntimePaths,
 ) {
-    cmd.env("XDG_CONFIG_HOME", &paths.xdg_config_home)
+    // Preserve the real XDG_CONFIG_HOME so orbit commands spawned inside the
+    // session can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
+    let real_config_home = std::env::var("ORBIT_CONFIG_HOME")
+        .or_else(|_| std::env::var("XDG_CONFIG_HOME"))
+        .unwrap_or_else(|_| {
+            directories::BaseDirs::new()
+                .map(|b| b.home_dir().join(".config"))
+                .unwrap_or_else(|| std::path::PathBuf::from("/.config"))
+                .to_string_lossy()
+                .into_owned()
+        });
+    cmd.env("ORBIT_CONFIG_HOME", real_config_home)
+        .env("XDG_CONFIG_HOME", &paths.xdg_config_home)
         .env("XDG_DATA_HOME", &paths.xdg_data)
         .env("XDG_CACHE_HOME", &paths.xdg_cache)
         .env("XDG_STATE_HOME", &paths.xdg_state)
