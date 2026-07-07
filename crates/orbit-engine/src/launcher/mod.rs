@@ -83,7 +83,8 @@ pub fn launch(
     };
 
     // 4. Decide tmux strategy before registering the session
-    let tmux_name = tmux_session_name(scope, engine);
+    let username = orbit_core::user_config::UserConfig::load().user.name;
+    let tmux_name = tmux_session_name(scope, engine, &username);
     let use_tmux = !opts.no_tmux && !tmux::already_inside() && tmux::ensure_available(); // prompts to install if missing + TTY
 
     // 5. Register session — BEFORE set_env() overwrites XDG_DATA_HOME
@@ -124,20 +125,26 @@ pub fn launch(
 // ── tmux helpers ──────────────────────────────────────────────────────────────
 
 /// Derive a stable tmux session name from scope + engine.
-/// Example: "[orbit][opencode] aidev/ai-ecosystem/orbit"
-pub fn tmux_session_name(scope: &OrbitScope, engine: Engine) -> String {
+/// Example: "ecorona@[orbit][opencode] aidev/ai-ecosystem/orbit"
+pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
     let prefix = format!("[orbit][{}]", engine.as_str());
-    if scope.global_mode {
-        return prefix;
+    let base = if scope.global_mode {
+        prefix
+    } else {
+        let mut segments: Vec<String> = vec![scope.tenant.to_lowercase()];
+        if !scope.project.is_empty() {
+            segments.push(scope.project.to_lowercase());
+        }
+        if !scope.repository.is_empty() {
+            segments.push(scope.repository.to_lowercase());
+        }
+        format!("{} {}", prefix, segments.join("/"))
+    };
+    if username.is_empty() {
+        base
+    } else {
+        format!("{username}@{base}")
     }
-    let mut segments: Vec<String> = vec![scope.tenant.to_lowercase()];
-    if !scope.project.is_empty() {
-        segments.push(scope.project.to_lowercase());
-    }
-    if !scope.repository.is_empty() {
-        segments.push(scope.repository.to_lowercase());
-    }
-    format!("{} {}", prefix, segments.join("/"))
 }
 
 fn exec_with_tmux(
@@ -399,7 +406,8 @@ pub fn spawn_background(
     };
 
     // 4. Tmux session name
-    let tmux_name = tmux_session_name(scope, engine);
+    let username = orbit_core::user_config::UserConfig::load().user.name;
+    let tmux_name = tmux_session_name(scope, engine, &username);
 
     if tmux::session_exists(&tmux_name) {
         // Already running — return the existing session name so client can attach
@@ -605,8 +613,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            tmux_session_name(&scope, Engine::Opencode),
+            tmux_session_name(&scope, Engine::Opencode, ""),
             "[orbit][opencode] aidev/ai-ecosystem/orbit"
+        );
+        assert_eq!(
+            tmux_session_name(&scope, Engine::Opencode, "ecorona"),
+            "ecorona@[orbit][opencode] aidev/ai-ecosystem/orbit"
         );
     }
 
@@ -616,7 +628,8 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(tmux_session_name(&scope, Engine::Claude), "[orbit][claude]");
+        assert_eq!(tmux_session_name(&scope, Engine::Claude, ""), "[orbit][claude]");
+        assert_eq!(tmux_session_name(&scope, Engine::Claude, "ecorona"), "ecorona@[orbit][claude]");
     }
 
     #[test]

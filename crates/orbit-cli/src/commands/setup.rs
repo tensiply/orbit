@@ -17,6 +17,10 @@ use super::plugins::setup_plugins;
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
+    /// Your display name, shown in tmux session names (e.g. "ecorona")
+    #[arg(long)]
+    pub username: Option<String>,
+
     /// AI workspace root directory [default: ~/AI]
     #[arg(long)]
     pub ai_root: Option<PathBuf>,
@@ -67,6 +71,23 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let engine_names_str = engine_names.join(" / ");
 
     // ── collect values (flags → interactive → default) ────────────────────────
+    let username = match args.username {
+        Some(u) => u,
+        None => {
+            let default = if current.user.name.is_empty() {
+                "(none)"
+            } else {
+                &current.user.name
+            };
+            if args.yes {
+                if default == "(none)" { String::new() } else { default.to_string() }
+            } else {
+                let val = ask("Your username (shown in tmux session names)", default)?;
+                if val == "(none)" { String::new() } else { val }
+            }
+        }
+    };
+
     let ai_root = match args.ai_root {
         Some(p) => p,
         None => {
@@ -147,6 +168,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
 
     // ── build final config ────────────────────────────────────────────────────
     let mut cfg = UserConfig::default();
+    cfg.user.name = username.clone();
     cfg.workspace.ai_root = ai_root.clone();
     cfg.engine.default = default_engine.clone();
     cfg.engine.default_tenant = default_tenant.clone();

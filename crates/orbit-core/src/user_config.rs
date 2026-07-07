@@ -12,10 +12,18 @@ use std::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UserConfig {
+    pub user: UserSection,
     pub workspace: WorkspaceSection,
     pub engine: EngineSection,
     pub install: InstallSection,
     pub update: UserUpdateSection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct UserSection {
+    /// Display name shown in tmux session names (e.g. "ecorona").
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +75,7 @@ impl Default for UserUpdateSection {
 impl Default for UserConfig {
     fn default() -> Self {
         Self {
+            user: UserSection::default(),
             workspace: WorkspaceSection::default(),
             engine: EngineSection::default(),
             install: InstallSection::default(),
