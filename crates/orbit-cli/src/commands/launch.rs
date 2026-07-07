@@ -221,6 +221,17 @@ fn print_dry_run(
     let bold = |s: &str| format!("\x1b[1m{s}\x1b[0m");
     let dim = |s: &str| format!("\x1b[2m{s}\x1b[0m");
 
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+    let tp = |p: &std::path::Path| -> String {
+        if let Ok(rel) = p.strip_prefix(&home) {
+            format!("~/{}", rel.display())
+        } else {
+            p.to_string_lossy().into_owned()
+        }
+    };
+
     // ── scope ─────────────────────────────────────────────────────────────────
     println!("{}", bold("scope"));
     let lw = 12usize;
@@ -228,7 +239,7 @@ fn print_dry_run(
         let pad = " ".repeat(lw.saturating_sub(label.len()));
         println!("  {}{}  {}", dim(label), pad, val);
     };
-    row("workspace", &scope.workspace_root.to_string_lossy());
+    row("workspace", &tp(&scope.workspace_root));
     if !scope.tenant.is_empty() {
         row("tenant", &scope.tenant);
     }
@@ -239,21 +250,21 @@ fn print_dry_run(
         row("repository", &scope.repository);
     }
     row("engine", engine.as_str());
-    row("work dir", &scope.work_dir.to_string_lossy());
+    row("work dir", &tp(&scope.work_dir));
     let config_file = orbit_engine::launcher::runtime::config_file_path(scope, engine);
     let context_file = orbit_engine::launcher::runtime::context_file_path(scope, engine);
     let exec_cmd = match engine {
         Engine::Claude => {
             let ctx = context_file
                 .as_ref()
-                .map(|p| format!(" --append-system-prompt-file {}", p.display()))
+                .map(|p| format!(" --append-system-prompt-file {}", tp(p)))
                 .unwrap_or_default();
-            format!("claude --mcp-config {}{ctx}", config_file.display())
+            format!("claude --mcp-config {}{ctx}", tp(&config_file))
         }
-        Engine::Opencode => format!("OPENCODE_CONFIG={} opencode", config_file.display()),
+        Engine::Opencode => format!("OPENCODE_CONFIG={} opencode", tp(&config_file)),
         Engine::Gemini => format!(
             "GEMINI_CLI_SYSTEM_SETTINGS_PATH={} gemini",
-            config_file.display()
+            tp(&config_file)
         ),
     };
     row("exec", &exec_cmd);
@@ -349,9 +360,6 @@ fn print_dry_run(
             let include_dirs = gemini_include_dirs(
                 &loaded_instructions.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>(),
             );
-            let home = directories::BaseDirs::new()
-                .map(|b| b.home_dir().to_path_buf())
-                .unwrap_or_else(|| std::path::PathBuf::from("/"));
             // +1 for the runtime dir that gets GEMINI.md written into it
             let total_dirs = include_dirs.len() + 1;
             println!(
@@ -363,7 +371,7 @@ fn print_dry_run(
             // Runtime dir first — orbit writes merged GEMINI.md here
             if let Some(ctx) = &gemini_ctx {
                 if let Some(parent) = ctx.parent() {
-                    println!("  {}  {}  {}", ok, parent.display(), dim("← orbit writes GEMINI.md here"));
+                    println!("  {}  {}  {}", ok, tp(parent), dim("← orbit writes GEMINI.md here"));
                 }
             }
             for dir in &include_dirs {
@@ -410,10 +418,10 @@ fn print_dry_run(
                 println!("  {}  none found", skip);
             } else {
                 for f in &claude_files {
-                    println!("  {}  {}", ok, f.display());
+                    println!("  {}  {}", ok, tp(f));
                     for r in parse_claude_at_refs(f) {
                         let marker = if r.exists() { ok } else { warn };
-                        println!("     {}  {}", marker, r.display());
+                        println!("     {}  {}", marker, tp(&r));
                     }
                 }
             }
