@@ -62,7 +62,14 @@ pub fn launch(
         }
     }
 
-    // 3. Write config file
+    // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
+    if engine == Engine::Gemini {
+        let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
+        build_gemini_context(&config.instructions, &gemini_ctx)?;
+        config.instructions.push(gemini_ctx);
+    }
+
+    // 3. Write config file (Gemini: runtime_dir already in instructions above)
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -199,9 +206,7 @@ fn engine_cmd(engine: Engine, config_file: &Path, context_file: Option<&Path>) -
     }
 }
 
-/// Concatenate all instruction files into a single markdown document
-/// for use as Claude's appended system prompt.
-fn build_claude_context(instructions: &[std::path::PathBuf], dest: &Path) -> Result<()> {
+fn merge_instructions(instructions: &[std::path::PathBuf]) -> String {
     let mut parts = Vec::with_capacity(instructions.len());
     for path in instructions {
         match fs::read_to_string(path) {
@@ -213,7 +218,20 @@ fn build_claude_context(instructions: &[std::path::PathBuf], dest: &Path) -> Res
             }
         }
     }
-    fs::write(dest, parts.join("\n\n---\n\n"))?;
+    parts.join("\n\n---\n\n")
+}
+
+/// Concatenate all instruction files into a single markdown document
+/// for use as Claude's appended system prompt.
+fn build_claude_context(instructions: &[std::path::PathBuf], dest: &Path) -> Result<()> {
+    fs::write(dest, merge_instructions(instructions))?;
+    Ok(())
+}
+
+/// Concatenate all instruction files into GEMINI.md so Gemini's
+/// context.includeDirectories picks it up from the runtime dir.
+fn build_gemini_context(instructions: &[std::path::PathBuf], dest: &Path) -> Result<()> {
+    fs::write(dest, merge_instructions(instructions))?;
     Ok(())
 }
 
@@ -360,7 +378,14 @@ pub fn spawn_background(
         }
     }
 
-    // 3. Write config file
+    // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
+    if engine == Engine::Gemini {
+        let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
+        build_gemini_context(&config.instructions, &gemini_ctx)?;
+        config.instructions.push(gemini_ctx);
+    }
+
+    // 3. Write config file (Gemini: runtime_dir already in instructions above)
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 

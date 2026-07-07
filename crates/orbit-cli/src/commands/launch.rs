@@ -332,18 +332,19 @@ fn print_dry_run(
             println!();
         }
         Engine::Gemini => {
+            let gemini_ctx = orbit_engine::launcher::runtime::context_file_path(scope, engine);
             println!(
                 "{}  {}  {}",
                 bold("instructions"),
                 dim(&format!("({})", loaded_instructions.len())),
-                dim("→ parent dirs passed to context.includeDirectories"),
+                dim("→ merged into GEMINI.md at runtime dir"),
             );
             for (path, _) in &loaded_instructions {
                 println!("  {}  {}", skip, path.display());
             }
             println!();
 
-            // Show the actual include dirs Gemini will use
+            // Show the actual include dirs Gemini will use (source dirs + runtime dir)
             const GEMINI_FILENAMES: &[&str] = &["README.md", "GEMINI.md", "CONTEXT.md", "AGENTS.md"];
             let include_dirs = gemini_include_dirs(
                 &loaded_instructions.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>(),
@@ -351,12 +352,20 @@ fn print_dry_run(
             let home = directories::BaseDirs::new()
                 .map(|b| b.home_dir().to_path_buf())
                 .unwrap_or_else(|| std::path::PathBuf::from("/"));
+            // +1 for the runtime dir that gets GEMINI.md written into it
+            let total_dirs = include_dirs.len() + 1;
             println!(
                 "{}  {}  {}",
                 bold("include dirs"),
-                dim(&format!("({})", include_dirs.len())),
+                dim(&format!("({})", total_dirs)),
                 dim(&format!("loads: {}", GEMINI_FILENAMES.join(", "))),
             );
+            // Runtime dir first — orbit writes merged GEMINI.md here
+            if let Some(ctx) = &gemini_ctx {
+                if let Some(parent) = ctx.parent() {
+                    println!("  {}  {}  {}", ok, parent.display(), dim("← orbit writes GEMINI.md here"));
+                }
+            }
             for dir in &include_dirs {
                 let expanded = if let Ok(rest) = dir.strip_prefix("~") {
                     home.join(rest)

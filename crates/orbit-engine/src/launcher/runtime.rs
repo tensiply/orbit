@@ -28,13 +28,15 @@ pub fn config_file_path(scope: &OrbitScope, engine: Engine) -> PathBuf {
     }
 }
 
-/// Path where orbit writes the merged instruction content for Claude's system prompt.
-/// Returns None for engines that use other injection mechanisms.
+/// Path where orbit writes the merged instruction content for a given engine.
+/// - Claude: `context.md` (passed via `--append-system-prompt-file`)
+/// - Gemini: `GEMINI.md` (picked up via `context.includeDirectories`)
+/// - Opencode: `None` (instructions injected directly into config JSON)
 pub fn context_file_path(scope: &OrbitScope, engine: Engine) -> Option<PathBuf> {
-    if engine == Engine::Claude {
-        Some(runtime_root(scope, engine).join("context.md"))
-    } else {
-        None
+    match engine {
+        Engine::Claude => Some(runtime_root(scope, engine).join("context.md")),
+        Engine::Gemini => Some(runtime_root(scope, engine).join("GEMINI.md")),
+        Engine::Opencode => None,
     }
 }
 
