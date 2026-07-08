@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod env;
 pub mod jira;
 pub mod completions;
 pub mod config;
@@ -11,6 +12,7 @@ pub mod ls;
 pub mod mcp;
 pub mod mode;
 pub mod plugins;
+pub mod secret;
 pub mod session;
 pub mod setup;
 pub mod snapshot;

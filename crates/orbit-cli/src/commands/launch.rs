@@ -398,21 +398,47 @@ fn print_dry_run(
             }
             println!();
 
-            // Show actual CLAUDE.md files Claude Code will load via traversal,
-            // plus the @-refs each file injects so context is fully visible.
+            // Show CLAUDE.md files Claude Code will load. @refs that overlap with
+            // orbit's instructions will be cleaned from those files at launch time.
+            let abs_instructions: Vec<std::path::PathBuf> = loaded_instructions
+                .iter()
+                .map(|(p, _)| {
+                    if p.starts_with("~") {
+                        home.join(p.strip_prefix("~").unwrap_or(p))
+                    } else {
+                        p.to_path_buf()
+                    }
+                })
+                .collect();
+            let overlaps = orbit_engine::launcher::find_claude_md_overlapping_refs(
+                &scope.work_dir,
+                &abs_instructions,
+            );
+            let overlap_paths: std::collections::HashSet<std::path::PathBuf> = overlaps
+                .iter()
+                .flat_map(|(_, refs)| refs.iter().cloned())
+                .collect();
+            let total_cleaned: usize = overlaps.iter().map(|(_, v)| v.len()).sum();
+
             let claude_files = find_claude_md_files(&scope.work_dir);
             let total_refs: usize = claude_files
                 .iter()
                 .map(|f| parse_claude_at_refs(f).len())
                 .sum();
+            let header_suffix = if total_cleaned > 0 {
+                format!("  {} will clean {} overlapping @ref(s)", warn, total_cleaned)
+            } else {
+                String::new()
+            };
             println!(
-                "{}  {}",
+                "{}  {}{}",
                 bold("claude context"),
                 dim(&format!(
                     "CLAUDE.md traversal: work dir → home  ({} files, {} @refs)",
                     claude_files.len(),
                     total_refs,
                 )),
+                header_suffix,
             );
             if claude_files.is_empty() {
                 println!("  {}  none found", skip);
@@ -420,8 +446,12 @@ fn print_dry_run(
                 for f in &claude_files {
                     println!("  {}  {}", ok, tp(f));
                     for r in parse_claude_at_refs(f) {
-                        let marker = if r.exists() { ok } else { warn };
-                        println!("     {}  {}", marker, tp(&r));
+                        if overlap_paths.contains(&r) {
+                            println!("     {}  {}  {}", skip, tp(&r), dim("← will be removed (orbit already injects)"));
+                        } else {
+                            let marker = if r.exists() { ok } else { warn };
+                            println!("     {}  {}", marker, tp(&r));
+                        }
                     }
                 }
             }
@@ -450,6 +480,31 @@ fn print_dry_run(
         }
     }
     println!();
+
+    // ── env vars ──────────────────────────────────────────────────────────────
+    if !report.env_vars.is_empty() {
+        println!(
+            "{}  {}",
+            bold("env vars"),
+            dim(&format!("({})", report.env_vars.len()))
+        );
+        let key_w = report.env_vars.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+        for (key, val) in &report.env_vars {
+            let pad = " ".repeat(key_w.saturating_sub(key.len()));
+            // Redact values that look like tokens or passwords.
+            let display = if key.to_uppercase().contains("TOKEN")
+                || key.to_uppercase().contains("SECRET")
+                || key.to_uppercase().contains("PASSWORD")
+                || key.to_uppercase().contains("AUTH")
+            {
+                dim("<redacted>")
+            } else {
+                val.clone()
+            };
+            println!("  {}  {}{pad}  {}", ok, key, display);
+        }
+        println!();
+    }
 
     let _ = merged;
 }

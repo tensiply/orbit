@@ -6,6 +6,7 @@ pub mod error;
 pub mod ipc;
 pub mod jira;
 pub mod plugin;
+pub mod secrets;
 pub mod session;
 pub mod user_config;
 pub mod workspace_config;

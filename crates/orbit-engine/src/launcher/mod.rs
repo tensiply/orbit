@@ -73,8 +73,10 @@ pub fn launch(
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
-    // 3b. For Claude: write merged instructions as system prompt context file
+    // 3b. For Claude: clean CLAUDE.md @refs already injected by orbit, then write
+    // the full instruction set as the system prompt context file.
     let context_file = if engine == Engine::Claude {
+        cleanup_claude_md_overlapping_refs(&scope.work_dir, &config.instructions);
         let ctx_path = paths.runtime_dir.join("context.md");
         build_claude_context(&config.instructions, &ctx_path)?;
         Some(ctx_path)
@@ -107,7 +109,7 @@ pub fn launch(
     }
 
     // 6. Set environment variables
-    set_env(scope, engine, &paths);
+    set_env(scope, engine, &paths, &config.env);
 
     // 7. cd into work_dir, then exec
     std::env::set_current_dir(&scope.work_dir)?;
@@ -164,10 +166,11 @@ fn exec_with_tmux(
     // Build the engine command args for tmux
     let (bin, extra_args) = engine_cmd(engine, config_file, context_file);
 
-    // tmux new-session -s <name> -n <window> -- <bin> [args...]
-    // Env vars already set in process environment — tmux inherits them.
+    // Create session detached so we can lock the window name before attaching.
+    // Without this, the engine rewrites the window name via OSC sequences on startup.
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")
+        .arg("-d")
         .arg("-s")
         .arg(session_name)
         .arg("-n")
@@ -178,8 +181,21 @@ fn exec_with_tmux(
         cmd.arg(arg);
     }
 
-    let err = cmd.exec();
-    bail!("failed to exec tmux new-session: {err}");
+    let status = cmd.status()?;
+    if !status.success() {
+        bail!("failed to create tmux session '{session_name}'");
+    }
+
+    // Prevent the engine from overriding the window name via terminal title OSC sequences.
+    Command::new("tmux")
+        .args(["set-window-option", "-t", session_name, "allow-rename", "off"])
+        .status()
+        .ok();
+
+    let err = Command::new("tmux")
+        .args(["attach-session", "-t", session_name])
+        .exec();
+    bail!("failed to attach to tmux session {session_name}: {err}");
 }
 
 // ── direct exec ───────────────────────────────────────────────────────────────
@@ -209,6 +225,109 @@ fn engine_cmd(engine: Engine, config_file: &Path, context_file: Option<&Path>) -
         }
         Engine::Opencode | Engine::Gemini => (engine.as_str().to_string(), vec![]),
     }
+}
+
+/// Walk from `work_dir` up to home and remove from every `.claude/CLAUDE.md`
+/// any `@/abs/path` line whose target is already in orbit's `instructions` list.
+/// Orbit injects those files via `--append-system-prompt-file`, so keeping them
+/// in CLAUDE.md would duplicate them in the system prompt.
+pub fn cleanup_claude_md_overlapping_refs(work_dir: &Path, instructions: &[std::path::PathBuf]) {
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+
+    let injected: std::collections::HashSet<&std::path::PathBuf> = instructions.iter().collect();
+
+    let mut current = work_dir.to_path_buf();
+    loop {
+        let candidate = current.join(".claude").join("CLAUDE.md");
+        if candidate.is_file() {
+            if let Ok(content) = fs::read_to_string(&candidate) {
+                let cleaned: String = content
+                    .lines()
+                    .filter(|line| {
+                        let trimmed = line.trim();
+                        if let Some(rest) = trimmed.strip_prefix('@') {
+                            let p = rest.trim();
+                            if p.starts_with('/') {
+                                return !injected.contains(&std::path::PathBuf::from(p));
+                            }
+                        }
+                        true
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let cleaned = if cleaned.ends_with('\n') {
+                    cleaned
+                } else {
+                    cleaned + "\n"
+                };
+                if cleaned != content {
+                    if let Err(e) = fs::write(&candidate, &cleaned) {
+                        tracing::warn!("could not clean {}: {e}", candidate.display());
+                    } else {
+                        tracing::debug!("cleaned orbit-injected @refs from {}", candidate.display());
+                    }
+                }
+            }
+        }
+        if current == home {
+            break;
+        }
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => break,
+        }
+    }
+}
+
+/// Returns, for each CLAUDE.md in the work_dir → home hierarchy, the list of
+/// @ref paths that overlap with orbit's instructions. Used by dry-run display.
+pub fn find_claude_md_overlapping_refs(
+    work_dir: &Path,
+    instructions: &[std::path::PathBuf],
+) -> Vec<(std::path::PathBuf, Vec<std::path::PathBuf>)> {
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+
+    let injected: std::collections::HashSet<&std::path::PathBuf> = instructions.iter().collect();
+    let mut result = Vec::new();
+
+    let mut current = work_dir.to_path_buf();
+    loop {
+        let candidate = current.join(".claude").join("CLAUDE.md");
+        if candidate.is_file() {
+            if let Ok(content) = fs::read_to_string(&candidate) {
+                let overlaps: Vec<std::path::PathBuf> = content
+                    .lines()
+                    .filter_map(|line| {
+                        let trimmed = line.trim();
+                        trimmed.strip_prefix('@').and_then(|rest| {
+                            let p = rest.trim();
+                            if p.starts_with('/') {
+                                let pb = std::path::PathBuf::from(p);
+                                if injected.contains(&pb) { Some(pb) } else { None }
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                if !overlaps.is_empty() {
+                    result.push((candidate, overlaps));
+                }
+            }
+        }
+        if current == home {
+            break;
+        }
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    result
 }
 
 fn merge_instructions(instructions: &[std::path::PathBuf]) -> String {
@@ -247,7 +366,12 @@ fn build_gemini_context(instructions: &[std::path::PathBuf], dest: &Path) -> Res
 /// # Safety
 /// `set_var` is unsafe in Rust 1.80+ because it is not thread-safe.
 /// Safe here: single-threaded, called immediately before exec.
-fn set_env(scope: &OrbitScope, engine: Engine, paths: &runtime::RuntimePaths) {
+fn set_env(
+    scope: &OrbitScope,
+    engine: Engine,
+    paths: &runtime::RuntimePaths,
+    extra_env: &std::collections::HashMap<String, String>,
+) {
     unsafe {
         // Preserve the real config dir so orbit commands run inside this session
         // can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
@@ -294,6 +418,13 @@ fn set_env(scope: &OrbitScope, engine: Engine, paths: &runtime::RuntimePaths) {
             }
             Engine::Claude => {}
         }
+
+        // User-defined env vars from orbit.json "env" key — applied last so they
+        // can override any of the above if needed. Values are resolved through
+        // the secrets layer ($VAR, env://, file://, keychain://).
+        for (k, v) in extra_env {
+            std::env::set_var(k, orbit_core::secrets::resolve(v));
+        }
     }
 }
 
@@ -304,6 +435,7 @@ fn apply_env_to_cmd(
     scope: &OrbitScope,
     engine: Engine,
     paths: &runtime::RuntimePaths,
+    extra_env: &std::collections::HashMap<String, String>,
 ) {
     // Preserve the real XDG_CONFIG_HOME so orbit commands spawned inside the
     // session can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
@@ -339,6 +471,10 @@ fn apply_env_to_cmd(
                 .env("GEMINI_CLI_SYSTEM_SETTINGS_PATH", &paths.config_file);
         }
         Engine::Claude => {}
+    }
+
+    for (k, v) in extra_env {
+        cmd.env(k, orbit_core::secrets::resolve(v));
     }
 }
 
@@ -394,8 +530,10 @@ pub fn spawn_background(
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
-    // 3b. For Claude: write merged instructions as system prompt context file
+    // 3b. For Claude: clean CLAUDE.md @refs already injected by orbit, then write
+    // the full instruction set as the system prompt context file.
     let context_file = if engine == Engine::Claude {
+        cleanup_claude_md_overlapping_refs(&scope.work_dir, &config.instructions);
         let ctx_path = paths.runtime_dir.join("context.md");
         build_claude_context(&config.instructions, &ctx_path)?;
         Some(ctx_path)
@@ -435,13 +573,19 @@ pub fn spawn_background(
     for arg in &extra_args {
         cmd.arg(arg);
     }
-    apply_env_to_cmd(&mut cmd, scope, engine, &paths);
+    apply_env_to_cmd(&mut cmd, scope, engine, &paths, &config.env);
     cmd.current_dir(&scope.work_dir);
 
     let status = cmd.status()?;
     if !status.success() {
         bail!("failed to spawn tmux session '{tmux_name}'");
     }
+
+    // Prevent the engine from overriding the window name via OSC sequences.
+    Command::new("tmux")
+        .args(["set-window-option", "-t", &tmux_name, "allow-rename", "off"])
+        .status()
+        .ok();
 
     // 6. Get pane PID
     let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
@@ -481,20 +625,39 @@ fn tmux_pane_pid(session_name: &str) -> Option<u32> {
 
 // ── terminal title ────────────────────────────────────────────────────────────
 
-/// Build a human-readable title: `orbit · <engine> · <tenant>/<project>/<repo>`.
+/// Build a human-readable window title.
+/// Format: `[orbit][<engine>] - <last_scope> - <workspace>/<parent_scopes>`
+/// Example: `[orbit][claude] - orbit - AI/AIDEV/AI-ECOSYSTEM`
 fn window_title(scope: &OrbitScope, engine: Engine) -> String {
     if scope.global_mode {
-        format!("[orbit][{}]", engine.as_str())
-    } else {
-        let mut segments: Vec<&str> = vec![&scope.tenant];
-        if !scope.project.is_empty() {
-            segments.push(&scope.project);
-        }
-        if !scope.repository.is_empty() {
-            segments.push(&scope.repository);
-        }
-        format!("[orbit][{}] - {}", engine.as_str(), segments.join("/"))
+        return format!("[orbit][{}]", engine.as_str());
     }
+
+    let workspace = scope
+        .workspace_root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    // Build ordered scope segments: tenant [project [repository]]
+    let mut all: Vec<&str> = vec![&scope.tenant];
+    if !scope.project.is_empty() {
+        all.push(&scope.project);
+    }
+    if !scope.repository.is_empty() {
+        all.push(&scope.repository);
+    }
+
+    let last = all.last().copied().unwrap_or("");
+    let parent_path: Vec<&str> = all[..all.len().saturating_sub(1)].to_vec();
+
+    let path = if parent_path.is_empty() {
+        workspace
+    } else {
+        format!("{}/{}", workspace, parent_path.join("/"))
+    };
+
+    format!("[orbit][{}] - {} - {}", engine.as_str(), last, path)
 }
 
 /// Emit an xterm OSC escape to set the terminal window/tab title.
@@ -642,6 +805,7 @@ mod tests {
     #[test]
     fn window_title_full_scope() {
         let scope = OrbitScope {
+            workspace_root: "/home/user/AI".into(),
             tenant: "AIDEV".into(),
             project: "AI-ECOSYSTEM".into(),
             repository: "orbit".into(),
@@ -649,21 +813,37 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
+            window_title(&scope, Engine::Claude),
+            "[orbit][claude] - orbit - AI/AIDEV/AI-ECOSYSTEM"
+        );
+    }
+
+    #[test]
+    fn window_title_project_only() {
+        let scope = OrbitScope {
+            workspace_root: "/home/user/AI".into(),
+            tenant: "AIDEV".into(),
+            project: "AI-ECOSYSTEM".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        assert_eq!(
             window_title(&scope, Engine::Opencode),
-            "[orbit][opencode] - AIDEV/AI-ECOSYSTEM/orbit"
+            "[orbit][opencode] - AI-ECOSYSTEM - AI/AIDEV"
         );
     }
 
     #[test]
     fn window_title_tenant_only() {
         let scope = OrbitScope {
+            workspace_root: "/home/user/AI".into(),
             tenant: "AIDEV".into(),
             global_mode: false,
             ..Default::default()
         };
         assert_eq!(
             window_title(&scope, Engine::Gemini),
-            "[orbit][gemini] - AIDEV"
+            "[orbit][gemini] - AIDEV - AI"
         );
     }
 }

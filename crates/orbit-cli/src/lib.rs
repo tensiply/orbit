@@ -56,6 +56,10 @@ pub enum Commands {
     Snapshot(commands::snapshot::SnapshotArgs),
     /// Manage Jira integration: board mappings, orgs
     Jira(commands::jira::JiraArgs),
+    /// Store and retrieve secrets in the OS keychain
+    Secret(commands::secret::SecretArgs),
+    /// Manage env vars in orbit.json at any scope level
+    Env(commands::env::EnvArgs),
 }
 
 impl Cli {
@@ -114,6 +118,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         Some(Commands::Jira(args)) => commands::jira::run(args),
+        Some(Commands::Secret(args)) => commands::secret::run(args),
+        Some(Commands::Env(args)) => commands::env::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

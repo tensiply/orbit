@@ -21,6 +21,8 @@ pub struct MergedConfig {
     pub instructions: Vec<PathBuf>,
     /// MCP servers keyed by name (last writer wins).
     pub mcp: HashMap<String, McpServer>,
+    /// Extra environment variables injected into the engine process (last writer wins).
+    pub env: HashMap<String, String>,
     /// All other keys (model, agent, compaction, …) — last writer wins.
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -41,6 +43,7 @@ pub struct ScopeReport {
     pub agent_overlay_dirs: Vec<LayerEntry>,
     pub instructions: Vec<(PathBuf, bool)>,
     pub mcp_servers: Vec<(String, Vec<String>)>,
+    pub env_vars: Vec<(String, String)>,
 }
 
 /// Load config AND build a layer-visibility report for dry-run output.
@@ -285,12 +288,20 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         .collect();
     mcp_servers.sort_by(|a, b| a.0.cmp(&b.0));
 
+    let mut env_vars: Vec<(String, String)> = merged
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    env_vars.sort_by(|a, b| a.0.cmp(&b.0));
+
     ScopeReport {
         config_layers,
         mcp_layers,
         agent_overlay_dirs,
         instructions,
         mcp_servers,
+        env_vars,
     }
 }
 
@@ -408,6 +419,15 @@ fn merge_value_into(
                             if !cfg.instructions.contains(&p) {
                                 cfg.instructions.push(p);
                             }
+                        }
+                    }
+                }
+            }
+            "env" => {
+                if let Some(obj) = value.as_object() {
+                    for (k, v) in obj {
+                        if let Some(s) = v.as_str() {
+                            cfg.env.insert(k.clone(), s.to_string());
                         }
                     }
                 }
@@ -631,6 +651,27 @@ mod tests {
         merge_file_into(&mut cfg, &tmp.path().join("b.json"), Engine::Opencode);
 
         assert_eq!(cfg.extra["model"], "smart");
+    }
+
+    #[test]
+    fn env_merges_last_writer_wins() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "a.json",
+            r#"{ "env": { "FOO": "old", "BAR": "keep" } }"#,
+        );
+        write(
+            tmp.path(),
+            "b.json",
+            r#"{ "env": { "FOO": "new" } }"#,
+        );
+        let mut cfg = MergedConfig::default();
+        merge_file_into(&mut cfg, &tmp.path().join("a.json"), Engine::Opencode);
+        merge_file_into(&mut cfg, &tmp.path().join("b.json"), Engine::Opencode);
+
+        assert_eq!(cfg.env["FOO"], "new");
+        assert_eq!(cfg.env["BAR"], "keep");
     }
 
     #[test]
