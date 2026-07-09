@@ -143,6 +143,15 @@ impl ServerState {
                     },
                 }
             }
+
+            // ── Plan requests — supervisor handles execution; daemon routes IPC ──
+
+            Request::CreatePlan { .. }
+            | Request::GetPlan { .. }
+            | Request::ListPlans
+            | Request::CancelPlan { .. } => Response::Error {
+                message: "plan supervisor not yet active in this daemon version".into(),
+            },
         }
     }
 }
