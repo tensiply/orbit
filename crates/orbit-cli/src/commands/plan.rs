@@ -97,8 +97,13 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     println!("Plan:   {} [{:?}]", plan.id, plan.status);
                     println!("Intent: {}", plan.intent);
                     println!("Nodes ({}):", plan.nodes.len());
+                    let plan_suffix = plan.id.trim_start_matches("plan_");
                     for node in &plan.nodes {
                         println!("  [{:?}] {} — {:?}", node.status, node.label, node.task_type);
+                        if node.status == orbit_core::plan::NodeStatus::Running {
+                            let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+                            println!("         tmux attach -t {session_key}");
+                        }
                     }
                 }
                 Response::Error { message } => {

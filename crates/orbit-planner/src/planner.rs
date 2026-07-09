@@ -119,9 +119,28 @@ fn default_retry() -> u8 {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+fn user_prompt_path() -> PathBuf {
+    let base = std::env::var("ORBIT_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::BaseDirs::new()
+                .map(|b| b.home_dir().join(".config"))
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+        });
+    base.join("orbit/planner.md")
+}
+
 pub fn build_system_prompt(cfg: &PlannerConfig) -> String {
+    // Explicit override from config takes priority
     if let Some(ref path) = cfg.system_prompt_path {
         if let Ok(text) = std::fs::read_to_string(path) {
+            return text;
+        }
+    }
+    // User-editable fallback: ~/.config/orbit/planner.md
+    let user_path = user_prompt_path();
+    if user_path.exists() {
+        if let Ok(text) = std::fs::read_to_string(&user_path) {
             return text;
         }
     }
