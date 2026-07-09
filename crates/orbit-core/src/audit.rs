@@ -168,9 +168,7 @@ pub fn audit_stats() -> AuditStats {
         }
     }
 
-    if duration_count > 0 {
-        stats.avg_duration_secs = total_duration / duration_count;
-    }
+    stats.avg_duration_secs = total_duration.checked_div(duration_count).unwrap_or(0);
     stats
 }
 

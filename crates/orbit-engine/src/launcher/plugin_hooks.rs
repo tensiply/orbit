@@ -64,11 +64,10 @@ pub fn run_pre_launch(
         if let Some(ttl) = spec.cache_ttl_secs {
             let cache = cache_path(&p.name);
             if let Some(cached) = read_if_fresh(&cache, ttl) {
-                if spec.output == "context" {
-                    if let Some(out) = write_context_file(&cached, &p.name, runtime_dir) {
+                if spec.output == "context"
+                    && let Some(out) = write_context_file(&cached, &p.name, runtime_dir) {
                         paths.push(out);
                     }
-                }
                 continue;
             }
         }
@@ -173,10 +172,9 @@ fn persist_cache(plugin_name: &str, content: &[u8]) {
 }
 
 fn expand_tilde(raw: &str) -> PathBuf {
-    if raw.starts_with("~/") {
-        if let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) {
-            return home.join(&raw[2..]);
+    if let Some(stripped) = raw.strip_prefix("~/")
+        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) {
+            return home.join(stripped);
         }
-    }
     PathBuf::from(raw)
 }

@@ -369,11 +369,10 @@ fn print_dry_run(
                 dim(&format!("loads: {}", GEMINI_FILENAMES.join(", "))),
             );
             // Runtime dir first — orbit writes merged GEMINI.md here
-            if let Some(ctx) = &gemini_ctx {
-                if let Some(parent) = ctx.parent() {
+            if let Some(ctx) = &gemini_ctx
+                && let Some(parent) = ctx.parent() {
                     println!("  {}  {}  {}", ok, tp(parent), dim("← orbit writes GEMINI.md here"));
                 }
-            }
             for dir in &include_dirs {
                 let expanded = if let Ok(rest) = dir.strip_prefix("~") {
                     home.join(rest)
@@ -559,11 +558,10 @@ fn gemini_include_dirs(paths: &[&std::path::Path]) -> Vec<std::path::PathBuf> {
     let mut seen = std::collections::HashSet::new();
     let mut dirs = Vec::new();
     for p in paths {
-        if let Some(parent) = p.parent() {
-            if seen.insert(parent.to_path_buf()) {
+        if let Some(parent) = p.parent()
+            && seen.insert(parent.to_path_buf()) {
                 dirs.push(parent.to_path_buf());
             }
-        }
     }
     dirs
 }

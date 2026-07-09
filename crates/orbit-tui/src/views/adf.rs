@@ -314,7 +314,7 @@ fn render_table(node: &Value, dim: Color) -> Vec<Line<'static>> {
         .iter()
         .map(|row| {
             let row_content = row.get("content").and_then(|c| c.as_array()).unwrap_or(&empty);
-            row_content.iter().map(|cell| extract_cell_text(cell)).collect()
+            row_content.iter().map(extract_cell_text).collect()
         })
         .collect();
 

@@ -241,8 +241,8 @@ pub fn cleanup_claude_md_overlapping_refs(work_dir: &Path, instructions: &[std::
     let mut current = work_dir.to_path_buf();
     loop {
         let candidate = current.join(".claude").join("CLAUDE.md");
-        if candidate.is_file() {
-            if let Ok(content) = fs::read_to_string(&candidate) {
+        if candidate.is_file()
+            && let Ok(content) = fs::read_to_string(&candidate) {
                 let cleaned: String = content
                     .lines()
                     .filter(|line| {
@@ -270,7 +270,6 @@ pub fn cleanup_claude_md_overlapping_refs(work_dir: &Path, instructions: &[std::
                     }
                 }
             }
-        }
         if current == home {
             break;
         }
@@ -297,8 +296,8 @@ pub fn find_claude_md_overlapping_refs(
     let mut current = work_dir.to_path_buf();
     loop {
         let candidate = current.join(".claude").join("CLAUDE.md");
-        if candidate.is_file() {
-            if let Ok(content) = fs::read_to_string(&candidate) {
+        if candidate.is_file()
+            && let Ok(content) = fs::read_to_string(&candidate) {
                 let overlaps: Vec<std::path::PathBuf> = content
                     .lines()
                     .filter_map(|line| {
@@ -318,7 +317,6 @@ pub fn find_claude_md_overlapping_refs(
                     result.push((candidate, overlaps));
                 }
             }
-        }
         if current == home {
             break;
         }

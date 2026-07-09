@@ -133,18 +133,16 @@ fn user_prompt_path() -> PathBuf {
 
 pub fn build_system_prompt(cfg: &PlannerConfig) -> String {
     // Explicit override from config takes priority
-    if let Some(ref path) = cfg.system_prompt_path {
-        if let Ok(text) = std::fs::read_to_string(path) {
+    if let Some(ref path) = cfg.system_prompt_path
+        && let Ok(text) = std::fs::read_to_string(path) {
             return text;
         }
-    }
     // User-editable fallback: ~/.config/orbit/planner.md
     let user_path = user_prompt_path();
-    if user_path.exists() {
-        if let Ok(text) = std::fs::read_to_string(&user_path) {
+    if user_path.exists()
+        && let Ok(text) = std::fs::read_to_string(&user_path) {
             return text;
         }
-    }
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
 

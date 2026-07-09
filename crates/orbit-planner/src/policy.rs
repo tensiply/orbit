@@ -11,8 +11,8 @@ pub struct PolicyDecision {
 /// Static rules — no LLM involved.
 pub fn evaluate(plan: &Plan, node: &PlanNode, budget_spent: u64) -> PolicyDecision {
     // Budget exhausted → block
-    if let Some(max) = plan.policy.max_tokens {
-        if budget_spent >= max {
+    if let Some(max) = plan.policy.max_tokens
+        && budget_spent >= max {
             return PolicyDecision {
                 allowed: false,
                 reason: Some(format!(
@@ -21,7 +21,6 @@ pub fn evaluate(plan: &Plan, node: &PlanNode, budget_spent: u64) -> PolicyDecisi
                 require_approval: false,
             };
         }
-    }
 
     // High-risk node with approval required for High
     let require_approval = node.policy.risk_level == RiskLevel::High

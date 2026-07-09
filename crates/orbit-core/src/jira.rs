@@ -108,11 +108,10 @@ pub fn discover_orgs() -> Vec<JiraOrg> {
             }
             current_site = Some(rest.trim().to_string());
             current_email = String::new();
-        } else if current_site.is_some() {
-            if let Some(email) = trimmed.strip_prefix("email: ") {
+        } else if current_site.is_some()
+            && let Some(email) = trimmed.strip_prefix("email: ") {
                 current_email = email.trim().to_string();
             }
-        }
     }
     if let Some(site) = current_site {
         orgs.push(org_from_acli_profile(site, current_email));
@@ -304,11 +303,10 @@ pub fn fetch_issues(orgs: &[JiraOrg]) -> Vec<JiraIssue> {
     }
 
     // Restore original auth context
-    if multi {
-        if let Some(site) = original_site {
+    if multi
+        && let Some(site) = original_site {
             auth_switch(&site);
         }
-    }
 
     all
 }
@@ -491,7 +489,7 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
 
     let description_adf = fields.get("description").cloned();
     let description = description_adf.as_ref()
-        .map(|d| extract_adf_text(d))
+        .map(extract_adf_text)
         .unwrap_or_default();
 
     let comments = fields
@@ -502,7 +500,7 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
                     .and_then(|v| v.as_str()).unwrap_or("?").to_string();
                 let created = c.get("created").and_then(|v| v.as_str())
                     .map(fmt_date).unwrap_or_default();
-                let body = c.get("body").map(|b| extract_adf_text(b)).unwrap_or_default();
+                let body = c.get("body").map(extract_adf_text).unwrap_or_default();
                 JiraComment { author, created, body }
             }).collect()
         })
