@@ -133,7 +133,7 @@ impl ServerState {
                     }
                 };
 
-                match launcher::spawn_background(&scope, &merged, engine_val, None) {
+                match launcher::spawn_background(&scope, &merged, engine_val, None, None) {
                     Ok(session) => Response::Launched {
                         tmux_name: session.tmux_session.unwrap_or_default(),
                         session_id: session.id,

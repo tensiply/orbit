@@ -131,7 +131,7 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
         let engine = selector::select(&plan.nodes[idx]).engine;
         let _ = node_engine;
 
-        match dispatch_node(&node_id, &node_label, &node_intent, &dispatch_scope, engine) {
+        match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &dispatch_scope, engine) {
             Ok(session) => {
                 start_output_capture(&node_id, &session);
                 let node = &mut plan.nodes[idx];
@@ -247,6 +247,7 @@ fn try_replan(plan: &Plan) -> anyhow::Result<Plan> {
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
 fn dispatch_node(
+    plan_id: &str,
     node_id: &str,
     node_label: &str,
     node_intent: &str,
@@ -265,7 +266,11 @@ fn dispatch_node(
     let intent_path = write_node_intent(node_id, node_label, node_intent)?;
     merged.instructions.push(intent_path);
 
-    launcher::spawn_background(&orbit_scope, &merged, engine, None)
+    // Unique per-node session so plan nodes don't share the user's interactive session
+    let plan_suffix = plan_id.trim_start_matches("plan_");
+    let session_name = format!("orbit-plan-{plan_suffix}-{node_id}");
+
+    launcher::spawn_plan_node(&session_name, node_intent, &orbit_scope, &merged, engine)
 }
 
 // ── Output capture ────────────────────────────────────────────────────────────

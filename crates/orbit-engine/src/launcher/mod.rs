@@ -483,11 +483,18 @@ fn apply_env_to_cmd(
 /// Spawn a detached tmux session containing the engine. Returns the registered
 /// `Session` on success. Intended for daemon use — does NOT exec() the current
 /// process and does NOT call `std::env::set_var`.
+/// Spawn the engine as a detached tmux session.
+///
+/// `session_name` overrides the default computed name — use it for plan nodes
+/// so each node gets an isolated session rather than reusing a shared one.
+/// When `None`, falls back to the scope-derived name and reuses an existing
+/// session if one with that name is already running.
 pub fn spawn_background(
     scope: &OrbitScope,
     config: &MergedConfig,
     engine: Engine,
     task_context: Option<&TaskContext>,
+    session_name: Option<&str>,
 ) -> Result<orbit_core::session::Session> {
     // 1. Runtime dirs
     let paths = runtime::setup(scope, engine)?;
@@ -543,9 +550,13 @@ pub fn spawn_background(
 
     // 4. Tmux session name
     let username = orbit_core::user_config::UserConfig::load().user.name;
-    let tmux_name = tmux_session_name(scope, engine, &username);
+    let tmux_name = session_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| tmux_session_name(scope, engine, &username));
 
-    if tmux::session_exists(&tmux_name) {
+    // Reuse an existing session only when the caller did not supply an override.
+    // Plan-node sessions always get a fresh dedicated session.
+    if session_name.is_none() && tmux::session_exists(&tmux_name) {
         // Already running — return the existing session name so client can attach
         let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
         let session = orbit_core::session::Session::new(
@@ -606,6 +617,121 @@ pub fn spawn_background(
     }
 
     Ok(session)
+}
+
+/// Spawn an engine in a dedicated tmux session with an explicit user intent.
+///
+/// Unlike `spawn_background` (interactive mode), this runs the engine in
+/// print / headless mode so the agent processes the intent autonomously
+/// and exits when done. Used exclusively by plan-node dispatch.
+pub fn spawn_plan_node(
+    session_name: &str,
+    intent: &str,
+    scope: &OrbitScope,
+    config: &MergedConfig,
+    engine: Engine,
+) -> Result<orbit_core::session::Session> {
+    // 1. Runtime dirs
+    let paths = runtime::setup(scope, engine)?;
+
+    // 2. Agent materialisation
+    agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
+
+    // 2b. Plugin context + pre-launch hooks
+    let mut config = config.clone();
+    let state = orbit_core::plugin::PluginState::load();
+    let plugins = orbit_core::plugin::load_all();
+    plugin_hooks::inject_context(&state, &plugins, &mut config, &paths.runtime_dir)?;
+    for path in plugin_hooks::run_pre_launch(&state, &plugins, &paths.runtime_dir) {
+        if !config.instructions.contains(&path) {
+            config.instructions.push(path);
+        }
+    }
+
+    // 3. Write config + context files
+    let rendered = render::render(&config, engine);
+    fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
+
+    let context_file = if engine == Engine::Claude {
+        cleanup_claude_md_overlapping_refs(&scope.work_dir, &config.instructions);
+        let ctx_path = paths.runtime_dir.join("context.md");
+        build_claude_context(&config.instructions, &ctx_path)?;
+        Some(ctx_path)
+    } else {
+        None
+    };
+
+    // 4. Build the headless engine command (print / run mode)
+    let (bin, extra_args) = plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
+
+    // 5. Launch in a dedicated detached tmux session
+    let mut cmd = Command::new("tmux");
+    cmd.arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(session_name)
+        .arg("--")
+        .arg(&bin);
+    for arg in &extra_args {
+        cmd.arg(arg);
+    }
+    apply_env_to_cmd(&mut cmd, scope, engine, &paths, &config.env);
+    cmd.current_dir(&scope.work_dir);
+
+    let status = cmd.status()?;
+    if !status.success() {
+        anyhow::bail!("failed to create plan-node tmux session '{session_name}'");
+    }
+
+    // 6. Register session
+    let pid = tmux_pane_pid(session_name).unwrap_or(std::process::id());
+    let session = orbit_core::session::Session::new(
+        pid,
+        engine.as_str(),
+        &scope.tenant,
+        &scope.project,
+        &scope.repository,
+        scope.work_dir.clone(),
+        scope.global_mode,
+        Some(session_name.to_string()),
+    );
+    if let Err(e) = session.save() {
+        tracing::warn!("could not save plan-node session: {e}");
+    }
+
+    Ok(session)
+}
+
+/// Build the headless command for a plan node.
+fn plan_node_cmd(
+    engine: Engine,
+    config_file: &Path,
+    context_file: Option<&Path>,
+    intent: &str,
+) -> (String, Vec<String>) {
+    match engine {
+        Engine::Claude => {
+            let mut args = vec![
+                "--mcp-config".to_string(),
+                config_file.to_string_lossy().into_owned(),
+                "-p".to_string(),
+                intent.to_string(),
+            ];
+            if let Some(ctx) = context_file {
+                args.push("--append-system-prompt-file".to_string());
+                args.push(ctx.to_string_lossy().into_owned());
+            }
+            ("claude".to_string(), args)
+        }
+        Engine::Opencode => (
+            "opencode".to_string(),
+            vec!["run".to_string(), intent.to_string()],
+        ),
+        Engine::Gemini => (
+            "gemini".to_string(),
+            vec!["-p".to_string(), intent.to_string()],
+        ),
+    }
 }
 
 fn tmux_pane_pid(session_name: &str) -> Option<u32> {
