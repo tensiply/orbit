@@ -3,7 +3,7 @@ use orbit_core::{
     engine::Engine,
     hooks::{run_hooks, HookEvent},
     memory::{append_plan_run, load_recent_runs, PlanRunRecord},
-    plan::{NodeStatus, Plan, PlanScope, PlanStatus},
+    plan::{NodeStatus, Plan, PlanNodeType, PlanScope, PlanStatus},
     session::Session,
 };
 use orbit_engine::{
@@ -218,7 +218,8 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
             ],
         );
 
-        match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &dispatch_scope, engine) {
+        let node_task_type = plan.nodes[idx].task_type.clone();
+        match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &node_task_type, &dispatch_scope, engine) {
             Ok(session) => {
                 let plan_suffix = plan.id.trim_start_matches("plan_");
                 let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
@@ -349,6 +350,7 @@ fn dispatch_node(
     node_id: &str,
     node_label: &str,
     node_intent: &str,
+    task_type: &PlanNodeType,
     scope: &PlanScope,
     engine: Engine,
 ) -> anyhow::Result<Session> {
@@ -364,6 +366,12 @@ fn dispatch_node(
     // Unique per-node session name doubles as the filesystem key for logs/intent files
     let plan_suffix = plan_id.trim_start_matches("plan_");
     let session_name = format!("orbit-plan-{plan_suffix}-{node_id}");
+
+    // Specialist template injected before the intent (orbit context → specialist → intent)
+    if let Some(template) = orbit_planner::templates::get_template(task_type) {
+        let template_path = write_node_template(&session_name, template)?;
+        merged.instructions.push(template_path);
+    }
 
     let intent_path = write_node_intent(&session_name, node_label, node_intent)?;
     merged.instructions.push(intent_path);
@@ -405,6 +413,14 @@ fn capture_node_output(session_key: &str) -> Option<String> {
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(100);
     Some(lines[start..].join("\n"))
+}
+
+fn write_node_template(session_key: &str, content: &str) -> anyhow::Result<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join("orbit-plan-nodes");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{session_key}.specialist.md"));
+    std::fs::write(&path, content)?;
+    Ok(path)
 }
 
 fn write_node_intent(session_key: &str, label: &str, intent: &str) -> anyhow::Result<std::path::PathBuf> {
