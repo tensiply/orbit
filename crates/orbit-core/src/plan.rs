@@ -182,6 +182,8 @@ pub struct PlanNode {
     pub started_at: Option<u64>,
     pub completed_at: Option<u64>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub retry_count: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,8 +317,9 @@ mod tests {
 
     #[test]
     fn save_and_load() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
 
         let p = Plan::new("test intent", make_scope(), Engine::Claude);
         let id = p.id.clone();
@@ -346,6 +349,7 @@ mod tests {
             started_at: None,
             completed_at: None,
             error: None,
+            retry_count: 0,
         });
         p.nodes.push(PlanNode {
             id: "n1".into(),
@@ -363,6 +367,7 @@ mod tests {
             started_at: None,
             completed_at: None,
             error: None,
+            retry_count: 0,
         });
         let ready = p.ready_nodes();
         assert_eq!(ready.len(), 1);
