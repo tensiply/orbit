@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use orbit_core::{
     engine::Engine,
+    ipc::PlannerTrace,
     memory::PlanRunRecord,
     plan::{
         NodePolicy, NodeStatus, Plan, PlanEdge, PlanNode, PlanNodeType, PlanScope, PlanStatus,
@@ -330,7 +331,7 @@ pub fn invoke_planner(
     scope: &PlanScope,
     recent_runs: &[PlanRunRecord],
     cfg: &PlannerConfig,
-) -> Result<Plan> {
+) -> Result<(Plan, PlannerTrace)> {
     let system_prompt = build_system_prompt(cfg);
     let user_prompt = create_plan_prompt(intent, scope, recent_runs);
     let full_prompt = format!("{system_prompt}\n\n---\n\n{user_prompt}");
@@ -350,8 +351,10 @@ pub fn invoke_planner(
         bail!("engine CLI exited with error: {stderr}");
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout);
-    parse_llm_response(&raw, intent, scope, cfg, &system_prompt)
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let plan = parse_llm_response(&raw, intent, scope, cfg, &system_prompt)?;
+    let trace = PlannerTrace { system_prompt, user_prompt, raw_response: raw };
+    Ok((plan, trace))
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

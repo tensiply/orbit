@@ -26,6 +26,16 @@ fn xdg_data_dir() -> std::path::PathBuf {
     }
 }
 
+// ── PlannerTrace ──────────────────────────────────────────────────────────────
+
+/// Verbose debug data captured during planner invocation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannerTrace {
+    pub system_prompt: String,
+    pub user_prompt: String,
+    pub raw_response: String,
+}
+
 // ── protocol ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,6 +63,8 @@ pub enum Request {
         project: Option<String>,
         repository: Option<String>,
         dry_run: bool,
+        #[serde(default)]
+        verbose: bool,
     },
     GetPlan {
         id: String,
@@ -104,6 +116,8 @@ pub enum Response {
     PlanCreated {
         id: String,
         node_count: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        trace: Option<PlannerTrace>,
     },
     PlanInfo {
         plan: Plan,

@@ -155,6 +155,7 @@ impl ServerState {
                 project,
                 repository,
                 dry_run,
+                verbose,
             } => {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
@@ -171,13 +172,15 @@ impl ServerState {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
-                    Ok(mut plan) => {
+                    Ok((mut plan, trace)) => {
                         let node_count = plan.nodes.len();
+                        let trace_out = if verbose { Some(trace) } else { None };
                         if dry_run {
                             plan.status = PlanStatus::Planning;
                             Response::PlanCreated {
                                 id: plan.id,
                                 node_count,
+                                trace: trace_out,
                             }
                         } else {
                             plan.status = PlanStatus::Running;
@@ -195,6 +198,7 @@ impl ServerState {
                                 Ok(_) => Response::PlanCreated {
                                     id: plan.id,
                                     node_count,
+                                    trace: trace_out,
                                 },
                                 Err(e) => Response::Error {
                                     message: format!("save error: {e}"),
@@ -287,7 +291,7 @@ impl ServerState {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
-                    Ok(plan) => {
+                    Ok((plan, _trace)) => {
                         let result = orbit_eval::eval(&plan, &constraints);
                         Response::PlanEvalResult { plan, result }
                     }

@@ -19,6 +19,10 @@ pub struct PlanArgs {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// Print system prompt, user prompt, and raw LLM response
+    #[arg(long)]
+    pub verbose: bool,
+
     /// Workspace scope override
     #[arg(long)]
     pub workspace: Option<String>,
@@ -298,10 +302,20 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 project,
                 repository,
                 dry_run: args.dry_run,
+                verbose: args.verbose,
             })
             .await?
             {
-                Response::PlanCreated { id, node_count } => {
+                Response::PlanCreated { id, node_count, trace } => {
+                    if let Some(t) = trace {
+                        println!("── system prompt ────────────────────────────────────");
+                        println!("{}", t.system_prompt);
+                        println!("── user prompt ──────────────────────────────────────");
+                        println!("{}", t.user_prompt);
+                        println!("── raw LLM response ─────────────────────────────────");
+                        println!("{}", t.raw_response);
+                        println!("─────────────────────────────────────────────────────");
+                    }
                     println!("Plan created: {id} ({node_count} node(s))");
                     if !args.dry_run {
                         println!("Running. Check status with: orbit plan get {id}");
