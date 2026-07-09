@@ -78,6 +78,14 @@ pub enum PlanCommand {
         /// Plan ID to retry
         id: String,
     },
+    /// Poll a plan's status until it reaches a terminal state
+    Watch {
+        /// Plan ID to watch
+        id: String,
+        /// Poll interval in seconds (default: 3)
+        #[arg(long, default_value = "3")]
+        interval: u64,
+    },
     /// Dry-run planner and evaluate the plan structure (no engine executed)
     Eval {
         /// Intent to plan
@@ -216,6 +224,48 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     std::process::exit(1);
                 }
                 _ => eprintln!("Unexpected response"),
+            }
+        }
+
+        Some(PlanCommand::Watch { id, interval }) => {
+            use orbit_core::plan::PlanStatus;
+            use std::time::Duration;
+
+            println!("Watching plan {id} (every {interval}s, Ctrl+C to stop)…");
+            loop {
+                match send_raw(&Request::GetPlan { id: id.clone() }).await? {
+                    Response::PlanInfo { plan } => {
+                        let completed = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Completed).count();
+                        let failed = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Failed).count();
+                        let running = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Running).count();
+                        let pending = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Pending).count();
+                        print!("\r[{:?}] {}/{} done, {} running, {} pending, {} failed   ",
+                            plan.status, completed, plan.nodes.len(), running, pending, failed);
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
+                        match plan.status {
+                            PlanStatus::Completed => {
+                                println!("\nPlan {id} completed.");
+                                break;
+                            }
+                            PlanStatus::Failed => {
+                                println!("\nPlan {id} failed.");
+                                std::process::exit(1);
+                            }
+                            PlanStatus::Cancelled => {
+                                println!("\nPlan {id} cancelled.");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Response::Error { message } => {
+                        eprintln!("\nError: {message}");
+                        std::process::exit(1);
+                    }
+                    _ => {}
+                }
+                tokio::time::sleep(Duration::from_secs(interval)).await;
             }
         }
 
