@@ -37,13 +37,56 @@ pub async fn run_supervisor_loop(
 
 fn tick() -> anyhow::Result<()> {
     let plans = Plan::load_all();
-    for mut plan in plans {
-        if plan.status == PlanStatus::Running {
-            if let Err(e) = advance_plan(&mut plan) {
-                warn!("advance_plan error for {}: {e}", plan.id);
-            }
+    for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Running).cloned() {
+        if let Err(e) = advance_plan(&mut plan) {
+            warn!("advance_plan error for {}: {e}", plan.id);
         }
     }
+    for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Replanning).cloned() {
+        if let Err(e) = close_replanning_plan(&mut plan, &plans) {
+            warn!("close_replanning error for {}: {e}", plan.id);
+        }
+    }
+    Ok(())
+}
+
+/// Propagate a child plan's terminal outcome back to its Replanning parent.
+fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan]) -> anyhow::Result<()> {
+    let child = all_plans
+        .iter()
+        .find(|p| p.parent_plan_id.as_deref() == Some(&parent.id));
+
+    let Some(child) = child else {
+        // Child not yet written to disk — wait for the next tick.
+        return Ok(());
+    };
+
+    let terminal_status = match child.status {
+        PlanStatus::Completed => Some(PlanStatus::Completed),
+        PlanStatus::Failed => Some(PlanStatus::Failed),
+        _ => None,
+    };
+
+    let Some(outcome) = terminal_status else {
+        return Ok(()); // child still running
+    };
+
+    let duration = now_secs().saturating_sub(parent.created_at);
+    parent.status = outcome.clone();
+    parent.completed_at = Some(now_secs());
+
+    let _ = append_event(&AuditEvent::PlanCompleted {
+        plan_id: parent.id.clone(),
+        outcome: format!("{outcome:?}"),
+        total_duration_secs: duration,
+        timestamp: now_secs(),
+    });
+
+    info!(
+        "parent plan {} closed as {outcome:?} (child: {})",
+        parent.id, child.id
+    );
+    parent.save()?;
     Ok(())
 }
 
