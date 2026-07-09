@@ -73,6 +73,11 @@ pub enum PlanCommand {
         #[arg(long)]
         stdout: bool,
     },
+    /// Re-execute a plan from its failed nodes without re-planning
+    Retry {
+        /// Plan ID to retry
+        id: String,
+    },
     /// Dry-run planner and evaluate the plan structure (no engine executed)
     Eval {
         /// Intent to plan
@@ -191,6 +196,20 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             match send_raw(&Request::ApprovePlanNode { plan_id, node_id }).await? {
                 Response::PlanApproved { plan_id, node_id } => {
                     println!("Approved: node {node_id} in plan {plan_id}");
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
+            }
+        }
+
+        Some(PlanCommand::Retry { id }) => {
+            match send_raw(&Request::RetryPlan { id }).await? {
+                Response::PlanRetried { id, reset_count } => {
+                    println!("Plan {id} retried: {reset_count} failed node(s) reset to Pending.");
+                    println!("Running. Check status with: orbit plan get {id}");
                 }
                 Response::Error { message } => {
                     eprintln!("Error: {message}");

@@ -86,6 +86,9 @@ pub enum Request {
         repository: Option<String>,
         constraints: Vec<EvalConstraint>,
     },
+    RetryPlan {
+        id: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,5 +141,9 @@ pub enum Response {
     PlanEvalResult {
         plan: Plan,
         result: EvalResult,
+    },
+    PlanRetried {
+        id: String,
+        reset_count: usize,
     },
 }

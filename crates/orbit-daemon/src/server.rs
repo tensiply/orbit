@@ -272,6 +272,53 @@ impl ServerState {
                 Response::PlanStats { stats }
             }
 
+            Request::RetryPlan { id } => match orbit_core::plan::Plan::load(&id) {
+                Err(e) => Response::Error {
+                    message: format!("plan not found: {e}"),
+                },
+                Ok(mut plan) => {
+                    use orbit_core::plan::PlanStatus;
+                    match plan.status {
+                        PlanStatus::Running | PlanStatus::Planning => Response::Error {
+                            message: format!("plan {id} is still running — cancel it first"),
+                        },
+                        PlanStatus::Completed => Response::Error {
+                            message: format!("plan {id} completed successfully — nothing to retry"),
+                        },
+                        _ => {
+                            let mut reset_count = 0usize;
+                            for node in plan.nodes.iter_mut() {
+                                if node.status == NodeStatus::Failed {
+                                    node.status = NodeStatus::Pending;
+                                    node.error = None;
+                                    node.output_summary = None;
+                                    node.session_id = None;
+                                    node.started_at = None;
+                                    node.completed_at = None;
+                                    node.retry_count = 0;
+                                    reset_count += 1;
+                                }
+                            }
+                            if reset_count == 0 {
+                                return Response::Error {
+                                    message: format!("plan {id} has no failed nodes to retry"),
+                                };
+                            }
+                            plan.status = PlanStatus::Running;
+                            match plan.save() {
+                                Ok(_) => {
+                                    info!("plan {id} retried: {reset_count} node(s) reset to Pending");
+                                    Response::PlanRetried { id, reset_count }
+                                }
+                                Err(e) => Response::Error {
+                                    message: format!("save error: {e}"),
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+
             Request::EvalPlan {
                 intent,
                 workspace,
