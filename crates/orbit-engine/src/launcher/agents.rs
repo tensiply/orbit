@@ -304,16 +304,32 @@ fn merge_layered_markdown(
 }
 
 /// Merge overlay into base: base frontmatter wins on conflicts, bodies concatenate.
+///
+/// Preserves the raw base frontmatter block verbatim to avoid mangling
+/// multi-line YAML values (e.g. `permission:\n  edit: deny`).
 fn merge_preserve_base(base: &str, overlay: &str) -> String {
-    let (mut base_fm, base_body) = parse_frontmatter(base);
+    let (raw_base_fm, base_body) = split_raw_frontmatter(base);
+    let base_keys = top_level_keys(raw_base_fm.as_deref().unwrap_or(""));
     let (overlay_fm, overlay_body) = parse_frontmatter(overlay);
 
-    // Base keys take priority — only add overlay keys absent from base
-    for (key, value) in overlay_fm {
-        if !base_fm.iter().any(|(k, _)| k == &key) {
-            base_fm.push((key, value));
+    // Only add overlay keys that are absent from base
+    let new_keys: Vec<(String, String)> = overlay_fm
+        .into_iter()
+        .filter(|(k, _)| !base_keys.contains(k))
+        .collect();
+
+    let fm_block = match raw_base_fm {
+        Some(raw) if new_keys.is_empty() => raw,
+        Some(raw) => {
+            // Inject new keys into the raw FM block before the closing ---
+            let extras: Vec<String> =
+                new_keys.iter().map(|(k, v)| format!("{k}: {v}")).collect();
+            let without_close = raw.strip_suffix("\n---").unwrap_or(&raw);
+            format!("{without_close}\n{}\n---", extras.join("\n"))
         }
-    }
+        None if new_keys.is_empty() => String::new(),
+        None => serialize_frontmatter(&new_keys),
+    };
 
     let body = {
         let base_trimmed = base_body.trim_end();
@@ -327,11 +343,48 @@ fn merge_preserve_base(base: &str, overlay: &str) -> String {
         }
     };
 
-    if base_fm.is_empty() {
+    if fm_block.is_empty() {
         format!("{body}\n")
     } else {
-        format!("{}\n\n{body}\n", serialize_frontmatter(&base_fm))
+        format!("{fm_block}\n\n{body}\n")
     }
+}
+
+/// Extract the raw `---\n...\n---` block and body from a markdown file.
+/// Returns `(Some(raw_fm_block), body)` when frontmatter is present,
+/// `(None, full_text)` otherwise. The raw block is returned verbatim so
+/// multi-line YAML values are never re-serialised and mangled.
+fn split_raw_frontmatter(text: &str) -> (Option<String>, String) {
+    if !text.starts_with("---\n") && !text.starts_with("---\r\n") {
+        return (None, text.to_string());
+    }
+    let after = &text[4..];
+    let end = after.find("\n---").or_else(|| after.find("\r\n---"));
+    let Some(end_idx) = end else {
+        return (None, text.to_string());
+    };
+    let raw_fm = format!("---\n{}", &after[..end_idx + "\n---".len()]);
+    let body = after[end_idx + "\n---".len()..]
+        .trim_start_matches('\n')
+        .trim_start_matches("\r\n")
+        .to_string();
+    (Some(raw_fm), body)
+}
+
+/// Collect the top-level key names from a raw `---\n...\n---` block.
+/// Skips indented lines so nested YAML values are not mistaken for keys.
+fn top_level_keys(raw_fm: &str) -> std::collections::HashSet<String> {
+    let content = raw_fm.strip_prefix("---\n").unwrap_or(raw_fm);
+    let content = content.strip_suffix("\n---").unwrap_or(content);
+    content
+        .lines()
+        .filter(|line| !line.starts_with(' ') && !line.starts_with('\t'))
+        .filter_map(|line| {
+            let colon = line.find(':')?;
+            let key = line[..colon].trim().to_string();
+            if key.is_empty() { None } else { Some(key) }
+        })
+        .collect()
 }
 
 // ── frontmatter parser ────────────────────────────────────────────────────────
@@ -546,6 +599,35 @@ mod tests {
         let merged = merge_preserve_base(base, overlay);
         assert!(merged.contains("Base body only."));
         assert!(!merged.contains("\n\n\n")); // no double blank line at end
+    }
+
+    #[test]
+    fn merge_preserve_base_nested_yaml_roundtrips() {
+        // permission has a nested YAML value — it must survive the merge intact
+        let base = "---\ndescription: Reviewer\nmode: all\npermission:\n  edit: deny\n---\n\nBase body.";
+        let overlay = "## Overlay body only.";
+        let merged = merge_preserve_base(base, overlay);
+        assert!(merged.contains("permission:\n  edit: deny"), "nested YAML must be preserved");
+        assert!(merged.contains("Base body."));
+        assert!(merged.contains("Overlay body only."));
+    }
+
+    #[test]
+    fn top_level_keys_skips_indented() {
+        let raw = "---\ndescription: Foo\npermission:\n  edit: deny\nmode: all\n---";
+        let keys = top_level_keys(raw);
+        assert!(keys.contains("description"));
+        assert!(keys.contains("permission"));
+        assert!(keys.contains("mode"));
+        assert!(!keys.contains("edit"), "indented key must not appear as top-level");
+    }
+
+    #[test]
+    fn split_raw_frontmatter_preserves_block() {
+        let text = "---\nfoo: bar\nbaz:\n  nested: val\n---\n\nBody here.";
+        let (fm, body) = split_raw_frontmatter(text);
+        assert_eq!(fm.as_deref(), Some("---\nfoo: bar\nbaz:\n  nested: val\n---"));
+        assert_eq!(body, "Body here.");
     }
 
     #[test]
