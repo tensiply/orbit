@@ -76,6 +76,16 @@ pub fn load_recent_runs(n: usize) -> Vec<PlanRunRecord> {
     all.into_iter().skip(skip).collect()
 }
 
+pub fn find_run(plan_id: &str) -> Option<PlanRunRecord> {
+    let path = memory_path();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return None;
+    };
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<PlanRunRecord>(line).ok())
+        .find(|r| r.plan_id == plan_id)
+}
+
 pub fn find_similar(intent: &str, n: usize) -> Vec<PlanRunRecord> {
     let path = memory_path();
     let Ok(text) = fs::read_to_string(&path) else {

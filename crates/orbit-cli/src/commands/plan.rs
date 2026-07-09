@@ -2,10 +2,13 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use orbit_client::ipc::send_raw;
 use orbit_core::{
+    audit::events_for_plan,
     eval::EvalConstraint,
     ipc::{Request, Response},
-    plan::PlanNodeType,
+    memory::find_run,
+    plan::{Plan, PlanNodeType},
 };
+use serde::Serialize;
 
 #[derive(Debug, Args)]
 pub struct PlanArgs {
@@ -62,6 +65,14 @@ pub enum PlanCommand {
     },
     /// Show aggregate audit statistics
     Stats,
+    /// Export a plan bundle (plan JSON + audit trail + memory record)
+    Export {
+        /// Plan ID to export
+        id: String,
+        /// Write to stdout instead of a file
+        #[arg(long)]
+        stdout: bool,
+    },
     /// Dry-run planner and evaluate the plan structure (no engine executed)
     Eval {
         /// Intent to plan
@@ -102,12 +113,25 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     println!("Intent: {}", plan.intent);
                     println!("Nodes ({}):", plan.nodes.len());
                     let plan_suffix = plan.id.trim_start_matches("plan_");
+                    let mut total_cost = 0.0f64;
                     for node in &plan.nodes {
-                        println!("  [{:?}] {} — {:?}", node.status, node.label, node.task_type);
+                        let cost_str = if let Some(u) = &node.token_usage {
+                            total_cost += u.estimated_cost_usd;
+                            format!("  ~${:.4}", u.estimated_cost_usd)
+                        } else {
+                            String::new()
+                        };
+                        println!(
+                            "  [{:?}] {} — {:?}{}",
+                            node.status, node.label, node.task_type, cost_str
+                        );
                         if node.status == orbit_core::plan::NodeStatus::Running {
                             let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
                             println!("         tmux attach -t {session_key}");
                         }
+                    }
+                    if total_cost > 0.0 {
+                        println!("Cost:   ~${total_cost:.4} estimated (Claude Sonnet pricing)");
                     }
                 }
                 Response::Error { message } => {
@@ -190,6 +214,36 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     std::process::exit(1);
                 }
                 _ => eprintln!("Unexpected response"),
+            }
+        }
+
+        Some(PlanCommand::Export { id, stdout }) => {
+            let plan = Plan::load(&id).map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
+            let audit_trail = events_for_plan(&id);
+            let memory_run = find_run(&id);
+
+            #[derive(Serialize)]
+            struct PlanExportBundle<'a> {
+                plan: &'a Plan,
+                audit_trail: &'a Vec<orbit_core::audit::AuditEvent>,
+                memory_run: Option<&'a orbit_core::memory::PlanRunRecord>,
+            }
+
+            let bundle = PlanExportBundle { plan: &plan, audit_trail: &audit_trail, memory_run: memory_run.as_ref() };
+            let json = serde_json::to_string_pretty(&bundle)?;
+
+            if stdout {
+                println!("{json}");
+            } else {
+                let filename = format!("orbit-export-{id}.json");
+                std::fs::write(&filename, &json)?;
+                println!("Exported to {filename}");
+                println!(
+                    "  {} node(s), {} audit event(s){}",
+                    plan.nodes.len(),
+                    audit_trail.len(),
+                    if memory_run.is_some() { ", memory record included" } else { "" }
+                );
             }
         }
 

@@ -3,7 +3,7 @@ use orbit_core::{
     engine::Engine,
     hooks::{run_hooks, HookEvent},
     memory::{append_plan_run, load_recent_runs, PlanRunRecord},
-    plan::{NodeStatus, Plan, PlanNodeType, PlanScope, PlanStatus},
+    plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
     session::Session,
 };
 use orbit_engine::{
@@ -115,6 +115,7 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
         let plan_suffix = plan.id.trim_start_matches("plan_");
         let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
         node.output_summary = capture_node_output(&session_key);
+        node.token_usage = Some(estimate_token_usage(node));
 
         let outcome = verify_node(node, node.engine);
         match outcome {
@@ -432,6 +433,23 @@ fn write_node_intent(session_key: &str, label: &str, intent: &str) -> anyhow::Re
     );
     std::fs::write(&path, &content)?;
     Ok(path)
+}
+
+// ── token usage estimation ────────────────────────────────────────────────────
+
+/// Estimate token usage from intent and captured output text.
+/// Engines run in headless `-p` mode and don't expose usage in stdout,
+/// so we approximate: 1 token ≈ 4 characters, Claude Sonnet pricing ($3/$15 per MTok).
+fn estimate_token_usage(node: &PlanNode) -> TokenUsage {
+    let prompt_tokens = (node.intent.len() as u64).saturating_div(4).max(1);
+    let completion_tokens = node
+        .output_summary
+        .as_deref()
+        .map(|s| (s.len() as u64).saturating_div(4))
+        .unwrap_or(0);
+    let estimated_cost_usd = (prompt_tokens as f64 * 3.0 / 1_000_000.0)
+        + (completion_tokens as f64 * 15.0 / 1_000_000.0);
+    TokenUsage { prompt_tokens, completion_tokens, estimated_cost_usd }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
