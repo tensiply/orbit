@@ -1362,6 +1362,7 @@ dependencies = [
  "anyhow",
  "orbit-core",
  "orbit-engine",
+ "orbit-eval",
  "orbit-planner",
  "serde",
  "serde_json",
@@ -1400,6 +1401,17 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "orbit-eval"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "orbit-core",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

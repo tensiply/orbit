@@ -1,6 +1,7 @@
 use orbit_core::{
     audit::{append_event, AuditEvent},
     engine::Engine,
+    hooks::{run_hooks, HookEvent},
     memory::{append_plan_run, load_recent_runs, PlanRunRecord},
     plan::{NodeStatus, Plan, PlanScope, PlanStatus},
     session::Session,
@@ -120,12 +121,21 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
             VerifyOutcome::Pass => {
                 node.status = NodeStatus::Completed;
                 node.completed_at = Some(now_secs());
+                let duration = node.started_at.map(|s| now_secs().saturating_sub(s)).unwrap_or(0);
                 let _ = append_event(&AuditEvent::NodeCompleted {
                     plan_id: plan.id.clone(),
                     node_id: node.id.clone(),
-                    duration_secs: node.started_at.map(|s| now_secs().saturating_sub(s)).unwrap_or(0),
+                    duration_secs: duration,
                     timestamp: now_secs(),
                 });
+                run_hooks(
+                    &HookEvent::PostNode,
+                    &[
+                        ("ORBIT_PLAN_ID", &plan.id),
+                        ("ORBIT_NODE_ID", &node.id),
+                        ("ORBIT_NODE_STATUS", "completed"),
+                    ],
+                );
                 info!("node {} completed in plan {}", node.id, plan.id);
             }
 
@@ -151,6 +161,14 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
                         reason: reason.clone(),
                         timestamp: now_secs(),
                     });
+                    run_hooks(
+                        &HookEvent::PostNode,
+                        &[
+                            ("ORBIT_PLAN_ID", &plan.id),
+                            ("ORBIT_NODE_ID", &node.id),
+                            ("ORBIT_NODE_STATUS", "failed"),
+                        ],
+                    );
                     warn!("node {} failed in plan {}: {reason}", node.id, plan.id);
                 }
             }
@@ -165,6 +183,21 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
             continue;
         };
 
+        // AwaitingApproval gate: block high-risk nodes that need human sign-off
+        let risk = plan.nodes[idx].policy.risk_level.clone();
+        if plan.policy.require_approval_for.contains(&risk) {
+            let node = &mut plan.nodes[idx];
+            node.status = NodeStatus::AwaitingApproval;
+            info!("node {node_id} requires approval ({risk:?}) in plan {}", plan.id);
+            let _ = append_event(&AuditEvent::PolicyBlocked {
+                plan_id: plan.id.clone(),
+                node_id: node_id.clone(),
+                reason: format!("{risk:?} risk requires approval"),
+                timestamp: now_secs(),
+            });
+            continue;
+        }
+
         let node_engine = plan.nodes[idx].engine;
         let node_intent = plan.nodes[idx].intent.clone();
         let node_label = plan.nodes[idx].label.clone();
@@ -175,6 +208,15 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
 
         let engine = selector::select(&plan.nodes[idx]).engine;
         let _ = node_engine;
+
+        run_hooks(
+            &HookEvent::PreNode,
+            &[
+                ("ORBIT_PLAN_ID", &plan.id),
+                ("ORBIT_NODE_ID", &node_id),
+                ("ORBIT_NODE_LABEL", &node_label),
+            ],
+        );
 
         match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &dispatch_scope, engine) {
             Ok(session) => {
@@ -262,6 +304,15 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
             scope_key: plan.scope.scope_key(),
             tags: vec![],
         });
+
+        let outcome_str = format!("{outcome:?}");
+        run_hooks(
+            &HookEvent::PostPlan,
+            &[
+                ("ORBIT_PLAN_ID", &plan.id),
+                ("ORBIT_PLAN_OUTCOME", &outcome_str),
+            ],
+        );
 
         info!("plan {} finished: {outcome:?}", plan.id);
     }

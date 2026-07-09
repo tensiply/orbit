@@ -9,6 +9,7 @@ members = [
     "crates/orbit-client",
     "crates/orbit-engine",
     "crates/orbit-planner",
+    "crates/orbit-eval",
 ]
 resolver = "2"
 
@@ -62,3 +63,4 @@ orbit-daemon = { path = "crates/orbit-daemon" }
 orbit-client = { path = "crates/orbit-client" }
 orbit-engine = { path = "crates/orbit-engine" }
 orbit-planner = { path = "crates/orbit-planner" }
+orbit-eval = { path = "crates/orbit-eval" }

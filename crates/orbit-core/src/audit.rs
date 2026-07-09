@@ -120,7 +120,59 @@ impl AuditEvent {
     }
 }
 
+// ── AuditStats ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuditStats {
+    pub total_plans: usize,
+    pub completed_plans: usize,
+    pub failed_plans: usize,
+    pub avg_duration_secs: u64,
+    pub total_nodes_dispatched: usize,
+    pub total_nodes_completed: usize,
+    pub total_nodes_failed: usize,
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
+
+pub fn audit_stats() -> AuditStats {
+    let path = audit_path();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return AuditStats::default();
+    };
+    let events: Vec<AuditEvent> = text
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+
+    let mut stats = AuditStats::default();
+    let mut total_duration: u64 = 0;
+    let mut duration_count: u64 = 0;
+
+    for event in &events {
+        match event {
+            AuditEvent::PlanCreated { .. } => stats.total_plans += 1,
+            AuditEvent::PlanCompleted { outcome, total_duration_secs, .. } => {
+                if outcome == "Completed" {
+                    stats.completed_plans += 1;
+                } else {
+                    stats.failed_plans += 1;
+                }
+                total_duration += total_duration_secs;
+                duration_count += 1;
+            }
+            AuditEvent::NodeStarted { .. } => stats.total_nodes_dispatched += 1,
+            AuditEvent::NodeCompleted { .. } => stats.total_nodes_completed += 1,
+            AuditEvent::NodeFailed { .. } => stats.total_nodes_failed += 1,
+            _ => {}
+        }
+    }
+
+    if duration_count > 0 {
+        stats.avg_duration_secs = total_duration / duration_count;
+    }
+    stats
+}
 
 pub fn append_event(event: &AuditEvent) -> Result<()> {
     let path = audit_path();

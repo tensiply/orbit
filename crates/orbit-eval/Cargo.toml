@@ -1,0 +1,14 @@
+[package]
+name = "orbit-eval"
+description = "Structural plan evals for orbit — runs in CI without executing engines"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+orbit-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

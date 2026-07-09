@@ -1,6 +1,8 @@
 use anyhow::Result;
 use orbit_core::{
+    audit::audit_stats,
     ipc::{Request, Response, pid_path, socket_path},
+    plan::{NodeStatus, PlanStatus},
     session::Session,
 };
 use std::{
@@ -185,6 +187,10 @@ impl ServerState {
                                 node_count,
                                 timestamp: now_secs(),
                             });
+                            orbit_core::hooks::run_hooks(
+                                &orbit_core::hooks::HookEvent::PrePlan,
+                                &[("ORBIT_PLAN_ID", &plan.id), ("ORBIT_PLAN_INTENT", &intent)],
+                            );
                             match plan.save() {
                                 Ok(_) => Response::PlanCreated {
                                     id: plan.id,
@@ -221,6 +227,72 @@ impl ServerState {
                     Response::PlanCancelled { id }
                 }
             },
+
+            Request::ApprovePlanNode { plan_id, node_id } => {
+                match orbit_core::plan::Plan::load(&plan_id) {
+                    Err(e) => Response::Error {
+                        message: format!("plan not found: {e}"),
+                    },
+                    Ok(mut plan) => {
+                        match plan.nodes.iter_mut().find(|n| n.id == node_id) {
+                            None => Response::Error {
+                                message: format!("node {node_id} not found in plan {plan_id}"),
+                            },
+                            Some(node) if node.status != NodeStatus::AwaitingApproval => {
+                                Response::Error {
+                                    message: format!(
+                                        "node {node_id} is not awaiting approval (status: {:?})",
+                                        node.status
+                                    ),
+                                }
+                            }
+                            Some(node) => {
+                                node.status = NodeStatus::Pending;
+                                match plan.save() {
+                                    Ok(_) => {
+                                        info!("node {node_id} approved in plan {plan_id}");
+                                        Response::PlanApproved { plan_id, node_id }
+                                    }
+                                    Err(e) => Response::Error {
+                                        message: format!("save error: {e}"),
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Request::GetPlanStats => {
+                let stats = audit_stats();
+                Response::PlanStats { stats }
+            }
+
+            Request::EvalPlan {
+                intent,
+                workspace,
+                tenant,
+                project,
+                repository,
+                constraints,
+            } => {
+                use orbit_core::{memory::load_recent_runs, plan::PlanScope};
+                use orbit_planner::planner::{PlannerConfig, invoke_planner};
+
+                let scope = PlanScope { workspace, tenant, project, repository };
+                let recent = load_recent_runs(5);
+                let cfg = PlannerConfig::default();
+
+                match invoke_planner(&intent, &scope, &recent, &cfg) {
+                    Err(e) => Response::Error {
+                        message: format!("planner error: {e}"),
+                    },
+                    Ok(plan) => {
+                        let result = orbit_eval::eval(&plan, &constraints);
+                        Response::PlanEvalResult { plan, result }
+                    }
+                }
+            }
         }
     }
 }
@@ -248,6 +320,60 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>) {
     }
 }
 
+// ── auto-resume ───────────────────────────────────────────────────────────────
+
+/// On daemon startup, re-attach output capture for any nodes still Running in tmux.
+/// Nodes whose tmux session died will be handled by the next supervisor tick.
+fn resume_running_plans() {
+    use orbit_core::plan::Plan;
+
+    let plans = Plan::load_all();
+    let running_plans: Vec<&Plan> = plans.iter().filter(|p| p.status == PlanStatus::Running).collect();
+    if running_plans.is_empty() {
+        return;
+    }
+
+    info!("auto-resume: {} running plan(s) found at startup", running_plans.len());
+
+    for plan in running_plans {
+        for node in plan.nodes.iter().filter(|n| n.status == NodeStatus::Running) {
+            let plan_suffix = plan.id.trim_start_matches("plan_");
+            let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+
+            let tmux_alive = std::process::Command::new("tmux")
+                .args(["has-session", "-t", &session_key])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if tmux_alive {
+                // Re-attach pipe-pane in case it was lost when the previous daemon died
+                let log_dir = std::env::temp_dir().join("orbit-plan-nodes");
+                let _ = std::fs::create_dir_all(&log_dir);
+                let log_path = log_dir.join(format!("{session_key}.log"));
+                let _ = std::process::Command::new("tmux")
+                    .args([
+                        "pipe-pane",
+                        "-t",
+                        &session_key,
+                        &format!("cat >> {}", log_path.to_string_lossy()),
+                    ])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                info!("auto-resume: re-attached output capture for node {} (plan {})", node.id, plan.id);
+            } else {
+                info!(
+                    "auto-resume: tmux session gone for node {} (plan {}) — supervisor will handle",
+                    node.id, plan.id
+                );
+            }
+        }
+    }
+}
+
 // ── server entry point ────────────────────────────────────────────────────────
 
 pub async fn run() -> Result<()> {
@@ -266,6 +392,8 @@ pub async fn run() -> Result<()> {
 
     let listener = UnixListener::bind(&sock)?;
     info!("orbitd listening on {}", sock.display());
+
+    resume_running_plans();
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     let state = ServerState::new(shutdown_tx.clone());

@@ -1,3 +1,5 @@
+use crate::audit::AuditStats;
+use crate::eval::{EvalConstraint, EvalResult};
 use crate::plan::Plan;
 use crate::session::Session;
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,19 @@ pub enum Request {
     CancelPlan {
         id: String,
     },
+    ApprovePlanNode {
+        plan_id: String,
+        node_id: String,
+    },
+    GetPlanStats,
+    EvalPlan {
+        intent: String,
+        workspace: Option<String>,
+        tenant: Option<String>,
+        project: Option<String>,
+        repository: Option<String>,
+        constraints: Vec<EvalConstraint>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -98,5 +113,16 @@ pub enum Response {
     },
     PlanCancelled {
         id: String,
+    },
+    PlanApproved {
+        plan_id: String,
+        node_id: String,
+    },
+    PlanStats {
+        stats: AuditStats,
+    },
+    PlanEvalResult {
+        plan: Plan,
+        result: EvalResult,
     },
 }

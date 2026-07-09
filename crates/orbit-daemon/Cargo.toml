@@ -8,6 +8,7 @@ edition.workspace = true
 orbit-core.workspace = true
 orbit-engine.workspace = true
 orbit-planner.workspace = true
+orbit-eval.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
