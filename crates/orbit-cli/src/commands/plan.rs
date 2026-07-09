@@ -26,6 +26,10 @@ pub struct PlanArgs {
     #[arg(long)]
     pub verbose: bool,
 
+    /// Block and stream live plan events until the plan completes
+    #[arg(long)]
+    pub foreground: bool,
+
     /// Workspace scope override
     #[arg(long)]
     pub workspace: Option<String>,
@@ -430,8 +434,13 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                                 path: sock_path.to_string_lossy().into_owned(),
                             }).await;
                         }
-                        println!("Running. Check status with: orbit plan get {id}");
-                        println!("Stream live output with:    orbit plan watch {id}");
+
+                        if args.foreground {
+                            stream_until_done(&id).await;
+                        } else {
+                            println!("Running. Check status with: orbit plan get {id}");
+                            println!("Stream live output with:    orbit plan watch {id}");
+                        }
                     }
                 }
                 Response::Error { message } => {
@@ -444,6 +453,40 @@ pub async fn run(args: PlanArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn stream_until_done(id: &str) {
+    match orbit_client::ipc::stream_plan(id).await {
+        Err(e) => {
+            eprintln!("stream error: {e}");
+            std::process::exit(1);
+        }
+        Ok(mut rx) => {
+            while let Some(event) = rx.recv().await {
+                match &event {
+                    PlanStreamEvent::NodeStarted { node_id, label, .. } => {
+                        println!("[start]  {node_id}: {label}");
+                    }
+                    PlanStreamEvent::NodeCompleted { node_id, .. } => {
+                        println!("[done]   {node_id}");
+                    }
+                    PlanStreamEvent::NodeFailed { node_id, error, .. } => {
+                        println!("[fail]   {node_id}: {error}");
+                    }
+                    PlanStreamEvent::PlanCompleted { plan_id } => {
+                        println!("Plan {plan_id} completed.");
+                    }
+                    PlanStreamEvent::PlanFailed { plan_id } => {
+                        println!("Plan {plan_id} failed.");
+                        std::process::exit(1);
+                    }
+                    PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
+                        println!("[replan] → {child_plan_id}");
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn print_plan_tree(plans: &[Plan]) {
