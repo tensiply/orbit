@@ -1,5 +1,6 @@
 mod adf;
 mod launch;
+mod plans;
 mod popup;
 mod sessions;
 mod system;
@@ -31,6 +32,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     match app.tab {
         Tab::Sessions => sessions::render(f, app, chunks[3]),
         Tab::Launch => launch::render(f, app, chunks[3]),
+        Tab::Plans => plans::render(f, app, chunks[3]),
         Tab::System => system::render(f, app, chunks[3]),
         Tab::Tasks => tasks::render(f, app, chunks[3]),
     }
@@ -70,12 +72,14 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Span::styled(" Sessions  ", tab_label_style(app.tab == Tab::Sessions, dim)),
         tab_span("[2]", app.tab == Tab::Launch, accent, dim),
         Span::styled(" Launch  ", tab_label_style(app.tab == Tab::Launch, dim)),
-        tab_span("[3]", app.tab == Tab::System, accent, dim),
+        tab_span("[3]", app.tab == Tab::Plans, accent, dim),
+        Span::styled(" Plans  ", tab_label_style(app.tab == Tab::Plans, dim)),
+        tab_span("[4]", app.tab == Tab::System, accent, dim),
         Span::styled(" System  ", tab_label_style(app.tab == Tab::System, dim)),
     ];
 
     if app.jira_enabled {
-        spans.push(tab_span("[4]", app.tab == Tab::Tasks, accent, dim));
+        spans.push(tab_span("[5]", app.tab == Tab::Tasks, accent, dim));
         spans.push(Span::styled(" Tasks  ", tab_label_style(app.tab == Tab::Tasks, dim)));
     }
 
@@ -142,6 +146,18 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" confirm/launch  "),
                 hint("[Esc]", accent),
                 Span::raw(" back"),
+            ]),
+            Tab::Plans => Line::from(vec![
+                hint(" [Tab]", accent),
+                Span::raw(" switch  "),
+                hint("[↑↓/jk]", accent),
+                Span::raw(" nav  "),
+                hint("[x]", accent),
+                Span::raw(" cancel  "),
+                hint("[r]", accent),
+                Span::raw(" refresh  "),
+                hint("[q]", accent),
+                Span::raw(" quit"),
             ]),
             Tab::System => Line::from(vec![
                 hint(" [Tab]", accent),

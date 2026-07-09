@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use orbit_core::{
-    engine::Engine, ipc::socket_path, session::Session, user_config::UserConfig,
+    engine::Engine, ipc::socket_path, plan::Plan, session::Session, user_config::UserConfig,
     workspace_config::detect_workspaces,
 };
 use ratatui::{Terminal, backend::CrosstermBackend, widgets::TableState};
@@ -23,6 +23,7 @@ use crate::{LaunchParams, widget::TextInput};
 pub enum Tab {
     Sessions,
     Launch,
+    Plans,
     System,
     Tasks,
 }
@@ -31,7 +32,8 @@ impl Tab {
     pub fn next(self, jira_enabled: bool) -> Self {
         match self {
             Tab::Sessions => Tab::Launch,
-            Tab::Launch => Tab::System,
+            Tab::Launch => Tab::Plans,
+            Tab::Plans => Tab::System,
             Tab::System => {
                 if jira_enabled {
                     Tab::Tasks
@@ -53,9 +55,42 @@ impl Tab {
                 }
             }
             Tab::Launch => Tab::Sessions,
-            Tab::System => Tab::Launch,
+            Tab::Plans => Tab::Launch,
+            Tab::System => Tab::Plans,
             Tab::Tasks => Tab::System,
         }
+    }
+}
+
+// ── plans state ───────────────────────────────────────────────────────────────
+
+pub struct PlansState {
+    pub plans: Vec<Plan>,
+    pub selected: usize,
+    pub table_state: ratatui::widgets::TableState,
+}
+
+impl PlansState {
+    pub fn new() -> Self {
+        Self { plans: vec![], selected: 0, table_state: ratatui::widgets::TableState::default() }
+    }
+
+    pub fn selected_plan(&self) -> Option<&Plan> {
+        self.plans.get(self.selected)
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.plans.len();
+        if n == 0 { return; }
+        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        self.table_state.select(Some(self.selected));
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.plans.len();
+        if n == 0 { return; }
+        self.selected = (self.selected + 1) % n;
+        self.table_state.select(Some(self.selected));
     }
 }
 
@@ -646,6 +681,8 @@ fn is_dev_mode(install_dir: &Path) -> bool {
 pub enum AsyncAction {
     DaemonStart,
     DaemonStop,
+    RefreshPlans,
+    CancelPlan(String),
     /// Load tasks from cache; falls back to direct acli call if no cache exists.
     RefreshTasks,
     /// Force a direct acli call, bypassing cache (triggered by [r]).
@@ -670,6 +707,7 @@ pub struct App {
     pub table_state: TableState,
     pub launch: LaunchState,
     pub sys: SystemState,
+    pub plans: PlansState,
     pub tasks: TasksState,
     pub jira_enabled: bool,
     pub status_msg: Option<String>,
@@ -711,6 +749,7 @@ impl App {
             table_state,
             launch,
             sys,
+            plans: PlansState::new(),
             tasks: TasksState::new(),
             jira_enabled,
             status_msg: None,
@@ -887,10 +926,15 @@ impl App {
                     return;
                 }
                 KeyCode::Char('3') => {
+                    self.tab = Tab::Plans;
+                    self.pending_async = Some(AsyncAction::RefreshPlans);
+                    return;
+                }
+                KeyCode::Char('4') => {
                     self.tab = Tab::System;
                     return;
                 }
-                KeyCode::Char('4') if self.jira_enabled => {
+                KeyCode::Char('5') if self.jira_enabled => {
                     self.tab = Tab::Tasks;
                     if !self.tasks.loaded && !self.tasks.loading {
                         self.pending_async = Some(AsyncAction::RefreshTasks);
@@ -908,6 +952,7 @@ impl App {
         match self.tab {
             Tab::Sessions => self.handle_sessions_key(code),
             Tab::Launch => self.handle_launch_key(code),
+            Tab::Plans => self.handle_plans_key(code),
             Tab::System => self.handle_system_key(code),
             Tab::Tasks => self.handle_tasks_key(code),
         }
@@ -1212,6 +1257,24 @@ impl App {
         }
     }
 
+    fn handle_plans_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => self.plans.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.plans.move_down(),
+            KeyCode::Char('x') | KeyCode::Delete => {
+                if let Some(plan) = self.plans.selected_plan() {
+                    let id = plan.id.clone();
+                    self.pending_async = Some(AsyncAction::CancelPlan(id));
+                }
+            }
+            KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::RefreshPlans);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
+
     fn handle_system_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Up | KeyCode::Char('k') => self.mcp_move_up(),
@@ -1346,6 +1409,40 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 app.sys.refresh();
             }
         },
+        AsyncAction::RefreshPlans => {
+            if let Ok(Ok(plans)) = tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::list_plans(),
+            )
+            .await
+            {
+                let n = plans.len();
+                app.plans.plans = plans;
+                app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
+                app.plans.table_state.select(if n > 0 { Some(app.plans.selected) } else { None });
+            }
+        }
+
+        AsyncAction::CancelPlan(id) => {
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::cancel_plan(&id),
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    app.status_msg = Some(format!("Plan {id} cancelled."));
+                    app.pending_async = Some(AsyncAction::RefreshPlans);
+                }
+                Ok(Err(e)) => {
+                    app.status_msg = Some(format!("Cancel failed: {e}"));
+                }
+                _ => {
+                    app.status_msg = Some("Cancel timed out.".into());
+                }
+            }
+        }
+
         AsyncAction::RefreshTasks => {
             use orbit_core::jira;
 
@@ -1518,6 +1615,20 @@ where
                         }
                     }
                     _ => app.refresh_sessions(),
+                }
+
+                if app.tab == Tab::Plans
+                    && let Ok(Ok(plans)) = tokio::time::timeout(
+                        Duration::from_millis(500),
+                        orbit_client::ipc::list_plans(),
+                    )
+                    .await
+                {
+                    let n = plans.len();
+                    app.plans.plans = plans;
+                    app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
+                    app.plans.table_state
+                        .select(if n > 0 { Some(app.plans.selected) } else { None });
                 }
             } else {
                 app.refresh_sessions();

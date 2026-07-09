@@ -84,6 +84,22 @@ pub async fn status() -> Result<StatusInfo> {
     }
 }
 
+pub async fn list_plans() -> Result<Vec<orbit_core::plan::Plan>> {
+    match send(&Request::ListPlans).await? {
+        Response::Plans { plans } => Ok(plans),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
+pub async fn cancel_plan(id: &str) -> Result<()> {
+    match send(&Request::CancelPlan { id: id.to_string() }).await? {
+        Response::PlanCancelled { .. } => Ok(()),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
 pub async fn shutdown() -> Result<()> {
     match send(&Request::Shutdown).await? {
         Response::Ok => Ok(()),
