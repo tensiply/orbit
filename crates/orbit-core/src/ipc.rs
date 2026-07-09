@@ -26,6 +26,37 @@ fn xdg_data_dir() -> std::path::PathBuf {
     }
 }
 
+// ── PlanStreamEvent ───────────────────────────────────────────────────────────
+
+/// Events pushed by the daemon while a plan is executing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum PlanStreamEvent {
+    NodeStarted { plan_id: String, node_id: String, label: String },
+    NodeCompleted { plan_id: String, node_id: String },
+    NodeFailed { plan_id: String, node_id: String, error: String },
+    PlanCompleted { plan_id: String },
+    PlanFailed { plan_id: String },
+    PlanReplanning { plan_id: String, child_plan_id: String },
+}
+
+impl PlanStreamEvent {
+    pub fn plan_id(&self) -> &str {
+        match self {
+            Self::NodeStarted { plan_id, .. }
+            | Self::NodeCompleted { plan_id, .. }
+            | Self::NodeFailed { plan_id, .. }
+            | Self::PlanCompleted { plan_id }
+            | Self::PlanFailed { plan_id }
+            | Self::PlanReplanning { plan_id, .. } => plan_id,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::PlanCompleted { .. } | Self::PlanFailed { .. })
+    }
+}
+
 // ── PlannerTrace ──────────────────────────────────────────────────────────────
 
 /// Verbose debug data captured during planner invocation.
@@ -89,6 +120,14 @@ pub enum Request {
     RetryPlan {
         id: String,
     },
+    /// Subscribe to live events for a running plan (streaming response).
+    StreamPlan {
+        id: String,
+    },
+    /// Tell the daemon to start a restricted listener at the given path.
+    AddProjectSocket {
+        path: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,5 +184,8 @@ pub enum Response {
     PlanRetried {
         id: String,
         reset_count: usize,
+    },
+    ProjectSocketAdded {
+        path: String,
     },
 }

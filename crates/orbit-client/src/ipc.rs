@@ -1,8 +1,9 @@
 use anyhow::{Result, bail};
 use orbit_core::{
-    ipc::{Request, Response, socket_path},
+    ipc::{PlanStreamEvent, Request, Response, socket_path},
     session::Session,
 };
+use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
@@ -111,6 +112,48 @@ pub async fn shutdown() -> Result<()> {
 pub struct LaunchedInfo {
     pub tmux_name: String,
     pub session_id: String,
+}
+
+/// Subscribe to live events for a running plan.
+/// Returns a channel receiver — events arrive until the plan reaches a terminal state.
+pub async fn stream_plan(id: &str) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
+    stream_plan_on(id, socket_path()).await
+}
+
+/// Like `stream_plan` but connects to a specific socket path (e.g. a project socket).
+pub async fn stream_plan_on(id: &str, sock: PathBuf) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
+    if !sock.exists() {
+        bail!("Daemon is not running. Start it with `orbit daemon start`.");
+    }
+
+    let stream = UnixStream::connect(&sock).await?;
+    let (reader, mut writer) = stream.into_split();
+
+    let req = Request::StreamPlan { id: id.to_string() };
+    let mut line = serde_json::to_string(&req)?;
+    line.push('\n');
+    writer.write_all(line.as_bytes()).await?;
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<PlanStreamEvent>(64);
+
+    tokio::spawn(async move {
+        let _writer = writer; // keep connection alive
+        let mut lines = BufReader::new(reader).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            match serde_json::from_str::<PlanStreamEvent>(&line) {
+                Ok(event) => {
+                    let terminal = event.is_terminal();
+                    let _ = tx.send(event).await;
+                    if terminal {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(rx)
 }
 
 pub async fn launch_session(

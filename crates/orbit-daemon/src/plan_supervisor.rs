@@ -2,6 +2,7 @@ use orbit_core::{
     audit::{append_event, AuditEvent},
     engine::Engine,
     hooks::{run_hooks, HookEvent},
+    ipc::PlanStreamEvent,
     memory::{append_plan_run, load_recent_runs, PlanRunRecord},
     plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
     session::Session,
@@ -24,12 +25,13 @@ use tracing::{info, warn};
 pub async fn run_supervisor_loop(
     interval: Duration,
     mut shutdown_rx: broadcast::Receiver<()>,
+    event_tx: broadcast::Sender<PlanStreamEvent>,
 ) {
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => break,
             _ = tokio::time::sleep(interval) => {
-                if let Err(e) = tick() {
+                if let Err(e) = tick(&event_tx) {
                     warn!("supervisor tick error: {e}");
                 }
             }
@@ -37,15 +39,15 @@ pub async fn run_supervisor_loop(
     }
 }
 
-fn tick() -> anyhow::Result<()> {
+fn tick(event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
     let plans = Plan::load_all();
     for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Running).cloned() {
-        if let Err(e) = advance_plan(&mut plan) {
+        if let Err(e) = advance_plan(&mut plan, event_tx) {
             warn!("advance_plan error for {}: {e}", plan.id);
         }
     }
     for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Replanning).cloned() {
-        if let Err(e) = close_replanning_plan(&mut plan, &plans) {
+        if let Err(e) = close_replanning_plan(&mut plan, &plans, event_tx) {
             warn!("close_replanning error for {}: {e}", plan.id);
         }
     }
@@ -53,7 +55,7 @@ fn tick() -> anyhow::Result<()> {
 }
 
 /// Propagate a child plan's terminal outcome back to its Replanning parent.
-fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan]) -> anyhow::Result<()> {
+fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
     let child = all_plans
         .iter()
         .find(|p| p.parent_plan_id.as_deref() == Some(&parent.id));
@@ -84,6 +86,12 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan]) -> anyhow::Resul
         timestamp: now_secs(),
     });
 
+    let ev = match &outcome {
+        PlanStatus::Completed => PlanStreamEvent::PlanCompleted { plan_id: parent.id.clone() },
+        _ => PlanStreamEvent::PlanFailed { plan_id: parent.id.clone() },
+    };
+    let _ = event_tx.send(ev);
+
     info!(
         "parent plan {} closed as {outcome:?} (child: {})",
         parent.id, child.id
@@ -92,7 +100,7 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan]) -> anyhow::Resul
     Ok(())
 }
 
-fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
+fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
     let all_sessions = Session::load_all();
 
     // ── 1. Check Running nodes for session completion ─────────────────────────
@@ -130,6 +138,10 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
                     duration_secs: duration,
                     timestamp: now_secs(),
                 });
+                let _ = event_tx.send(PlanStreamEvent::NodeCompleted {
+                    plan_id: plan.id.clone(),
+                    node_id: node.id.clone(),
+                });
                 run_hooks(
                     &HookEvent::PostNode,
                     &[
@@ -162,6 +174,11 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
                         node_id: node.id.clone(),
                         reason: reason.clone(),
                         timestamp: now_secs(),
+                    });
+                    let _ = event_tx.send(PlanStreamEvent::NodeFailed {
+                        plan_id: plan.id.clone(),
+                        node_id: node.id.clone(),
+                        error: reason.clone(),
                     });
                     run_hooks(
                         &HookEvent::PostNode,
@@ -237,6 +254,11 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
                     engine: format!("{engine:?}"),
                     timestamp: now_secs(),
                 });
+                let _ = event_tx.send(PlanStreamEvent::NodeStarted {
+                    plan_id: plan.id.clone(),
+                    node_id: node_id.clone(),
+                    label: node_label.clone(),
+                });
             }
             Err(e) => {
                 warn!("dispatch failed for node {node_id} in plan {}: {e}", plan.id);
@@ -273,6 +295,10 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
                         warn!("failed to save child plan {child_id}: {e}");
                     } else {
                         plan.status = PlanStatus::Replanning;
+                        let _ = event_tx.send(PlanStreamEvent::PlanReplanning {
+                            plan_id: plan.id.clone(),
+                            child_plan_id: child_id.clone(),
+                        });
                         plan.save()?;
                         info!("plan {} replanning → child plan {child_id}", plan.id);
                         return Ok(());
@@ -295,6 +321,12 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
             total_duration_secs: duration,
             timestamp: now_secs(),
         });
+
+        let ev = match &outcome {
+            PlanStatus::Completed => PlanStreamEvent::PlanCompleted { plan_id: plan.id.clone() },
+            _ => PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() },
+        };
+        let _ = event_tx.send(ev);
 
         let _ = append_plan_run(&PlanRunRecord {
             plan_id: plan.id.clone(),

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use orbit_core::{
     audit::audit_stats,
-    ipc::{Request, Response, pid_path, socket_path},
+    ipc::{PlanStreamEvent, Request, Response, pid_path, socket_path},
     plan::{NodeStatus, PlanStatus},
     session::Session,
 };
@@ -17,22 +17,56 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
+// ── connection role ───────────────────────────────────────────────────────────
+
+/// Restricts which requests a connection may issue.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConnectionRole {
+    /// Full access (owner Unix socket).
+    Owner,
+    /// Read-only + approve access (project socket in work_dir).
+    Project,
+}
+
+impl ConnectionRole {
+    fn allows(&self, req: &Request) -> bool {
+        if *self == ConnectionRole::Owner {
+            return true;
+        }
+        matches!(
+            req,
+            Request::GetPlan { .. }
+                | Request::ListPlans
+                | Request::GetPlanStats
+                | Request::ApprovePlanNode { .. }
+                | Request::StreamPlan { .. }
+        )
+    }
+}
+
 // ── state ─────────────────────────────────────────────────────────────────────
 
 struct ServerState {
     started_at: Instant,
     shutdown_tx: broadcast::Sender<()>,
+    event_tx: broadcast::Sender<PlanStreamEvent>,
 }
 
 impl ServerState {
-    fn new(shutdown_tx: broadcast::Sender<()>) -> Arc<Self> {
+    fn new(shutdown_tx: broadcast::Sender<()>, event_tx: broadcast::Sender<PlanStreamEvent>) -> Arc<Self> {
         Arc::new(Self {
             started_at: Instant::now(),
             shutdown_tx,
+            event_tx,
         })
     }
 
-    async fn handle(&self, req: Request) -> Response {
+    fn handle(&self, req: Request, role: ConnectionRole) -> Response {
+        if !role.allows(&req) {
+            return Response::Error {
+                message: "operation not permitted on project socket".into(),
+            };
+        }
         match req {
             Request::ListSessions => {
                 let sessions = Session::load_all();
@@ -319,6 +353,55 @@ impl ServerState {
                 }
             },
 
+            // StreamPlan is handled in handle_connection before reaching here.
+            Request::StreamPlan { .. } => Response::Error {
+                message: "StreamPlan must be the first request on a connection".into(),
+            },
+
+            Request::AddProjectSocket { path } => {
+                let path_buf = std::path::PathBuf::from(&path);
+                if let Some(parent) = path_buf.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if path_buf.exists() {
+                    let _ = fs::remove_file(&path_buf);
+                }
+                match UnixListener::bind(&path_buf) {
+                    Err(e) => Response::Error {
+                        message: format!("bind error: {e}"),
+                    },
+                    Ok(listener) => {
+                        info!("project socket bound at {path}");
+                        let state = Arc::new(ServerState {
+                            started_at: self.started_at,
+                            shutdown_tx: self.shutdown_tx.clone(),
+                            event_tx: self.event_tx.clone(),
+                        });
+                        let mut shutdown_rx = self.shutdown_tx.subscribe();
+                        tokio::spawn(async move {
+                            loop {
+                                tokio::select! {
+                                    accept = listener.accept() => {
+                                        match accept {
+                                            Ok((stream, _)) => {
+                                                let s = state.clone();
+                                                tokio::spawn(handle_connection(stream, s, ConnectionRole::Project));
+                                            }
+                                            Err(e) => { warn!("project socket accept error: {e}"); break; }
+                                        }
+                                    }
+                                    _ = shutdown_rx.recv() => {
+                                        let _ = fs::remove_file(&path_buf);
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+                        Response::ProjectSocketAdded { path }
+                    }
+                }
+            }
+
             Request::EvalPlan {
                 intent,
                 workspace,
@@ -350,19 +433,77 @@ impl ServerState {
 
 // ── connection handler ────────────────────────────────────────────────────────
 
-async fn handle_connection(stream: UnixStream, state: Arc<ServerState>) {
+async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: ConnectionRole) {
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
 
     while let Ok(Some(line)) = lines.next_line().await {
         debug!("ipc request: {line}");
-        let response = match serde_json::from_str::<Request>(&line) {
-            Ok(req) => state.handle(req).await,
-            Err(e) => Response::Error {
-                message: format!("parse error: {e}"),
-            },
+
+        let req = match serde_json::from_str::<Request>(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                let err = Response::Error { message: format!("parse error: {e}") };
+                let mut json = serde_json::to_string(&err).unwrap_or_default();
+                json.push('\n');
+                let _ = writer.write_all(json.as_bytes()).await;
+                break;
+            }
         };
 
+        // ── streaming path ────────────────────────────────────────────────────
+        if let Request::StreamPlan { ref id } = req {
+            if !role.allows(&req) {
+                let err = Response::Error { message: "operation not permitted on project socket".into() };
+                let mut json = serde_json::to_string(&err).unwrap_or_default();
+                json.push('\n');
+                let _ = writer.write_all(json.as_bytes()).await;
+                break;
+            }
+
+            // Subscribe before checking current state to avoid missing events.
+            let mut rx = state.event_tx.subscribe();
+
+            // If already terminal, send the event immediately.
+            let current_terminal = orbit_core::plan::Plan::load(id).ok().and_then(|p| {
+                match p.status {
+                    PlanStatus::Completed => Some(PlanStreamEvent::PlanCompleted { plan_id: id.clone() }),
+                    PlanStatus::Failed => Some(PlanStreamEvent::PlanFailed { plan_id: id.clone() }),
+                    _ => None,
+                }
+            });
+
+            if let Some(ev) = current_terminal {
+                let mut json = serde_json::to_string(&ev).unwrap_or_default();
+                json.push('\n');
+                let _ = writer.write_all(json.as_bytes()).await;
+                break;
+            }
+
+            // Forward events for this plan until terminal.
+            loop {
+                match rx.recv().await {
+                    Ok(event) if event.plan_id() == id.as_str() => {
+                        let terminal = event.is_terminal();
+                        let mut json = serde_json::to_string(&event).unwrap_or_default();
+                        json.push('\n');
+                        if writer.write_all(json.as_bytes()).await.is_err() {
+                            break;
+                        }
+                        if terminal {
+                            break;
+                        }
+                    }
+                    Ok(_) => {} // different plan — skip
+                    Err(broadcast::error::RecvError::Lagged(_)) => {} // drop and continue
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            break;
+        }
+
+        // ── regular request/response path ─────────────────────────────────────
+        let response = state.handle(req, role);
         let mut json = serde_json::to_string(&response).unwrap_or_default();
         json.push('\n');
         if writer.write_all(json.as_bytes()).await.is_err() {
@@ -447,7 +588,8 @@ pub async fn run() -> Result<()> {
     resume_running_plans();
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
-    let state = ServerState::new(shutdown_tx.clone());
+    let (event_tx, _) = broadcast::channel::<PlanStreamEvent>(256);
+    let state = ServerState::new(shutdown_tx.clone(), event_tx.clone());
 
     // Background: auto-clean dead sessions every 60s
     tokio::spawn(crate::session_monitor::run_cleanup_loop(
@@ -459,6 +601,7 @@ pub async fn run() -> Result<()> {
     tokio::spawn(crate::plan_supervisor::run_supervisor_loop(
         Duration::from_secs(5),
         shutdown_tx.subscribe(),
+        event_tx.clone(),
     ));
 
     // Background: poll Jira and write cache if plugin is installed
@@ -482,7 +625,7 @@ pub async fn run() -> Result<()> {
                 match accept {
                     Ok((stream, _)) => {
                         let state = state.clone();
-                        tokio::spawn(handle_connection(stream, state));
+                        tokio::spawn(handle_connection(stream, state, ConnectionRole::Owner));
                     }
                     Err(e) => warn!("accept error: {e}"),
                 }

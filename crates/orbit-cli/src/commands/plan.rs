@@ -4,7 +4,7 @@ use orbit_client::ipc::send_raw;
 use orbit_core::{
     audit::events_for_plan,
     eval::EvalConstraint,
-    ipc::{Request, Response},
+    ipc::{PlanStreamEvent, Request, Response},
     memory::find_run,
     plan::{Plan, PlanNodeType},
 };
@@ -220,45 +220,31 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Watch { id, interval }) => {
-            use orbit_core::plan::PlanStatus;
-            use std::time::Duration;
-
-            println!("Watching plan {id} (every {interval}s, Ctrl+C to stop)…");
-            loop {
-                match send_raw(&Request::GetPlan { id: id.clone() }).await? {
-                    Response::PlanInfo { plan } => {
-                        let completed = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Completed).count();
-                        let failed = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Failed).count();
-                        let running = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Running).count();
-                        let pending = plan.nodes.iter().filter(|n| n.status == orbit_core::plan::NodeStatus::Pending).count();
-                        print!("\r[{:?}] {}/{} done, {} running, {} pending, {} failed   ",
-                            plan.status, completed, plan.nodes.len(), running, pending, failed);
-                        use std::io::Write;
-                        let _ = std::io::stdout().flush();
-                        match plan.status {
-                            PlanStatus::Completed => {
-                                println!("\nPlan {id} completed.");
-                                break;
-                            }
-                            PlanStatus::Failed => {
-                                println!("\nPlan {id} failed.");
-                                std::process::exit(1);
-                            }
-                            PlanStatus::Cancelled => {
-                                println!("\nPlan {id} cancelled.");
-                                break;
-                            }
-                            _ => {}
-                        }
+        Some(PlanCommand::Watch { id, interval: _ }) => {
+            println!("Streaming plan {id}… (Ctrl+C to detach)");
+            let mut rx = orbit_client::ipc::stream_plan(&id).await?;
+            while let Some(event) = rx.recv().await {
+                match &event {
+                    PlanStreamEvent::NodeStarted { node_id, label, .. } => {
+                        println!("[start]  {node_id}: {label}");
                     }
-                    Response::Error { message } => {
-                        eprintln!("\nError: {message}");
+                    PlanStreamEvent::NodeCompleted { node_id, .. } => {
+                        println!("[done]   {node_id}");
+                    }
+                    PlanStreamEvent::NodeFailed { node_id, error, .. } => {
+                        println!("[fail]   {node_id}: {error}");
+                    }
+                    PlanStreamEvent::PlanCompleted { .. } => {
+                        println!("Plan {id} completed.");
+                    }
+                    PlanStreamEvent::PlanFailed { .. } => {
+                        println!("Plan {id} failed.");
                         std::process::exit(1);
                     }
-                    _ => {}
+                    PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
+                        println!("[replan] → {child_plan_id}");
+                    }
                 }
-                tokio::time::sleep(Duration::from_secs(interval)).await;
             }
         }
 
@@ -434,7 +420,18 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     }
                     println!("Plan created: {id} ({node_count} node(s))");
                     if !args.dry_run {
+                        // Auto-create a project socket in cwd/.orbit/ so contributors
+                        // can approve nodes or read plan status without owner access.
+                        let cwd = std::env::current_dir().unwrap_or_default();
+                        let orbit_dir = cwd.join(".orbit");
+                        if orbit_dir.exists() || std::fs::create_dir_all(&orbit_dir).is_ok() {
+                            let sock_path = orbit_dir.join("orbit.sock");
+                            let _ = send_raw(&Request::AddProjectSocket {
+                                path: sock_path.to_string_lossy().into_owned(),
+                            }).await;
+                        }
                         println!("Running. Check status with: orbit plan get {id}");
+                        println!("Stream live output with:    orbit plan watch {id}");
                     }
                 }
                 Response::Error { message } => {
