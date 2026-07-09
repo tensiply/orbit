@@ -1,3 +1,4 @@
+use crate::plan::Plan;
 use crate::session::Session;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +44,21 @@ pub enum Request {
         engine: String,
         no_tmux: bool,
     },
+    CreatePlan {
+        intent: String,
+        workspace: Option<String>,
+        tenant: Option<String>,
+        project: Option<String>,
+        repository: Option<String>,
+        dry_run: bool,
+    },
+    GetPlan {
+        id: String,
+    },
+    ListPlans,
+    CancelPlan {
+        id: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,5 +85,18 @@ pub enum Response {
     Ok,
     Error {
         message: String,
+    },
+    PlanCreated {
+        id: String,
+        node_count: usize,
+    },
+    PlanInfo {
+        plan: Plan,
+    },
+    Plans {
+        plans: Vec<Plan>,
+    },
+    PlanCancelled {
+        id: String,
     },
 }

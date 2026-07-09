@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod catalog;
 pub mod config;
 pub mod context;
@@ -5,6 +6,8 @@ pub mod engine;
 pub mod error;
 pub mod ipc;
 pub mod jira;
+pub mod memory;
+pub mod plan;
 pub mod plugin;
 pub mod secrets;
 pub mod session;
