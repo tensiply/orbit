@@ -60,6 +60,8 @@ pub enum Commands {
     Secret(commands::secret::SecretArgs),
     /// Manage env vars in orbit.json at any scope level
     Env(commands::env::EnvArgs),
+    /// Create and manage autonomous execution plans
+    Plan(commands::plan::PlanArgs),
 }
 
 impl Cli {
@@ -120,6 +122,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Jira(args)) => commands::jira::run(args),
         Some(Commands::Secret(args)) => commands::secret::run(args),
         Some(Commands::Env(args)) => commands::env::run(args),
+        Some(Commands::Plan(args)) => commands::plan::run(args).await,
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

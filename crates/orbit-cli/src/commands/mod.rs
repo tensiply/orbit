@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod env;
+pub mod plan;
 pub mod jira;
 pub mod completions;
 pub mod config;
