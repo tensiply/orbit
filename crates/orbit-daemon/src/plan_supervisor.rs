@@ -68,7 +68,9 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
         }
 
         // Capture pane output before classifying the node outcome
-        node.output_summary = capture_node_output(&node.id);
+        let plan_suffix = plan.id.trim_start_matches("plan_");
+        let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+        node.output_summary = capture_node_output(&session_key);
 
         let outcome = verify_node(node, node.engine);
         match outcome {
@@ -133,7 +135,9 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
 
         match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &dispatch_scope, engine) {
             Ok(session) => {
-                start_output_capture(&node_id, &session);
+                let plan_suffix = plan.id.trim_start_matches("plan_");
+                let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
+                start_output_capture(&session_key, &session);
                 let node = &mut plan.nodes[idx];
                 node.session_id = Some(session.id.clone());
                 node.status = NodeStatus::Running;
@@ -263,12 +267,12 @@ fn dispatch_node(
 
     let mut merged = config::load(&orbit_scope, engine)?;
 
-    let intent_path = write_node_intent(node_id, node_label, node_intent)?;
-    merged.instructions.push(intent_path);
-
-    // Unique per-node session so plan nodes don't share the user's interactive session
+    // Unique per-node session name doubles as the filesystem key for logs/intent files
     let plan_suffix = plan_id.trim_start_matches("plan_");
     let session_name = format!("orbit-plan-{plan_suffix}-{node_id}");
+
+    let intent_path = write_node_intent(&session_name, node_label, node_intent)?;
+    merged.instructions.push(intent_path);
 
     launcher::spawn_plan_node(&session_name, node_intent, &orbit_scope, &merged, engine)
 }
@@ -276,14 +280,13 @@ fn dispatch_node(
 // ── Output capture ────────────────────────────────────────────────────────────
 
 /// Start piping tmux pane output to a per-node log file.
-fn start_output_capture(node_id: &str, session: &Session) {
+fn start_output_capture(session_key: &str, session: &Session) {
     let Some(ref tmux_name) = session.tmux_session else {
         return;
     };
     let log_dir = std::env::temp_dir().join("orbit-plan-nodes");
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join(format!("{node_id}.log"));
-    // pipe-pane streams pane output to the file as the session runs
+    let log_path = log_dir.join(format!("{session_key}.log"));
     let _ = std::process::Command::new("tmux")
         .args([
             "pipe-pane",
@@ -297,10 +300,10 @@ fn start_output_capture(node_id: &str, session: &Session) {
 }
 
 /// Read the last 100 lines from the node's log file.
-fn capture_node_output(node_id: &str) -> Option<String> {
+fn capture_node_output(session_key: &str) -> Option<String> {
     let log_path = std::env::temp_dir()
         .join("orbit-plan-nodes")
-        .join(format!("{node_id}.log"));
+        .join(format!("{session_key}.log"));
     let content = std::fs::read_to_string(&log_path).ok()?;
     if content.is_empty() {
         return None;
@@ -310,10 +313,10 @@ fn capture_node_output(node_id: &str) -> Option<String> {
     Some(lines[start..].join("\n"))
 }
 
-fn write_node_intent(node_id: &str, label: &str, intent: &str) -> anyhow::Result<std::path::PathBuf> {
+fn write_node_intent(session_key: &str, label: &str, intent: &str) -> anyhow::Result<std::path::PathBuf> {
     let dir = std::env::temp_dir().join("orbit-plan-nodes");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{node_id}.md"));
+    let path = dir.join(format!("{session_key}.md"));
     let content = format!(
         "# Task: {label}\n\n{intent}\n\nComplete this task autonomously. When done, exit cleanly.\n"
     );
