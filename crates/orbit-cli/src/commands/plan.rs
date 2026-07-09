@@ -160,15 +160,8 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 Response::Plans { plans } => {
                     if plans.is_empty() {
                         println!("No plans found.");
-                    }
-                    for plan in &plans {
-                        println!(
-                            "{} [{:?}] {} node(s) — {}",
-                            plan.id,
-                            plan.status,
-                            plan.nodes.len(),
-                            plan.intent
-                        );
+                    } else {
+                        print_plan_tree(&plans);
                     }
                 }
                 _ => eprintln!("Unexpected response"),
@@ -454,6 +447,71 @@ pub async fn run(args: PlanArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_plan_tree(plans: &[Plan]) {
+    fn print_node(plan: &Plan, all: &[Plan], prefix: &str, is_last: bool) {
+        let connector = if is_last { "└── " } else { "├── " };
+        let status_icon = match plan.status {
+            orbit_core::plan::PlanStatus::Completed => "✓",
+            orbit_core::plan::PlanStatus::Failed => "✗",
+            orbit_core::plan::PlanStatus::Cancelled => "⊘",
+            orbit_core::plan::PlanStatus::Running => "▶",
+            _ => "·",
+        };
+        println!(
+            "{}{}{} {} [{:?}] {} node(s) — {}",
+            prefix,
+            connector,
+            status_icon,
+            plan.id,
+            plan.status,
+            plan.nodes.len(),
+            plan.intent
+        );
+        let child_prefix = format!("{}{}   ", prefix, if is_last { " " } else { "│" });
+        let children: Vec<&Plan> = all
+            .iter()
+            .filter(|p| p.parent_plan_id.as_deref() == Some(&plan.id))
+            .collect();
+        for (i, child) in children.iter().enumerate() {
+            print_node(child, all, &child_prefix, i == children.len() - 1);
+        }
+    }
+
+    let roots: Vec<&Plan> = plans
+        .iter()
+        .filter(|p| p.parent_plan_id.is_none())
+        .collect();
+
+    for (i, root) in roots.iter().enumerate() {
+        let is_last = i == roots.len() - 1;
+        let status_icon = match root.status {
+            orbit_core::plan::PlanStatus::Completed => "✓",
+            orbit_core::plan::PlanStatus::Failed => "✗",
+            orbit_core::plan::PlanStatus::Cancelled => "⊘",
+            orbit_core::plan::PlanStatus::Running => "▶",
+            _ => "·",
+        };
+        println!(
+            "{} {} [{:?}] {} node(s) — {}",
+            status_icon,
+            root.id,
+            root.status,
+            root.nodes.len(),
+            root.intent
+        );
+        let children: Vec<&Plan> = plans
+            .iter()
+            .filter(|p| p.parent_plan_id.as_deref() == Some(&root.id))
+            .collect();
+        for (j, child) in children.iter().enumerate() {
+            print_node(child, plans, "", j == children.len() - 1);
+        }
+        if !is_last {
+            println!();
+        }
+    }
 }
 
 fn resolve_scope_from_cwd() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
