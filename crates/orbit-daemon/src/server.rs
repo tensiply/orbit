@@ -157,7 +157,7 @@ impl ServerState {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
                     memory::load_recent_runs,
-                    plan::{Plan, PlanScope, PlanStatus},
+                    plan::{PlanScope, PlanStatus},
                 };
                 use orbit_planner::planner::{PlannerConfig, invoke_planner};
 

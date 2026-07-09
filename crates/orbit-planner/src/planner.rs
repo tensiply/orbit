@@ -232,6 +232,7 @@ fn draft_to_node(d: NodeDraft) -> PlanNode {
         started_at: None,
         completed_at: None,
         error: None,
+        retry_count: 0,
     }
 }
 
@@ -252,6 +253,7 @@ fn fallback_single_node(intent: &str, engine: Engine) -> PlanNode {
         started_at: None,
         completed_at: None,
         error: None,
+        retry_count: 0,
     }
 }
 

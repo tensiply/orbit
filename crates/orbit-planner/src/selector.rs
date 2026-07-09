@@ -44,6 +44,7 @@ mod tests {
             started_at: None,
             completed_at: None,
             error: None,
+            retry_count: 0,
         }
     }
 
