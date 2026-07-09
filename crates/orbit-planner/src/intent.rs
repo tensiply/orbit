@@ -56,7 +56,8 @@ mod tests {
 
     #[test]
     fn classify_complex() {
-        let intent = "implement the full authentication flow with tests and review and deploy to staging";
+        let intent = "implement the full authentication flow with unit tests integration tests code review \
+                      security audit fix any issues found and then deploy to staging environment with smoke tests";
         let c = classify(intent);
         assert!(matches!(c.complexity, Complexity::Complex));
     }

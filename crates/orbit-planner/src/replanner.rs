@@ -4,6 +4,7 @@ use orbit_core::{
     plan::{Plan, PlanNode, PlanStatus},
 };
 
+use crate::backend::PlannerBackend;
 use crate::planner::{invoke_planner, PlannerConfig};
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -29,9 +30,11 @@ pub fn replan(
     reason: &str,
     recent_runs: &[PlanRunRecord],
     cfg: &PlannerConfig,
+    backend: &dyn PlannerBackend,
 ) -> Result<Plan> {
     let enhanced_intent = build_replan_intent(&original.intent, failed_node, reason);
-    let (mut child, _trace) = invoke_planner(&enhanced_intent, &original.scope, recent_runs, cfg)?;
+    let (mut child, _trace) =
+        invoke_planner(&enhanced_intent, &original.scope, recent_runs, cfg, backend)?;
     child.parent_plan_id = Some(original.id.clone());
     child.replan_count = original.replan_count + 1;
     child.status = PlanStatus::Running;

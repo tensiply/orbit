@@ -11,6 +11,7 @@ use orbit_engine::{
     resolver::{self, ResolveArgs},
 };
 use orbit_planner::{
+    backend::CliBackend,
     planner::PlannerConfig,
     replanner,
     selector,
@@ -117,7 +118,7 @@ fn advance_plan(plan: &mut Plan) -> anyhow::Result<()> {
         node.output_summary = capture_node_output(&session_key);
         node.token_usage = Some(estimate_token_usage(node));
 
-        let outcome = verify_node(node, node.engine);
+        let outcome = verify_node(node, &CliBackend::new(node.engine));
         match outcome {
             VerifyOutcome::Pass => {
                 node.status = NodeStatus::Completed;
@@ -341,7 +342,7 @@ fn try_replan(plan: &Plan) -> anyhow::Result<Plan> {
         system_prompt_path: None,
     };
 
-    replanner::replan(plan, failed_node, reason, &recent_runs, &cfg)
+    replanner::replan(plan, failed_node, reason, &recent_runs, &cfg, &CliBackend::new(replan_engine))
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────

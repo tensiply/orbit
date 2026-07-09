@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use orbit_core::{
     engine::Engine,
     ipc::PlannerTrace,
@@ -10,10 +10,9 @@ use orbit_core::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use std::path::PathBuf;
+
+use crate::backend::PlannerBackend;
 
 const DEFAULT_SYSTEM_PROMPT: &str = r#"You are an expert software architect. Given a user intent and workspace scope, generate a Plan IR as JSON.
 
@@ -329,27 +328,13 @@ pub fn invoke_planner(
     scope: &PlanScope,
     recent_runs: &[PlanRunRecord],
     cfg: &PlannerConfig,
+    backend: &dyn PlannerBackend,
 ) -> Result<(Plan, PlannerTrace)> {
     let system_prompt = build_system_prompt(cfg);
     let user_prompt = create_plan_prompt(intent, scope, recent_runs);
     let full_prompt = format!("{system_prompt}\n\n---\n\n{user_prompt}");
 
-    let (cmd, args) = engine_cli_command(&cfg.engine);
-    let child = Command::new(cmd)
-        .args(&args)
-        .arg(&full_prompt)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn engine CLI `{cmd}`: {e}"))?;
-
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("engine CLI exited with error: {stderr}");
-    }
-
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = backend.call(&full_prompt)?;
     let plan = parse_llm_response(&raw, intent, scope, cfg, &system_prompt)?;
     let trace = PlannerTrace { system_prompt, user_prompt, raw_response: raw };
     Ok((plan, trace))

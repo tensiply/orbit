@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod intent;
 pub mod planner;
 pub mod policy;

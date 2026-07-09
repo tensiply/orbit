@@ -1,11 +1,8 @@
-use orbit_core::{
-    engine::Engine,
-    plan::{PlanNode, VerifyStrategy},
-};
+use orbit_core::plan::{PlanNode, VerifyStrategy};
 use std::process::{Command, Stdio};
 use tracing::warn;
 
-use crate::planner::engine_cli_command;
+use crate::backend::PlannerBackend;
 
 // ── VerifyOutcome ─────────────────────────────────────────────────────────────
 
@@ -17,12 +14,12 @@ pub enum VerifyOutcome {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Run every verify strategy for the node in order. Returns the first failure, or Pass.
-pub fn verify_node(node: &PlanNode, judge_engine: Engine) -> VerifyOutcome {
+pub fn verify_node(node: &PlanNode, judge_backend: &dyn PlannerBackend) -> VerifyOutcome {
     if node.policy.verify.is_empty() {
         return VerifyOutcome::Pass;
     }
     for strategy in &node.policy.verify {
-        let outcome = run_strategy(strategy, node, judge_engine);
+        let outcome = run_strategy(strategy, node, judge_backend);
         if matches!(outcome, VerifyOutcome::Fail(_)) {
             return outcome;
         }
@@ -32,7 +29,11 @@ pub fn verify_node(node: &PlanNode, judge_engine: Engine) -> VerifyOutcome {
 
 // ── Strategies ────────────────────────────────────────────────────────────────
 
-fn run_strategy(strategy: &VerifyStrategy, node: &PlanNode, judge_engine: Engine) -> VerifyOutcome {
+fn run_strategy(
+    strategy: &VerifyStrategy,
+    node: &PlanNode,
+    judge_backend: &dyn PlannerBackend,
+) -> VerifyOutcome {
     match strategy {
         VerifyStrategy::ExitCode => {
             // Engines (claude, opencode, gemini) always exit 0. Treat as Pass.
@@ -57,7 +58,7 @@ fn run_strategy(strategy: &VerifyStrategy, node: &PlanNode, judge_engine: Engine
                 warn!("LlmJudge: no output captured for node {} — skipping", node.id);
                 return VerifyOutcome::Pass;
             };
-            match llm_judge(summary, &node.intent, judge_engine) {
+            match llm_judge(summary, &node.intent, judge_backend) {
                 Ok(outcome) => outcome,
                 Err(e) => {
                     warn!("LlmJudge error for node {}: {e} — treating as Pass", node.id);
@@ -88,7 +89,11 @@ fn run_strategy(strategy: &VerifyStrategy, node: &PlanNode, judge_engine: Engine
     }
 }
 
-fn llm_judge(output: &str, intent: &str, engine: Engine) -> anyhow::Result<VerifyOutcome> {
+fn llm_judge(
+    output: &str,
+    intent: &str,
+    backend: &dyn PlannerBackend,
+) -> anyhow::Result<VerifyOutcome> {
     let preview: String = output.chars().take(2000).collect();
     let prompt = format!(
         "You are a verification judge.\n\
@@ -98,16 +103,7 @@ fn llm_judge(output: &str, intent: &str, engine: Engine) -> anyhow::Result<Verif
          Respond with exactly 'PASS' or 'FAIL: <brief reason>'."
     );
 
-    let (cmd, args) = engine_cli_command(&engine);
-    let child = Command::new(cmd)
-        .args(&args)
-        .arg(&prompt)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    let out = child.wait_with_output()?;
-    let raw = String::from_utf8_lossy(&out.stdout);
+    let raw = backend.call(&prompt)?;
     let trimmed = raw.trim();
 
     if trimmed.starts_with("PASS") {
@@ -135,7 +131,11 @@ fn llm_judge(output: &str, intent: &str, engine: Engine) -> anyhow::Result<Verif
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orbit_core::plan::{NodePolicy, NodeStatus, PlanNodeType, RiskLevel};
+    use crate::backend::MockBackend;
+    use orbit_core::{
+        engine::Engine,
+        plan::{NodePolicy, NodeStatus, PlanNodeType, RiskLevel},
+    };
 
     fn make_node(verify: Vec<VerifyStrategy>, output: Option<String>) -> PlanNode {
         PlanNode {
@@ -163,16 +163,20 @@ mod tests {
         }
     }
 
+    fn mock() -> MockBackend {
+        MockBackend::new("PASS")
+    }
+
     #[test]
     fn no_strategies_passes() {
         let node = make_node(vec![], None);
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
     fn exit_code_always_passes() {
         let node = make_node(vec![VerifyStrategy::ExitCode], None);
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
@@ -181,7 +185,7 @@ mod tests {
             vec![VerifyStrategy::OutputContains { keywords: vec!["success".into()] }],
             Some("task completed with success".into()),
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
@@ -190,7 +194,7 @@ mod tests {
             vec![VerifyStrategy::OutputContains { keywords: vec!["SUCCESS".into()] }],
             Some("task completed with success".into()),
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
@@ -199,7 +203,7 @@ mod tests {
             vec![VerifyStrategy::OutputContains { keywords: vec!["success".into()] }],
             Some("something else entirely".into()),
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Fail(_)));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
     }
 
     #[test]
@@ -208,7 +212,7 @@ mod tests {
             vec![VerifyStrategy::OutputContains { keywords: vec!["ok".into()] }],
             None,
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Fail(_)));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
     }
 
     #[test]
@@ -217,7 +221,7 @@ mod tests {
             vec![VerifyStrategy::ShellCheck { command: vec!["true".into()] }],
             None,
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
@@ -226,7 +230,7 @@ mod tests {
             vec![VerifyStrategy::ShellCheck { command: vec!["false".into()] }],
             None,
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Fail(_)));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
     }
 
     #[test]
@@ -235,7 +239,7 @@ mod tests {
             vec![VerifyStrategy::ShellCheck { command: vec![] }],
             None,
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Pass));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
     #[test]
@@ -247,6 +251,32 @@ mod tests {
             ],
             Some("no keyword here".into()),
         );
-        assert!(matches!(verify_node(&node, Engine::Claude), VerifyOutcome::Fail(_)));
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
+    }
+
+    #[test]
+    fn llm_judge_pass_response() {
+        let node = make_node(
+            vec![VerifyStrategy::LlmJudge],
+            Some("feature implemented successfully".into()),
+        );
+        let backend = MockBackend::new("PASS");
+        assert!(matches!(verify_node(&node, &backend), VerifyOutcome::Pass));
+    }
+
+    #[test]
+    fn llm_judge_fail_response() {
+        let node = make_node(
+            vec![VerifyStrategy::LlmJudge],
+            Some("something was done".into()),
+        );
+        let backend = MockBackend::new("FAIL: missing tests");
+        assert!(matches!(verify_node(&node, &backend), VerifyOutcome::Fail(_)));
+    }
+
+    #[test]
+    fn llm_judge_no_output_skips() {
+        let node = make_node(vec![VerifyStrategy::LlmJudge], None);
+        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 }

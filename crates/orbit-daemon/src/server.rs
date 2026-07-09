@@ -162,13 +162,13 @@ impl ServerState {
                     memory::load_recent_runs,
                     plan::{PlanScope, PlanStatus},
                 };
-                use orbit_planner::planner::{PlannerConfig, invoke_planner};
+                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
 
                 let scope = PlanScope { workspace, tenant, project, repository };
                 let recent = load_recent_runs(5);
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg) {
+                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine)) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
@@ -281,13 +281,13 @@ impl ServerState {
                 constraints,
             } => {
                 use orbit_core::{memory::load_recent_runs, plan::PlanScope};
-                use orbit_planner::planner::{PlannerConfig, invoke_planner};
+                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
 
                 let scope = PlanScope { workspace, tenant, project, repository };
                 let recent = load_recent_runs(5);
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg) {
+                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine)) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
