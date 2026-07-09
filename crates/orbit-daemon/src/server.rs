@@ -144,13 +144,82 @@ impl ServerState {
                 }
             }
 
-            // ── Plan requests — supervisor handles execution; daemon routes IPC ──
+            // ── Plan requests ─────────────────────────────────────────────────
 
-            Request::CreatePlan { .. }
-            | Request::GetPlan { .. }
-            | Request::ListPlans
-            | Request::CancelPlan { .. } => Response::Error {
-                message: "plan supervisor not yet active in this daemon version".into(),
+            Request::CreatePlan {
+                intent,
+                workspace,
+                tenant,
+                project,
+                repository,
+                dry_run,
+            } => {
+                use orbit_core::{
+                    audit::{append_event, AuditEvent},
+                    memory::load_recent_runs,
+                    plan::{Plan, PlanScope, PlanStatus},
+                };
+                use orbit_planner::planner::{PlannerConfig, invoke_planner};
+
+                let scope = PlanScope { workspace, tenant, project, repository };
+                let recent = load_recent_runs(5);
+                let cfg = PlannerConfig::default();
+
+                match invoke_planner(&intent, &scope, &recent, &cfg) {
+                    Err(e) => Response::Error {
+                        message: format!("planner error: {e}"),
+                    },
+                    Ok(mut plan) => {
+                        let node_count = plan.nodes.len();
+                        if dry_run {
+                            plan.status = PlanStatus::Planning;
+                            Response::PlanCreated {
+                                id: plan.id,
+                                node_count,
+                            }
+                        } else {
+                            plan.status = PlanStatus::Running;
+                            let _ = append_event(&AuditEvent::PlanCreated {
+                                plan_id: plan.id.clone(),
+                                intent: intent.clone(),
+                                node_count,
+                                timestamp: now_secs(),
+                            });
+                            match plan.save() {
+                                Ok(_) => Response::PlanCreated {
+                                    id: plan.id,
+                                    node_count,
+                                },
+                                Err(e) => Response::Error {
+                                    message: format!("save error: {e}"),
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+
+            Request::GetPlan { id } => match orbit_core::plan::Plan::load(&id) {
+                Ok(plan) => Response::PlanInfo { plan },
+                Err(e) => Response::Error {
+                    message: format!("plan not found: {e}"),
+                },
+            },
+
+            Request::ListPlans => {
+                let plans = orbit_core::plan::Plan::load_all();
+                Response::Plans { plans }
+            }
+
+            Request::CancelPlan { id } => match orbit_core::plan::Plan::load(&id) {
+                Err(e) => Response::Error {
+                    message: format!("plan not found: {e}"),
+                },
+                Ok(mut plan) => {
+                    plan.status = orbit_core::plan::PlanStatus::Cancelled;
+                    let _ = plan.save();
+                    Response::PlanCancelled { id }
+                }
             },
         }
     }
@@ -207,6 +276,12 @@ pub async fn run() -> Result<()> {
         shutdown_tx.subscribe(),
     ));
 
+    // Background: advance running plans every 5s
+    tokio::spawn(crate::plan_supervisor::run_supervisor_loop(
+        Duration::from_secs(5),
+        shutdown_tx.subscribe(),
+    ));
+
     // Background: poll Jira and write cache if plugin is installed
     let jira_installed = orbit_core::plugin::load_all()
         .iter()
@@ -248,6 +323,13 @@ pub async fn run() -> Result<()> {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
 
 fn send_sigterm(pid: u32) {
     let _ = std::process::Command::new("kill")

@@ -13,6 +13,10 @@ pub fn is_available() -> bool {
     socket_path().exists()
 }
 
+pub async fn send_raw(req: &Request) -> Result<Response> {
+    send(req).await
+}
+
 async fn send(req: &Request) -> Result<Response> {
     let sock = socket_path();
     if !sock.exists() {
