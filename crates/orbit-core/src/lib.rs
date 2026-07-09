@@ -13,3 +13,7 @@ pub mod secrets;
 pub mod session;
 pub mod user_config;
 pub mod workspace_config;
+
+/// Serialises tests that mutate XDG_DATA_HOME so they don't race in parallel.
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

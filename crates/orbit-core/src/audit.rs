@@ -153,8 +153,9 @@ mod tests {
 
     #[test]
     fn append_and_filter() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
 
         let e = AuditEvent::PlanCreated {
             plan_id: "plan_abc123".into(),

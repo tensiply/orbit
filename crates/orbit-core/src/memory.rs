@@ -118,8 +118,9 @@ mod tests {
 
     #[test]
     fn append_and_load_recent() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
 
         for i in 0..5 {
             let mut r = make_record(&format!("intent {i}"));
@@ -134,8 +135,9 @@ mod tests {
 
     #[test]
     fn find_similar_returns_close_matches() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("XDG_DATA_HOME", tmp.path().join("data2").to_str().unwrap());
+        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data2").to_str().unwrap()); }
 
         append_plan_run(&make_record("implement feature X with tests")).unwrap();
         append_plan_run(&make_record("fix bug in authentication")).unwrap();
