@@ -13,6 +13,7 @@ pub mod plan;
 pub mod plugin;
 pub mod secrets;
 pub mod session;
+pub mod template;
 pub mod user_config;
 pub mod workspace_config;
 

@@ -7,6 +7,7 @@ use orbit_core::{
     ipc::{PlanStreamEvent, ProjectRole, Request, Response},
     memory::find_run,
     plan::{CrossRepoSpec, Plan, PlanNodeType},
+    template,
 };
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -178,6 +179,62 @@ pub enum PlanCommand {
         /// Repository scope override
         #[arg(long)]
         repository: Option<String>,
+    },
+    /// Manage and run plan templates from ~/.config/orbit/plans/
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TemplateCommand {
+    /// List all available templates
+    List,
+    /// Show a template's content and variables
+    Show {
+        /// Template name
+        name: String,
+    },
+    /// Run a template, substituting any {{variable}} placeholders
+    Run {
+        /// Template name
+        name: String,
+        /// Variable substitutions in key=value format
+        vars: Vec<String>,
+        /// Preview the plan without executing
+        #[arg(long)]
+        dry_run: bool,
+        /// Block and stream live output until the plan completes
+        #[arg(long)]
+        foreground: bool,
+        /// Workspace scope override
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Tenant scope override
+        #[arg(long)]
+        tenant: Option<String>,
+        /// Project scope override
+        #[arg(long)]
+        project: Option<String>,
+        /// Repository scope override
+        #[arg(long)]
+        repository: Option<String>,
+    },
+    /// Create a new template (opens $EDITOR)
+    Create {
+        /// Template name (kebab-case recommended)
+        name: String,
+    },
+    /// Save a plan's intent as a new template
+    FromPlan {
+        /// Plan ID to capture the intent from
+        plan_id: String,
+        /// Template name to save as
+        name: String,
+        /// One-line description for the template
+        #[arg(long, default_value = "")]
+        description: String,
     },
 }
 
@@ -680,6 +737,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
+        Some(PlanCommand::Template { command }) => {
+            run_template(command).await?;
+        }
+
         None => {
             let intent = match args.intent {
                 Some(i) => i,
@@ -1030,4 +1091,184 @@ fn git_repo_root() -> Option<std::path::PathBuf> {
     } else {
         None
     }
+}
+
+// ── template subcommands ──────────────────────────────────────────────────────
+
+async fn run_template(command: TemplateCommand) -> Result<()> {
+    match command {
+        TemplateCommand::List => {
+            let templates = template::list_templates();
+            if templates.is_empty() {
+                let dir = template::templates_dir();
+                println!("No templates found.");
+                println!("Create one with: orbit plan template create <name>");
+                println!("Templates dir:   {}", dir.display());
+                return Ok(());
+            }
+            println!("{} template(s) in {}:", templates.len(), template::templates_dir().display());
+            println!();
+            for t in &templates {
+                let vars = t.variables();
+                let var_hint = if vars.is_empty() {
+                    String::new()
+                } else {
+                    format!("  [vars: {}]", vars.join(", "))
+                };
+                println!("  {}  —  {}{}", t.name, t.description, var_hint);
+            }
+            println!();
+            println!("Run with: orbit plan template run <name> [key=value ...]");
+        }
+
+        TemplateCommand::Show { name } => {
+            let t = template::load_template(&name)?;
+            println!("Template: {}", t.name);
+            println!("Description: {}", t.description);
+            println!("Intent: {}", t.intent);
+            let vars = t.variables();
+            if !vars.is_empty() {
+                println!("Variables: {}", vars.join(", "));
+            }
+            if !t.repos.is_empty() {
+                println!("Default repos: {}", t.repos.join(", "));
+            }
+            println!();
+            println!("Run with: orbit plan template run {} {}", t.name,
+                vars.iter().map(|v| format!("{v}=<value>")).collect::<Vec<_>>().join(" "));
+            println!("File: {}", template::template_path(&name).display());
+        }
+
+        TemplateCommand::Run {
+            name,
+            vars,
+            dry_run,
+            foreground,
+            workspace,
+            tenant,
+            project,
+            repository,
+        } => {
+            let t = template::load_template(&name)?;
+            let var_map = template::parse_vars(&vars)?;
+            let intent = t.render(&var_map)?;
+
+            let (workspace, tenant, project, repository) =
+                if workspace.is_none() && tenant.is_none() && project.is_none() && repository.is_none() {
+                    resolve_scope_from_cwd()
+                } else {
+                    (workspace, tenant, project, repository)
+                };
+
+            let extra_repos: Vec<CrossRepoSpec> = t
+                .repos
+                .iter()
+                .map(|p| {
+                    let path = std::path::Path::new(p);
+                    let alias = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(p)
+                        .to_string();
+                    CrossRepoSpec {
+                        alias: alias.clone(),
+                        workspace: None,
+                        tenant: None,
+                        project: None,
+                        repository: Some(alias),
+                    }
+                })
+                .collect();
+
+            println!("Template: {}", t.name);
+            println!("Planning: {intent}");
+            if dry_run {
+                println!("(dry-run — plan will not execute)");
+            }
+
+            match send_raw(&Request::CreatePlan {
+                intent: intent.clone(),
+                workspace,
+                tenant,
+                project,
+                repository,
+                dry_run,
+                verbose: false,
+                extra_repos,
+            })
+            .await?
+            {
+                Response::PlanCreated { id, node_count, trace: _ } => {
+                    println!("Plan created: {id} ({node_count} node(s))");
+                    if !dry_run {
+                        let cwd = std::env::current_dir().unwrap_or_default();
+                        let orbit_dir = cwd.join(".orbit");
+                        if orbit_dir.exists() || std::fs::create_dir_all(&orbit_dir).is_ok() {
+                            let sock_path = orbit_dir.join("orbit.sock");
+                            let _ = send_raw(&Request::AddProjectSocket {
+                                path: sock_path.to_string_lossy().into_owned(),
+                                role: ProjectRole::Contributor,
+                            })
+                            .await;
+                        }
+                        if foreground {
+                            stream_until_done(&id).await;
+                        } else {
+                            println!("Running. Check status with: orbit plan get {id}");
+                            println!("Stream live output with:    orbit plan watch {id}");
+                        }
+                    }
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
+            }
+        }
+
+        TemplateCommand::Create { name } => {
+            let path = template::template_path(&name);
+            if path.exists() {
+                eprintln!("Template '{}' already exists: {}", name, path.display());
+                eprintln!("Edit it with: $EDITOR {}", path.display());
+                std::process::exit(1);
+            }
+            std::fs::create_dir_all(template::templates_dir())?;
+            std::fs::write(&path, template::starter_toml(&name))?;
+
+            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+            let status = std::process::Command::new(&editor)
+                .arg(&path)
+                .status()?;
+            if status.success() {
+                println!("Template saved: {}", path.display());
+                println!("Run it with:    orbit plan template run {name}");
+            } else {
+                eprintln!("Editor exited with non-zero status. Template file kept at: {}", path.display());
+            }
+        }
+
+        TemplateCommand::FromPlan { plan_id, name, description } => {
+            let plan = Plan::load(&plan_id)
+                .map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
+            let desc = if description.is_empty() {
+                format!("Captured from plan {}", plan_id)
+            } else {
+                description
+            };
+            let t = orbit_core::template::PlanTemplate {
+                name: name.clone(),
+                description: desc,
+                intent: plan.intent.clone(),
+                repos: vec![],
+            };
+            template::save_template(&name, &t)?;
+            println!("Template '{}' saved.", name);
+            println!("Intent: {}", plan.intent);
+            println!("File:   {}", template::template_path(&name).display());
+            println!("Edit:   orbit plan template show {name}");
+        }
+    }
+    Ok(())
 }
