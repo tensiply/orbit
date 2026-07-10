@@ -9,6 +9,7 @@ use orbit_core::{
     plan::{Plan, PlanNodeType},
 };
 use serde::Serialize;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 
 #[derive(Debug, Args)]
 pub struct PlanArgs {
@@ -89,6 +90,19 @@ pub enum PlanCommand {
         /// Poll interval in seconds (default: 3)
         #[arg(long, default_value = "3")]
         interval: u64,
+    },
+    /// View captured output logs for a plan node
+    Logs {
+        /// Plan ID
+        id: String,
+        /// Node ID (e.g. node_1)
+        node_id: String,
+        /// Print only the last N lines
+        #[arg(long)]
+        tail: Option<usize>,
+        /// Follow new output as it is written (like tail -f)
+        #[arg(long)]
+        follow: bool,
     },
     /// Dry-run planner and evaluate the plan structure (no engine executed)
     Eval {
@@ -296,6 +310,58 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     audit_trail.len(),
                     if memory_run.is_some() { ", memory record included" } else { "" }
                 );
+            }
+        }
+
+        Some(PlanCommand::Logs { id, node_id, tail, follow }) => {
+            let plan_suffix = id.trim_start_matches("plan_");
+            let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
+            let log_path = std::env::temp_dir()
+                .join("orbit-plan-nodes")
+                .join(format!("{session_key}.log"));
+
+            if !log_path.exists() {
+                eprintln!("No log found for node {node_id} in plan {id}");
+                eprintln!("Expected: {}", log_path.display());
+                std::process::exit(1);
+            }
+
+            if follow {
+                let mut file = std::fs::File::open(&log_path)?;
+                // Print existing content first
+                let mut reader = BufReader::new(&file);
+                let mut buf = String::new();
+                while reader.read_line(&mut buf)? > 0 {
+                    print!("{buf}");
+                    buf.clear();
+                }
+                // Then follow for new lines
+                let mut pos = file.stream_position()?;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    let new_len = file.metadata()?.len();
+                    if new_len > pos {
+                        file.seek(SeekFrom::Start(pos))?;
+                        let mut reader = BufReader::new(&file);
+                        let mut line = String::new();
+                        while reader.read_line(&mut line)? > 0 {
+                            print!("{line}");
+                            line.clear();
+                        }
+                        pos = file.stream_position()?;
+                    }
+                }
+            } else {
+                let content = std::fs::read_to_string(&log_path)?;
+                if let Some(n) = tail {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let start = lines.len().saturating_sub(n);
+                    for line in &lines[start..] {
+                        println!("{line}");
+                    }
+                } else {
+                    print!("{content}");
+                }
             }
         }
 
