@@ -12,6 +12,7 @@ fn status_symbol(s: &PlanStatus) -> &'static str {
     match s {
         PlanStatus::Planning => "◌",
         PlanStatus::Running | PlanStatus::Replanning => "●",
+        PlanStatus::Paused => "⏸",
         PlanStatus::Completed => "✓",
         PlanStatus::Failed => "✗",
         PlanStatus::Cancelled => "⊘",
@@ -122,6 +123,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 PlanStatus::Running | PlanStatus::Planning | PlanStatus::Replanning => {
                     Style::default().fg(accent).add_modifier(Modifier::BOLD)
                 }
+                PlanStatus::Paused => Style::default().fg(dim).add_modifier(Modifier::ITALIC),
                 PlanStatus::Cancelled => Style::default().fg(dim),
             };
             let status_label = format!("{:?}", p.status);

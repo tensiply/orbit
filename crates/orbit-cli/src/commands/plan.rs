@@ -91,6 +91,16 @@ pub enum PlanCommand {
         #[arg(long, default_value = "3")]
         interval: u64,
     },
+    /// Freeze dispatch — Running nodes finish but no new nodes are started
+    Pause {
+        /// Plan ID to pause
+        id: String,
+    },
+    /// Resume a paused plan
+    Resume {
+        /// Plan ID to resume
+        id: String,
+    },
     /// Create a restricted project socket at the given path
     Socket {
         /// Path for the new socket file (e.g. .orbit/orbit.sock)
@@ -318,6 +328,34 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     audit_trail.len(),
                     if memory_run.is_some() { ", memory record included" } else { "" }
                 );
+            }
+        }
+
+        Some(PlanCommand::Pause { id }) => {
+            match send_raw(&Request::PausePlan { id }).await? {
+                Response::PlanPaused { id } => {
+                    println!("Plan {id} paused. Running nodes will finish; no new nodes will start.");
+                    println!("Resume with: orbit plan resume {id}");
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
+            }
+        }
+
+        Some(PlanCommand::Resume { id }) => {
+            match send_raw(&Request::ResumePlan { id }).await? {
+                Response::PlanResumed { id } => {
+                    println!("Plan {id} resumed.");
+                    println!("Stream live output with: orbit plan watch {id}");
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
             }
         }
 

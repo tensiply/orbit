@@ -70,6 +70,8 @@ pub enum NodeStatus {
 pub enum PlanStatus {
     Planning,
     Running,
+    /// Dispatch frozen — Running nodes continue but no new nodes are dispatched.
+    Paused,
     Completed,
     Failed,
     Replanning,

@@ -133,6 +133,14 @@ pub enum Request {
     RetryPlan {
         id: String,
     },
+    /// Freeze dispatch — Running nodes continue but no new nodes are started.
+    PausePlan {
+        id: String,
+    },
+    /// Resume a Paused plan.
+    ResumePlan {
+        id: String,
+    },
     /// Subscribe to live events for a running plan (streaming response).
     StreamPlan {
         id: String,
@@ -199,6 +207,12 @@ pub enum Response {
     PlanRetried {
         id: String,
         reset_count: usize,
+    },
+    PlanPaused {
+        id: String,
+    },
+    PlanResumed {
+        id: String,
     },
     ProjectSocketAdded {
         path: String,

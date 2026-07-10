@@ -2,7 +2,7 @@ use anyhow::Result;
 use orbit_core::{
     audit::audit_stats,
     ipc::{PlanStreamEvent, Request, Response, pid_path, socket_path},
-    plan::{NodeStatus, PlanStatus},
+    plan::{NodeStatus, Plan, PlanStatus},
     session::Session,
 };
 use std::{
@@ -40,6 +40,8 @@ impl ConnectionRole {
                     | Request::ListPlans
                     | Request::GetPlanStats
                     | Request::ApprovePlanNode { .. }
+                    | Request::PausePlan { .. }
+                    | Request::ResumePlan { .. }
                     | Request::StreamPlan { .. }
             ),
             ConnectionRole::Observer => matches!(
@@ -357,6 +359,46 @@ impl ServerState {
                                     message: format!("save error: {e}"),
                                 },
                             }
+                        }
+                    }
+                }
+            },
+
+            Request::PausePlan { id } => match Plan::load(&id) {
+                Err(e) => Response::Error { message: format!("plan not found: {e}") },
+                Ok(mut plan) => {
+                    if plan.status != PlanStatus::Running {
+                        Response::Error {
+                            message: format!("plan {id} is not Running (status: {:?})", plan.status),
+                        }
+                    } else {
+                        plan.status = PlanStatus::Paused;
+                        match plan.save() {
+                            Ok(_) => {
+                                info!("plan {id} paused");
+                                Response::PlanPaused { id }
+                            }
+                            Err(e) => Response::Error { message: format!("save error: {e}") },
+                        }
+                    }
+                }
+            },
+
+            Request::ResumePlan { id } => match Plan::load(&id) {
+                Err(e) => Response::Error { message: format!("plan not found: {e}") },
+                Ok(mut plan) => {
+                    if plan.status != PlanStatus::Paused {
+                        Response::Error {
+                            message: format!("plan {id} is not Paused (status: {:?})", plan.status),
+                        }
+                    } else {
+                        plan.status = PlanStatus::Running;
+                        match plan.save() {
+                            Ok(_) => {
+                                info!("plan {id} resumed");
+                                Response::PlanResumed { id }
+                            }
+                            Err(e) => Response::Error { message: format!("save error: {e}") },
                         }
                     }
                 }

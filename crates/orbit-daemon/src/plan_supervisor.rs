@@ -41,7 +41,11 @@ pub async fn run_supervisor_loop(
 
 fn tick(event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
     let plans = Plan::load_all();
-    for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Running).cloned() {
+    for mut plan in plans
+        .iter()
+        .filter(|p| p.status == PlanStatus::Running || p.status == PlanStatus::Paused)
+        .cloned()
+    {
         if let Err(e) = advance_plan(&mut plan, event_tx) {
             warn!("advance_plan error for {}: {e}", plan.id);
         }
@@ -102,6 +106,17 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
 
 fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
     let all_sessions = Session::load_all();
+
+    // ── 0. Enforce plan-level timeout ─────────────────────────────────────────
+    if let Some(max_secs) = plan.policy.max_duration_secs {
+        let elapsed = now_secs().saturating_sub(plan.created_at);
+        if elapsed >= max_secs {
+            let reason = format!("plan timeout: {elapsed}s elapsed, limit {max_secs}s");
+            warn!("{reason} — failing plan {}", plan.id);
+            fail_plan_enforced(plan, &reason, event_tx)?;
+            return Ok(());
+        }
+    }
 
     // ── 1. Check Running nodes for session completion ─────────────────────────
     for node in plan.nodes.iter_mut() {
@@ -195,6 +210,30 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
     }
 
     // ── 2. Dispatch ready Pending nodes ───────────────────────────────────────
+
+    // Budget hard-stop: fail remaining work if token budget is exhausted.
+    if plan.is_budget_exhausted() {
+        let spent: u64 = plan
+            .nodes
+            .iter()
+            .filter_map(|n| n.token_usage.as_ref())
+            .map(|u| u.prompt_tokens + u.completion_tokens)
+            .sum();
+        let reason = format!(
+            "budget exhausted: {spent} tokens spent, limit {}",
+            plan.policy.max_tokens.unwrap_or(0)
+        );
+        warn!("{reason} — failing plan {}", plan.id);
+        fail_plan_enforced(plan, &reason, event_tx)?;
+        return Ok(());
+    }
+
+    // Paused: skip dispatch but still process completions (step 1 already ran).
+    if plan.status == PlanStatus::Paused {
+        plan.save()?;
+        return Ok(());
+    }
+
     let ready_ids: Vec<String> = plan.ready_nodes().iter().map(|n| n.id.clone()).collect();
 
     for node_id in ready_ids {
@@ -486,6 +525,66 @@ fn estimate_token_usage(node: &PlanNode) -> TokenUsage {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Kill all Running nodes and mark the plan Failed with a policy reason.
+fn fail_plan_enforced(
+    plan: &mut Plan,
+    reason: &str,
+    event_tx: &broadcast::Sender<PlanStreamEvent>,
+) -> anyhow::Result<()> {
+    let all_sessions = Session::load_all();
+    for node in plan.nodes.iter_mut() {
+        match node.status {
+            NodeStatus::Running => {
+                // Kill the underlying tmux session.
+                if let Some(ref sid) = node.session_id
+                    && let Some(s) = all_sessions.iter().find(|s| &s.id == sid)
+                    && let Some(ref tname) = s.tmux_session
+                {
+                    let _ = std::process::Command::new("tmux")
+                        .args(["kill-session", "-t", tname])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+                node.status = NodeStatus::Failed;
+                node.completed_at = Some(now_secs());
+                node.error = Some(reason.to_string());
+                let _ = append_event(&AuditEvent::NodeFailed {
+                    plan_id: plan.id.clone(),
+                    node_id: node.id.clone(),
+                    reason: reason.to_string(),
+                    timestamp: now_secs(),
+                });
+            }
+            NodeStatus::Pending | NodeStatus::AwaitingApproval => {
+                node.status = NodeStatus::Skipped;
+            }
+            _ => {}
+        }
+    }
+
+    let duration = now_secs().saturating_sub(plan.created_at);
+    plan.status = PlanStatus::Failed;
+    plan.completed_at = Some(now_secs());
+
+    let _ = append_event(&AuditEvent::PolicyBlocked {
+        plan_id: plan.id.clone(),
+        node_id: "plan".to_string(),
+        reason: reason.to_string(),
+        timestamp: now_secs(),
+    });
+    let _ = append_event(&AuditEvent::PlanCompleted {
+        plan_id: plan.id.clone(),
+        outcome: "Failed".to_string(),
+        total_duration_secs: duration,
+        timestamp: now_secs(),
+    });
+    let _ = event_tx.send(PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() });
+
+    plan.save()?;
+    Ok(())
+}
 
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
