@@ -77,6 +77,9 @@ pub enum PlanCommand {
         /// Write to stdout instead of a file
         #[arg(long)]
         stdout: bool,
+        /// Export as readable markdown report instead of JSON
+        #[arg(long)]
+        markdown: bool,
     },
     /// Re-execute a plan from its failed nodes without re-planning
     Retry {
@@ -90,6 +93,13 @@ pub enum PlanCommand {
         /// Poll interval in seconds (default: 3)
         #[arg(long, default_value = "3")]
         interval: u64,
+    },
+    /// Compare two plans node-by-node (useful for inspecting replans)
+    Diff {
+        /// First plan ID
+        id_a: String,
+        /// Second plan ID
+        id_b: String,
     },
     /// Delete terminal plans older than N days
     Prune {
@@ -322,33 +332,90 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Export { id, stdout }) => {
+        Some(PlanCommand::Export { id, stdout, markdown }) => {
             let plan = Plan::load(&id).map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
             let audit_trail = events_for_plan(&id);
             let memory_run = find_run(&id);
 
-            #[derive(Serialize)]
-            struct PlanExportBundle<'a> {
-                plan: &'a Plan,
-                audit_trail: &'a Vec<orbit_core::audit::AuditEvent>,
-                memory_run: Option<&'a orbit_core::memory::PlanRunRecord>,
+            if markdown {
+                let md = render_plan_markdown(&plan, &audit_trail, memory_run.as_ref());
+                if stdout {
+                    println!("{md}");
+                } else {
+                    let filename = format!("orbit-export-{id}.md");
+                    std::fs::write(&filename, &md)?;
+                    println!("Exported to {filename}");
+                }
+            } else {
+                #[derive(Serialize)]
+                struct PlanExportBundle<'a> {
+                    plan: &'a Plan,
+                    audit_trail: &'a Vec<orbit_core::audit::AuditEvent>,
+                    memory_run: Option<&'a orbit_core::memory::PlanRunRecord>,
+                }
+
+                let bundle = PlanExportBundle { plan: &plan, audit_trail: &audit_trail, memory_run: memory_run.as_ref() };
+                let json = serde_json::to_string_pretty(&bundle)?;
+
+                if stdout {
+                    println!("{json}");
+                } else {
+                    let filename = format!("orbit-export-{id}.json");
+                    std::fs::write(&filename, &json)?;
+                    println!("Exported to {filename}");
+                    println!(
+                        "  {} node(s), {} audit event(s){}",
+                        plan.nodes.len(),
+                        audit_trail.len(),
+                        if memory_run.is_some() { ", memory record included" } else { "" }
+                    );
+                }
+            }
+        }
+
+        Some(PlanCommand::Diff { id_a, id_b }) => {
+            let a = Plan::load(&id_a).map_err(|e| anyhow::anyhow!("{id_a}: {e}"))?;
+            let b = Plan::load(&id_b).map_err(|e| anyhow::anyhow!("{id_b}: {e}"))?;
+
+            println!("Diff: {} → {}", a.id, b.id);
+            println!("  A: [{:?}]  {}", a.status, a.intent);
+            println!("  B: [{:?}]  {}", b.status, b.intent);
+            println!();
+
+            // Index nodes by label for matching across replans
+            let a_nodes: std::collections::HashMap<&str, _> =
+                a.nodes.iter().map(|n| (n.label.as_str(), n)).collect();
+            let b_nodes: std::collections::HashMap<&str, _> =
+                b.nodes.iter().map(|n| (n.label.as_str(), n)).collect();
+
+            // Added in B
+            for (label, nb) in &b_nodes {
+                if !a_nodes.contains_key(label) {
+                    println!("  + [{:?}] {label}  ({:?})", nb.status, nb.task_type);
+                }
+            }
+            // Removed in B
+            for (label, na) in &a_nodes {
+                if !b_nodes.contains_key(label) {
+                    println!("  - [{:?}] {label}  ({:?})", na.status, na.task_type);
+                }
+            }
+            // Changed status
+            for (label, na) in &a_nodes {
+                if let Some(nb) = b_nodes.get(label) {
+                    if na.status != nb.status {
+                        println!("  ~ {label}  [{:?}] → [{:?}]", na.status, nb.status);
+                    } else {
+                        println!("    {label}  [{:?}]", na.status);
+                    }
+                }
             }
 
-            let bundle = PlanExportBundle { plan: &plan, audit_trail: &audit_trail, memory_run: memory_run.as_ref() };
-            let json = serde_json::to_string_pretty(&bundle)?;
-
-            if stdout {
-                println!("{json}");
-            } else {
-                let filename = format!("orbit-export-{id}.json");
-                std::fs::write(&filename, &json)?;
-                println!("Exported to {filename}");
-                println!(
-                    "  {} node(s), {} audit event(s){}",
-                    plan.nodes.len(),
-                    audit_trail.len(),
-                    if memory_run.is_some() { ", memory record included" } else { "" }
-                );
+            let a_cost: f64 = a.nodes.iter().filter_map(|n| n.token_usage.as_ref()).map(|u| u.estimated_cost_usd).sum();
+            let b_cost: f64 = b.nodes.iter().filter_map(|n| n.token_usage.as_ref()).map(|u| u.estimated_cost_usd).sum();
+            if a_cost > 0.0 || b_cost > 0.0 {
+                println!();
+                println!("  Cost: A ~${a_cost:.4}  →  B ~${b_cost:.4}");
             }
         }
 
@@ -743,6 +810,99 @@ fn print_plan_tree(plans: &[Plan]) {
             println!();
         }
     }
+}
+
+fn render_plan_markdown(
+    plan: &Plan,
+    audit_trail: &[orbit_core::audit::AuditEvent],
+    memory_run: Option<&orbit_core::memory::PlanRunRecord>,
+) -> String {
+    let mut md = String::new();
+
+    md.push_str(&format!("# Plan: {}\n\n", plan.id));
+    md.push_str(&format!("**Intent:** {}\n\n", plan.intent));
+    md.push_str(&format!("**Status:** {:?}\n\n", plan.status));
+
+    let scope = &plan.scope;
+    if scope.workspace.is_some() || scope.tenant.is_some() {
+        let parts: Vec<String> = [
+            scope.workspace.as_deref(),
+            scope.tenant.as_deref(),
+            scope.project.as_deref(),
+            scope.repository.as_deref(),
+        ]
+        .iter()
+        .filter_map(|s| s.map(String::from))
+        .collect();
+        md.push_str(&format!("**Scope:** {}\n\n", parts.join(" / ")));
+    }
+
+    if plan.replan_count > 0 {
+        md.push_str(&format!("**Replans:** {}\n\n", plan.replan_count));
+    }
+
+    // Nodes table
+    md.push_str("## Nodes\n\n");
+    md.push_str("| Status | Label | Type | Cost |\n");
+    md.push_str("|---|---|---|---|\n");
+
+    let plan_suffix = plan.id.trim_start_matches("plan_");
+    let mut total_cost = 0.0f64;
+    for node in &plan.nodes {
+        let cost = if let Some(u) = &node.token_usage {
+            total_cost += u.estimated_cost_usd;
+            format!("~${:.4}", u.estimated_cost_usd)
+        } else {
+            String::new()
+        };
+        md.push_str(&format!(
+            "| {:?} | {} | {:?} | {} |\n",
+            node.status, node.label, node.task_type, cost
+        ));
+    }
+    if total_cost > 0.0 {
+        md.push_str(&format!("\n**Total estimated cost:** ~${total_cost:.4}\n\n"));
+    }
+
+    // Node output logs
+    let has_logs = plan.nodes.iter().any(|n| {
+        matches!(n.status, orbit_core::plan::NodeStatus::Completed | orbit_core::plan::NodeStatus::Failed | orbit_core::plan::NodeStatus::Running)
+    });
+    if has_logs {
+        md.push_str("## Node Output\n\n");
+        for node in &plan.nodes {
+            if !matches!(node.status, orbit_core::plan::NodeStatus::Completed | orbit_core::plan::NodeStatus::Failed | orbit_core::plan::NodeStatus::Running) {
+                continue;
+            }
+            let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+            if let Some(log) = node_log_preview(&session_key, 20) {
+                md.push_str(&format!("### {} ({:?})\n\n", node.label, node.status));
+                md.push_str("```\n");
+                md.push_str(&log);
+                md.push_str("\n```\n\n");
+            }
+        }
+    }
+
+    // Audit trail
+    if !audit_trail.is_empty() {
+        md.push_str("## Audit Trail\n\n");
+        for ev in audit_trail {
+            md.push_str(&format!("- `{ev:?}`\n"));
+        }
+        md.push('\n');
+    }
+
+    // Memory record
+    if let Some(run) = memory_run {
+        md.push_str("## Memory Record\n\n");
+        md.push_str(&format!("- **Outcome:** {}\n", run.outcome));
+        md.push_str(&format!("- **Nodes:** {}\n", run.node_count));
+        md.push_str(&format!("- **Replans:** {}\n", run.replan_count));
+        md.push_str(&format!("- **Duration:** {}s\n\n", run.duration_secs));
+    }
+
+    md
 }
 
 /// Returns last `n` lines from a node's captured log, or None if no log exists.

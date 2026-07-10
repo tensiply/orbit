@@ -30,6 +30,19 @@ fn node_status_symbol(s: &NodeStatus) -> &'static str {
     }
 }
 
+fn read_log_tail(session_key: &str, n: usize) -> Option<String> {
+    let path = std::env::temp_dir()
+        .join("orbit-plan-nodes")
+        .join(format!("{session_key}.log"));
+    let content = std::fs::read_to_string(path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(n);
+    Some(lines[start..].join("\n"))
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
@@ -229,15 +242,30 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     cost_span,
                 ]));
 
-                if node.status == NodeStatus::Running
-                    && node.session_id.is_some() {
-                        let plan_suffix = plan.id.trim_start_matches("plan_");
-                        let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+                let plan_suffix = plan.id.trim_start_matches("plan_");
+                let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
+
+                if node.status == NodeStatus::Running && node.session_id.is_some() {
+                    lines.push(Line::from(Span::styled(
+                        format!("       tmux attach -t {session_key}"),
+                        Style::default().fg(dim),
+                    )));
+                }
+
+                // Log preview for Running / Completed / Failed nodes
+                if matches!(
+                    node.status,
+                    NodeStatus::Running | NodeStatus::Completed | NodeStatus::Failed
+                ) && let Some(preview) = read_log_tail(&session_key, 4)
+                {
+                    for log_line in preview.lines() {
                         lines.push(Line::from(Span::styled(
-                            format!("       tmux attach -t {session_key}"),
+                            format!("       │ {log_line}"),
                             Style::default().fg(dim),
                         )));
                     }
+                    lines.push(Line::from(""));
+                }
             }
 
             if total_cost > 0.0 {
