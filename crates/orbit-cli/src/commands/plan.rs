@@ -4,7 +4,7 @@ use orbit_client::ipc::send_raw;
 use orbit_core::{
     audit::events_for_plan,
     eval::EvalConstraint,
-    ipc::{PlanStreamEvent, Request, Response},
+    ipc::{PlanStreamEvent, ProjectRole, Request, Response},
     memory::find_run,
     plan::{Plan, PlanNodeType},
 };
@@ -90,6 +90,14 @@ pub enum PlanCommand {
         /// Poll interval in seconds (default: 3)
         #[arg(long, default_value = "3")]
         interval: u64,
+    },
+    /// Create a restricted project socket at the given path
+    Socket {
+        /// Path for the new socket file (e.g. .orbit/orbit.sock)
+        path: String,
+        /// Grant observer (read-only) access instead of contributor (read + approve)
+        #[arg(long)]
+        observer: bool,
     },
     /// View captured output logs for a plan node
     Logs {
@@ -313,6 +321,21 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
+        Some(PlanCommand::Socket { path, observer }) => {
+            let role = if observer { ProjectRole::Observer } else { ProjectRole::Contributor };
+            match send_raw(&Request::AddProjectSocket { path: path.clone(), role }).await? {
+                Response::ProjectSocketAdded { path } => {
+                    let role_name = if observer { "observer" } else { "contributor" };
+                    println!("Socket created ({role_name}): {path}");
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
+            }
+        }
+
         Some(PlanCommand::Logs { id, node_id, tail, follow }) => {
             let plan_suffix = id.trim_start_matches("plan_");
             let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
@@ -498,6 +521,7 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                             let sock_path = orbit_dir.join("orbit.sock");
                             let _ = send_raw(&Request::AddProjectSocket {
                                 path: sock_path.to_string_lossy().into_owned(),
+                                role: ProjectRole::Contributor,
                             }).await;
                         }
 

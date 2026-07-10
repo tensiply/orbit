@@ -24,23 +24,32 @@ use tracing::{debug, info, warn};
 enum ConnectionRole {
     /// Full access (owner Unix socket).
     Owner,
-    /// Read-only + approve access (project socket in work_dir).
-    Project,
+    /// Read + approve AwaitingApproval nodes (project socket, contributor role).
+    Contributor,
+    /// Read-only; cannot approve nodes (project socket, observer role).
+    Observer,
 }
 
 impl ConnectionRole {
     fn allows(&self, req: &Request) -> bool {
-        if *self == ConnectionRole::Owner {
-            return true;
+        match self {
+            ConnectionRole::Owner => true,
+            ConnectionRole::Contributor => matches!(
+                req,
+                Request::GetPlan { .. }
+                    | Request::ListPlans
+                    | Request::GetPlanStats
+                    | Request::ApprovePlanNode { .. }
+                    | Request::StreamPlan { .. }
+            ),
+            ConnectionRole::Observer => matches!(
+                req,
+                Request::GetPlan { .. }
+                    | Request::ListPlans
+                    | Request::GetPlanStats
+                    | Request::StreamPlan { .. }
+            ),
         }
-        matches!(
-            req,
-            Request::GetPlan { .. }
-                | Request::ListPlans
-                | Request::GetPlanStats
-                | Request::ApprovePlanNode { .. }
-                | Request::StreamPlan { .. }
-        )
     }
 }
 
@@ -358,7 +367,12 @@ impl ServerState {
                 message: "StreamPlan must be the first request on a connection".into(),
             },
 
-            Request::AddProjectSocket { path } => {
+            Request::AddProjectSocket { path, role } => {
+                use orbit_core::ipc::ProjectRole;
+                let conn_role = match role {
+                    ProjectRole::Contributor => ConnectionRole::Contributor,
+                    ProjectRole::Observer => ConnectionRole::Observer,
+                };
                 let path_buf = std::path::PathBuf::from(&path);
                 if let Some(parent) = path_buf.parent() {
                     let _ = fs::create_dir_all(parent);
@@ -371,7 +385,7 @@ impl ServerState {
                         message: format!("bind error: {e}"),
                     },
                     Ok(listener) => {
-                        info!("project socket bound at {path}");
+                        info!("project socket ({role:?}) bound at {path}");
                         let state = Arc::new(ServerState {
                             started_at: self.started_at,
                             shutdown_tx: self.shutdown_tx.clone(),
@@ -385,7 +399,7 @@ impl ServerState {
                                         match accept {
                                             Ok((stream, _)) => {
                                                 let s = state.clone();
-                                                tokio::spawn(handle_connection(stream, s, ConnectionRole::Project));
+                                                tokio::spawn(handle_connection(stream, s, conn_role));
                                             }
                                             Err(e) => { warn!("project socket accept error: {e}"); break; }
                                         }

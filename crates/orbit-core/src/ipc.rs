@@ -67,6 +67,19 @@ pub struct PlannerTrace {
     pub raw_response: String,
 }
 
+// ── project socket role ───────────────────────────────────────────────────────
+
+/// Role granted to connections on a project socket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectRole {
+    /// Can read plan state and approve AwaitingApproval nodes.
+    #[default]
+    Contributor,
+    /// Read-only; cannot approve nodes.
+    Observer,
+}
+
 // ── protocol ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,6 +140,8 @@ pub enum Request {
     /// Tell the daemon to start a restricted listener at the given path.
     AddProjectSocket {
         path: String,
+        #[serde(default)]
+        role: ProjectRole,
     },
 }
 
