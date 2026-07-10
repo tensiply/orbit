@@ -280,6 +280,14 @@ impl Plan {
             .collect()
     }
 
+    pub fn delete(&self) -> Result<()> {
+        let path = plans_dir().join(format!("{}.json", self.id));
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
     pub fn is_budget_exhausted(&self) -> bool {
         let Some(max) = self.policy.max_tokens else {
             return false;

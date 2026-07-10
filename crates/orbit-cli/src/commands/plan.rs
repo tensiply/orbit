@@ -91,6 +91,15 @@ pub enum PlanCommand {
         #[arg(long, default_value = "3")]
         interval: u64,
     },
+    /// Delete terminal plans older than N days
+    Prune {
+        /// Delete plans older than this many days (default: 7)
+        #[arg(long, default_value = "7")]
+        days: u64,
+        /// Show what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Freeze dispatch — Running nodes finish but no new nodes are started
     Pause {
         /// Plan ID to pause
@@ -174,9 +183,21 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                             "  [{:?}] {} — {:?}{}",
                             node.status, node.label, node.task_type, cost_str
                         );
+                        let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
                         if node.status == orbit_core::plan::NodeStatus::Running {
-                            let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
                             println!("         tmux attach -t {session_key}");
+                        }
+                        // Log preview: last 5 lines for Running/Completed/Failed nodes
+                        if matches!(
+                            node.status,
+                            orbit_core::plan::NodeStatus::Running
+                                | orbit_core::plan::NodeStatus::Completed
+                                | orbit_core::plan::NodeStatus::Failed
+                        ) && let Some(preview) = node_log_preview(&session_key, 5)
+                        {
+                            for line in preview.lines() {
+                                println!("         │ {line}");
+                            }
                         }
                     }
                     if total_cost > 0.0 {
@@ -328,6 +349,48 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     audit_trail.len(),
                     if memory_run.is_some() { ", memory record included" } else { "" }
                 );
+            }
+        }
+
+        Some(PlanCommand::Prune { days, dry_run }) => {
+            let cutoff_secs = days * 24 * 3600;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let plans = Plan::load_all();
+            let prunable: Vec<&Plan> = plans
+                .iter()
+                .filter(|p| {
+                    matches!(
+                        p.status,
+                        orbit_core::plan::PlanStatus::Completed
+                            | orbit_core::plan::PlanStatus::Failed
+                            | orbit_core::plan::PlanStatus::Cancelled
+                    ) && now.saturating_sub(p.created_at) >= cutoff_secs
+                })
+                .collect();
+
+            if prunable.is_empty() {
+                println!("No plans to prune (terminal, older than {days} days).");
+                return Ok(());
+            }
+
+            for plan in &prunable {
+                let age_days = now.saturating_sub(plan.created_at) / 86400;
+                println!(
+                    "{} [{:?}] {}d old — {}",
+                    plan.id, plan.status, age_days, plan.intent
+                );
+                if !dry_run {
+                    let _ = plan.delete();
+                }
+            }
+
+            if dry_run {
+                println!("\n(dry-run) {} plan(s) would be deleted.", prunable.len());
+            } else {
+                println!("\nDeleted {} plan(s).", prunable.len());
             }
         }
 
@@ -682,13 +745,28 @@ fn print_plan_tree(plans: &[Plan]) {
     }
 }
 
+/// Returns last `n` lines from a node's captured log, or None if no log exists.
+fn node_log_preview(session_key: &str, n: usize) -> Option<String> {
+    let log_path = std::env::temp_dir()
+        .join("orbit-plan-nodes")
+        .join(format!("{session_key}.log"));
+    let content = std::fs::read_to_string(log_path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(n);
+    Some(lines[start..].join("\n"))
+}
+
 fn resolve_scope_from_cwd() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
-    let cwd = std::env::current_dir().unwrap_or_default();
+    // Prefer git repo root over cwd — handles subdirectory invocations correctly.
+    let anchor = git_repo_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let home = directories::BaseDirs::new()
         .map(|b| b.home_dir().to_path_buf())
         .unwrap_or_default();
 
-    let parts: Vec<String> = cwd
+    let parts: Vec<String> = anchor
         .strip_prefix(&home)
         .ok()
         .map(|p| {
@@ -711,5 +789,19 @@ fn resolve_scope_from_cwd() -> (Option<String>, Option<String>, Option<String>, 
         [ws, tenant] => (Some(ws.clone()), Some(tenant.clone()), None, None),
         [ws] => (Some(ws.clone()), None, None, None),
         _ => (None, None, None, None),
+    }
+}
+
+/// Returns the git repository root for the current directory, if inside a git repo.
+fn git_repo_root() -> Option<std::path::PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8(output.stdout).ok()?;
+        Some(std::path::PathBuf::from(path.trim()))
+    } else {
+        None
     }
 }
