@@ -201,23 +201,41 @@ impl ServerState {
                 repository,
                 dry_run,
                 verbose,
+                extra_repos,
             } => {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
                     memory::load_recent_runs,
                     plan::{PlanScope, PlanStatus},
                 };
+                use orbit_engine::resolver::{self, ResolveArgs};
                 use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
 
                 let scope = PlanScope { workspace, tenant, project, repository };
                 let recent = load_recent_runs(5);
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine)) {
+                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &extra_repos) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
                     Ok((mut plan, trace)) => {
+                        // Validate all scope_overrides resolve
+                        for node in &plan.nodes {
+                            if let Some(ref s) = node.scope_override {
+                                if let Err(e) = resolver::resolve(ResolveArgs {
+                                    workspace: s.workspace.clone(),
+                                    tenant: s.tenant.clone(),
+                                    project: s.project.clone(),
+                                    repository: s.repository.clone(),
+                                }) {
+                                    return Response::Error {
+                                        message: format!("node {} scope_override invalid: {e}", node.id),
+                                    };
+                                }
+                            }
+                        }
+
                         let node_count = plan.nodes.len();
                         let trace_out = if verbose { Some(trace) } else { None };
                         if dry_run {
@@ -473,7 +491,7 @@ impl ServerState {
                 let recent = load_recent_runs(5);
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine)) {
+                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &[]) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },

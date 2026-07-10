@@ -34,7 +34,7 @@ pub fn replan(
 ) -> Result<Plan> {
     let enhanced_intent = build_replan_intent(&original.intent, failed_node, reason);
     let (mut child, _trace) =
-        invoke_planner(&enhanced_intent, &original.scope, recent_runs, cfg, backend)?;
+        invoke_planner(&enhanced_intent, &original.scope, recent_runs, cfg, backend, &[])?;
     child.parent_plan_id = Some(original.id.clone());
     child.replan_count = original.replan_count + 1;
     child.status = PlanStatus::Running;

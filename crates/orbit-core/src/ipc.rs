@@ -109,6 +109,8 @@ pub enum Request {
         dry_run: bool,
         #[serde(default)]
         verbose: bool,
+        #[serde(default)]
+        extra_repos: Vec<crate::plan::CrossRepoSpec>,
     },
     GetPlan {
         id: String,

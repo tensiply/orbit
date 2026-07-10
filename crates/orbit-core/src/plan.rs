@@ -111,6 +111,17 @@ pub struct PlanScope {
     pub repository: Option<String>,
 }
 
+/// A named repo available for cross-repo node targeting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossRepoSpec {
+    /// Short alias used in planner prompt (e.g. "backend", "frontend")
+    pub alias: String,
+    pub workspace: Option<String>,
+    pub tenant: Option<String>,
+    pub project: Option<String>,
+    pub repository: Option<String>,
+}
+
 impl PlanScope {
     pub fn scope_key(&self) -> String {
         [

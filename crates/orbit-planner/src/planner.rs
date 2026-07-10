@@ -26,6 +26,7 @@ The Plan IR must follow this schema:
       "intent": "specific task for this node",
       "engine": "Claude",
       "depends_on": [],
+      "scope_override": null,
       "policy": {
         "timeout_secs": null,
         "retry_max": 1,
@@ -41,6 +42,10 @@ task_type values: Code | Test | Review | Verify | Pr
 engine values: Claude | Opencode | Gemini
 risk_level values: Low | Medium | High
 verify values: ExitCode | LlmJudge
+
+scope_override: null means the node uses the plan's default scope. To target a different repo, set:
+  "scope_override": { "workspace": "AI", "tenant": "AIDEV", "project": "AI-ECOSYSTEM", "repository": "orbit" }
+If extra repos are listed in the context, use their exact field values.
 
 Rules:
 - For Phase 1, generate 1-3 nodes maximum.
@@ -73,6 +78,14 @@ struct PlanDraft {
     edges: Vec<EdgeDraft>,
 }
 
+#[derive(Deserialize, Default)]
+struct ScopeDraft {
+    workspace: Option<String>,
+    tenant: Option<String>,
+    project: Option<String>,
+    repository: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct NodeDraft {
     id: String,
@@ -86,6 +99,8 @@ struct NodeDraft {
     engine: String,
     #[serde(default)]
     depends_on: Vec<String>,
+    #[serde(default)]
+    scope_override: Option<ScopeDraft>,
     #[serde(default)]
     policy: NodePolicyDraft,
 }
@@ -149,6 +164,7 @@ pub fn create_plan_prompt(
     intent: &str,
     scope: &PlanScope,
     recent_runs: &[PlanRunRecord],
+    extra_repos: &[orbit_core::plan::CrossRepoSpec],
 ) -> String {
     let mut prompt = format!("User intent: {intent}\n\nWorkspace scope:\n");
     if let Some(ref w) = scope.workspace {
@@ -162,6 +178,17 @@ pub fn create_plan_prompt(
     }
     if let Some(ref r) = scope.repository {
         prompt.push_str(&format!("  repository: {r}\n"));
+    }
+
+    if !extra_repos.is_empty() {
+        prompt.push_str("\nAvailable repos for cross-repo nodes:\n");
+        for repo in extra_repos {
+            prompt.push_str(&format!("  alias: {}\n", repo.alias));
+            if let Some(ref w) = repo.workspace { prompt.push_str(&format!("    workspace: {w}\n")); }
+            if let Some(ref t) = repo.tenant { prompt.push_str(&format!("    tenant: {t}\n")); }
+            if let Some(ref p) = repo.project { prompt.push_str(&format!("    project: {p}\n")); }
+            if let Some(ref r) = repo.repository { prompt.push_str(&format!("    repository: {r}\n")); }
+        }
     }
 
     let context: Vec<&PlanRunRecord> = recent_runs.iter().rev().take(3).collect();
@@ -234,7 +261,12 @@ fn draft_to_node(d: NodeDraft) -> PlanNode {
         label: d.label,
         intent: d.intent,
         engine,
-        scope_override: None,
+        scope_override: d.scope_override.map(|s| PlanScope {
+            workspace: s.workspace,
+            tenant: s.tenant,
+            project: s.project,
+            repository: s.repository,
+        }),
         status: NodeStatus::Pending,
         depends_on: d.depends_on,
         policy: NodePolicy {
@@ -329,9 +361,10 @@ pub fn invoke_planner(
     recent_runs: &[PlanRunRecord],
     cfg: &PlannerConfig,
     backend: &dyn PlannerBackend,
+    extra_repos: &[orbit_core::plan::CrossRepoSpec],
 ) -> Result<(Plan, PlannerTrace)> {
     let system_prompt = build_system_prompt(cfg);
-    let user_prompt = create_plan_prompt(intent, scope, recent_runs);
+    let user_prompt = create_plan_prompt(intent, scope, recent_runs, extra_repos);
     let full_prompt = format!("{system_prompt}\n\n---\n\n{user_prompt}");
 
     let raw = backend.call(&full_prompt)?;

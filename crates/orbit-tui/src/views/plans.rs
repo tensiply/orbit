@@ -232,6 +232,18 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Span::raw("")
                 };
+                let repo_span = if let Some(ref s) = node.scope_override {
+                    if let Some(ref r) = s.repository {
+                        Span::styled(
+                            format!(" [→{r}]"),
+                            Style::default().fg(warning),
+                        )
+                    } else {
+                        Span::raw("")
+                    }
+                } else {
+                    Span::raw("")
+                };
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {sym} "), sym_style),
                     Span::raw(truncate(&node.label, 40)),
@@ -240,6 +252,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         Style::default().fg(dim),
                     ),
                     cost_span,
+                    repo_span,
                 ]));
 
                 let plan_suffix = plan.id.trim_start_matches("plan_");

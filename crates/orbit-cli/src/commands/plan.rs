@@ -6,7 +6,7 @@ use orbit_core::{
     eval::EvalConstraint,
     ipc::{PlanStreamEvent, ProjectRole, Request, Response},
     memory::find_run,
-    plan::{Plan, PlanNodeType},
+    plan::{CrossRepoSpec, Plan, PlanNodeType},
 };
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -46,6 +46,10 @@ pub struct PlanArgs {
     /// Repository scope override
     #[arg(long)]
     pub repository: Option<String>,
+
+    /// Additional repos available for cross-repo node targeting (path to local repo dir)
+    #[arg(long = "repo", value_name = "PATH")]
+    pub extra_repos: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -141,6 +145,11 @@ pub enum PlanCommand {
         #[arg(long)]
         follow: bool,
     },
+    /// List all distinct repos targeted by a plan's nodes
+    Repos {
+        /// Plan ID
+        id: String,
+    },
     /// Dry-run planner and evaluate the plan structure (no engine executed)
     Eval {
         /// Intent to plan
@@ -189,9 +198,14 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                         } else {
                             String::new()
                         };
+                        let repo_tag = if let Some(ref s) = node.scope_override {
+                            s.repository.as_deref().map(|r| format!(" [repo→{r}]")).unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
                         println!(
-                            "  [{:?}] {} — {:?}{}",
-                            node.status, node.label, node.task_type, cost_str
+                            "  [{:?}] {} — {:?}{}{}",
+                            node.status, node.label, node.task_type, cost_str, repo_tag
                         );
                         let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
                         if node.status == orbit_core::plan::NodeStatus::Running {
@@ -634,6 +648,38 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
+        Some(PlanCommand::Repos { id }) => {
+            match send_raw(&Request::GetPlan { id }).await? {
+                Response::PlanInfo { plan } => {
+                    let mut repos: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    // Include the plan's own scope if it has a repository
+                    if let Some(ref r) = plan.scope.repository {
+                        repos.insert(r.clone());
+                    }
+                    for node in &plan.nodes {
+                        if let Some(ref s) = node.scope_override {
+                            if let Some(ref r) = s.repository {
+                                repos.insert(r.clone());
+                            }
+                        }
+                    }
+                    if repos.is_empty() {
+                        println!("Plan {} has no explicit repo scopes.", plan.id);
+                    } else {
+                        println!("Repos touched by plan {}:", plan.id);
+                        for r in &repos {
+                            println!("  {r}");
+                        }
+                    }
+                }
+                Response::Error { message } => {
+                    eprintln!("Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("Unexpected response"),
+            }
+        }
+
         None => {
             let intent = match args.intent {
                 Some(i) => i,
@@ -653,6 +699,25 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 (args.workspace, args.tenant, args.project, args.repository)
             };
 
+            let extra_repos: Vec<CrossRepoSpec> = args.extra_repos
+                .iter()
+                .map(|p| {
+                    let path = std::path::Path::new(p);
+                    let alias = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(p)
+                        .to_string();
+                    CrossRepoSpec {
+                        alias: alias.clone(),
+                        workspace: None,
+                        tenant: None,
+                        project: None,
+                        repository: Some(alias),
+                    }
+                })
+                .collect();
+
             println!("Planning: {intent}");
             if args.dry_run {
                 println!("(dry-run — plan will not execute)");
@@ -666,6 +731,7 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 repository,
                 dry_run: args.dry_run,
                 verbose: args.verbose,
+                extra_repos,
             })
             .await?
             {
