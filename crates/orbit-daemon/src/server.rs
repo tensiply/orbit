@@ -662,7 +662,7 @@ pub async fn run() -> Result<()> {
     resume_running_plans();
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
-    let (event_tx, _) = broadcast::channel::<PlanStreamEvent>(256);
+    let (event_tx, _) = broadcast::channel::<PlanStreamEvent>(4096);
     let state = ServerState::new(shutdown_tx.clone(), event_tx.clone());
 
     // Background: auto-clean dead sessions every 60s

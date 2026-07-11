@@ -35,6 +35,8 @@ pub enum PlanStreamEvent {
     NodeStarted { plan_id: String, node_id: String, label: String },
     NodeCompleted { plan_id: String, node_id: String },
     NodeFailed { plan_id: String, node_id: String, error: String },
+    /// A single line of live output from a running node's tmux pane.
+    NodeOutput { plan_id: String, node_id: String, line: String },
     PlanCompleted { plan_id: String },
     PlanFailed { plan_id: String },
     PlanReplanning { plan_id: String, child_plan_id: String },
@@ -46,6 +48,7 @@ impl PlanStreamEvent {
             Self::NodeStarted { plan_id, .. }
             | Self::NodeCompleted { plan_id, .. }
             | Self::NodeFailed { plan_id, .. }
+            | Self::NodeOutput { plan_id, .. }
             | Self::PlanCompleted { plan_id }
             | Self::PlanFailed { plan_id }
             | Self::PlanReplanning { plan_id, .. } => plan_id,

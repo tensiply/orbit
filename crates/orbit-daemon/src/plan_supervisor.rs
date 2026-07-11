@@ -281,7 +281,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             Ok(session) => {
                 let plan_suffix = plan.id.trim_start_matches("plan_");
                 let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
-                start_output_capture(&session_key, &session);
+                start_output_capture(&session_key, &session, &plan.id, &node_id, event_tx.clone());
                 let node = &mut plan.nodes[idx];
                 node.session_id = Some(session.id.clone());
                 node.status = NodeStatus::Running;
@@ -454,14 +454,23 @@ fn dispatch_node(
 
 // ── Output capture ────────────────────────────────────────────────────────────
 
-/// Start piping tmux pane output to a per-node log file.
-fn start_output_capture(session_key: &str, session: &Session) {
+/// Start piping tmux pane output to a per-node log file and stream lines
+/// to the broadcast channel in real time.
+fn start_output_capture(
+    session_key: &str,
+    session: &Session,
+    plan_id: &str,
+    node_id: &str,
+    event_tx: broadcast::Sender<PlanStreamEvent>,
+) {
     let Some(ref tmux_name) = session.tmux_session else {
         return;
     };
     let log_dir = std::env::temp_dir().join("orbit-plan-nodes");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join(format!("{session_key}.log"));
+
+    // Pipe tmux pane output to the log file.
     let _ = std::process::Command::new("tmux")
         .args([
             "pipe-pane",
@@ -472,6 +481,56 @@ fn start_output_capture(session_key: &str, session: &Session) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+
+    // Tail the log file and emit NodeOutput events for each new line.
+    let plan_id = plan_id.to_string();
+    let node_id = node_id.to_string();
+    std::thread::spawn(move || {
+        // Wait for the file to appear (pipe-pane creates it on first output).
+        let mut wait = 0u32;
+        while !log_path.exists() && wait < 50 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            wait += 1;
+        }
+        if !log_path.exists() {
+            return;
+        }
+
+        use std::io::{BufRead, BufReader};
+        let Ok(file) = std::fs::File::open(&log_path) else {
+            return;
+        };
+        let mut reader = BufReader::new(file);
+        let mut line = String::new();
+        // Stop after 30 s of silence — the engine has finished by then.
+        let mut empty_polls = 0u32;
+
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    empty_polls += 1;
+                    if empty_polls > 300 {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Ok(_) => {
+                    empty_polls = 0;
+                    let content = line.trim_end_matches(['\n', '\r']).to_string();
+                    if !content.is_empty() {
+                        // A lagged or closed receiver is not an error — ignore.
+                        let _ = event_tx.send(PlanStreamEvent::NodeOutput {
+                            plan_id: plan_id.clone(),
+                            node_id: node_id.clone(),
+                            line: content,
+                        });
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
 }
 
 /// Read the last 100 lines from the node's log file.

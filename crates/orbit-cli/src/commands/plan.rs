@@ -372,6 +372,9 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     PlanStreamEvent::NodeFailed { node_id, error, .. } => {
                         println!("[fail]   {node_id}: {error}");
                     }
+                    PlanStreamEvent::NodeOutput { node_id, line, .. } => {
+                        println!("[{node_id}] {line}");
+                    }
                     PlanStreamEvent::PlanCompleted { .. } => {
                         println!("Plan {id} completed.");
                     }
@@ -857,6 +860,9 @@ async fn stream_until_done(id: &str) {
                     }
                     PlanStreamEvent::NodeFailed { node_id, error, .. } => {
                         println!("[fail]   {node_id}: {error}");
+                    }
+                    PlanStreamEvent::NodeOutput { node_id, line, .. } => {
+                        println!("[{node_id}] {line}");
                     }
                     PlanStreamEvent::PlanCompleted { plan_id } => {
                         println!("Plan {plan_id} completed.");
