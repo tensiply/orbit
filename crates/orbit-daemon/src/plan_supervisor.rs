@@ -398,6 +398,14 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
 
         fire_plan_notification(&plan.intent, &plan.id, &outcome);
 
+        let total_cost: f64 = plan.nodes.iter()
+            .filter_map(|n| n.token_usage.as_ref())
+            .map(|u| u.estimated_cost_usd)
+            .sum();
+        let total_tokens: u64 = plan.nodes.iter()
+            .filter_map(|n| n.token_usage.as_ref())
+            .map(|u| u.prompt_tokens + u.completion_tokens)
+            .sum();
         let _ = append_plan_run(&PlanRunRecord {
             plan_id: plan.id.clone(),
             intent: plan.intent.clone(),
@@ -408,6 +416,9 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             created_at: plan.created_at,
             scope_key: plan.scope.scope_key(),
             tags: vec![],
+            cost_usd: total_cost,
+            total_tokens,
+            template_name: None,
         });
 
         let outcome_str = format!("{outcome:?}");

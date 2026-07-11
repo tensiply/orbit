@@ -68,6 +68,15 @@ pub struct PlanRunRecord {
     pub created_at: u64,
     pub scope_key: String,
     pub tags: Vec<String>,
+    /// Estimated total USD cost across all nodes (0.0 when no token data available).
+    #[serde(default)]
+    pub cost_usd: f64,
+    /// Total tokens consumed across all nodes (prompt + completion).
+    #[serde(default)]
+    pub total_tokens: u64,
+    /// Template name if this plan was created via `orbit plan template run`.
+    #[serde(default)]
+    pub template_name: Option<String>,
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -169,18 +178,28 @@ pub struct MemoryStats {
     pub avg_duration_secs: f64,
     pub avg_node_count: f64,
     pub avg_replan_count: f64,
-    /// Top 5 scope_keys by frequency.
+    /// Top 5 scope_keys by run frequency.
     pub top_scopes: Vec<(String, usize)>,
+    /// Total estimated USD cost across all recorded plan runs.
+    pub total_cost_usd: f64,
+    /// Top 5 scope_keys by accumulated cost (scope_key, cost_usd).
+    pub cost_by_scope: Vec<(String, f64)>,
+    /// Top 5 template names by accumulated cost (template_name, cost_usd).
+    pub cost_by_template: Vec<(String, f64)>,
 }
 
 pub fn memory_stats() -> MemoryStats {
     let path = memory_path();
+    let empty = MemoryStats {
+        total_runs: 0, completed: 0, failed: 0,
+        avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
+        top_scopes: vec![],
+        total_cost_usd: 0.0,
+        cost_by_scope: vec![],
+        cost_by_template: vec![],
+    };
     let Ok(text) = fs::read_to_string(&path) else {
-        return MemoryStats {
-            total_runs: 0, completed: 0, failed: 0,
-            avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
-            top_scopes: vec![],
-        };
+        return empty;
     };
     let records: Vec<PlanRunRecord> = text
         .lines()
@@ -189,11 +208,7 @@ pub fn memory_stats() -> MemoryStats {
 
     let total = records.len();
     if total == 0 {
-        return MemoryStats {
-            total_runs: 0, completed: 0, failed: 0,
-            avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
-            top_scopes: vec![],
-        };
+        return empty;
     }
 
     let completed = records.iter().filter(|r| r.outcome == "Completed").count();
@@ -202,6 +217,9 @@ pub fn memory_stats() -> MemoryStats {
     let avg_nodes = records.iter().map(|r| r.node_count as f64).sum::<f64>() / total as f64;
     let avg_replan = records.iter().map(|r| r.replan_count as f64).sum::<f64>() / total as f64;
 
+    let total_cost_usd: f64 = records.iter().map(|r| r.cost_usd).sum();
+
+    // Top scopes by run count
     let mut scope_counts: HashMap<&str, usize> = HashMap::new();
     for r in &records {
         *scope_counts.entry(r.scope_key.as_str()).or_default() += 1;
@@ -213,6 +231,34 @@ pub fn memory_stats() -> MemoryStats {
     top_scopes.sort_by(|a, b| b.1.cmp(&a.1));
     top_scopes.truncate(5);
 
+    // Top scopes by cost
+    let mut scope_cost: HashMap<&str, f64> = HashMap::new();
+    for r in &records {
+        *scope_cost.entry(r.scope_key.as_str()).or_default() += r.cost_usd;
+    }
+    let mut cost_by_scope: Vec<(String, f64)> = scope_cost
+        .into_iter()
+        .filter(|(_, c)| *c > 0.0)
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    cost_by_scope.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    cost_by_scope.truncate(5);
+
+    // Top templates by cost
+    let mut tmpl_cost: HashMap<&str, f64> = HashMap::new();
+    for r in &records {
+        if let Some(ref name) = r.template_name {
+            *tmpl_cost.entry(name.as_str()).or_default() += r.cost_usd;
+        }
+    }
+    let mut cost_by_template: Vec<(String, f64)> = tmpl_cost
+        .into_iter()
+        .filter(|(_, c)| *c > 0.0)
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    cost_by_template.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    cost_by_template.truncate(5);
+
     MemoryStats {
         total_runs: total,
         completed,
@@ -221,6 +267,9 @@ pub fn memory_stats() -> MemoryStats {
         avg_node_count: avg_nodes,
         avg_replan_count: avg_replan,
         top_scopes,
+        total_cost_usd,
+        cost_by_scope,
+        cost_by_template,
     }
 }
 
@@ -256,6 +305,9 @@ mod tests {
             created_at: 0,
             scope_key: "AI/AIDEV/AI-ECOSYSTEM/orbit".into(),
             tags: vec!["code".into()],
+            cost_usd: 0.0,
+            total_tokens: 0,
+            template_name: None,
         }
     }
 
