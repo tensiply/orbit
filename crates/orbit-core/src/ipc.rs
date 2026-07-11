@@ -131,7 +131,11 @@ pub enum Request {
     GetPlan {
         id: String,
     },
-    ListPlans,
+    ListPlans {
+        /// Filter plans by workspace name. None = all workspaces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace_filter: Option<String>,
+    },
     CancelPlan {
         id: String,
     },

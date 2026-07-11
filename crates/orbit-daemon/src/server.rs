@@ -37,7 +37,7 @@ impl ConnectionRole {
             ConnectionRole::Contributor => matches!(
                 req,
                 Request::GetPlan { .. }
-                    | Request::ListPlans
+                    | Request::ListPlans { .. }
                     | Request::GetPlanStats
                     | Request::ApprovePlanNode { .. }
                     | Request::PausePlan { .. }
@@ -48,7 +48,7 @@ impl ConnectionRole {
             ConnectionRole::Observer => matches!(
                 req,
                 Request::GetPlan { .. }
-                    | Request::ListPlans
+                    | Request::ListPlans { .. }
                     | Request::GetPlanStats
                     | Request::StreamPlan { .. }
                     | Request::ListSchedules
@@ -211,7 +211,7 @@ impl ServerState {
                 max_nodes,
             } => {
                 use orbit_core::{
-                    audit::{append_event, AuditEvent},
+                    audit::{append_event_for, AuditEvent},
                     memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
                     user_config::UserConfig,
@@ -266,7 +266,7 @@ impl ServerState {
                             }
                         } else {
                             plan.status = PlanStatus::Running;
-                            let _ = append_event(&AuditEvent::PlanCreated {
+                            let _ = append_event_for(scope.workspace.as_deref(), &AuditEvent::PlanCreated {
                                 plan_id: plan.id.clone(),
                                 intent: intent.clone(),
                                 node_count,
@@ -304,8 +304,11 @@ impl ServerState {
                 },
             },
 
-            Request::ListPlans => {
-                let plans = orbit_core::plan::Plan::load_all();
+            Request::ListPlans { workspace_filter } => {
+                let plans = match workspace_filter.as_deref() {
+                    None | Some("") => orbit_core::plan::Plan::load_all(),
+                    Some(ws) => orbit_core::plan::Plan::load_all_for_workspace(Some(ws)),
+                };
                 Response::Plans { plans }
             }
 
@@ -626,7 +629,7 @@ impl ServerState {
 
             Request::RunScheduleNow { id } => {
                 use orbit_core::{
-                    audit::{append_event, AuditEvent},
+                    audit::{append_event_for, AuditEvent},
                     memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
                     schedule::{upsert, now_secs},
@@ -662,7 +665,7 @@ impl ServerState {
                     Ok((mut plan, _trace)) => {
                         plan.status = PlanStatus::Running;
                         let plan_id = plan.id.clone();
-                        let _ = append_event(&AuditEvent::PlanCreated {
+                        let _ = append_event_for(scope.workspace.as_deref(), &AuditEvent::PlanCreated {
                             plan_id: plan_id.clone(),
                             intent: sched.intent.clone(),
                             node_count: plan.nodes.len(),

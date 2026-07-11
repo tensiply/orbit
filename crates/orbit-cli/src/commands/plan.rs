@@ -98,6 +98,9 @@ pub enum PlanCommand {
         /// Filter plans whose scope_key contains this string
         #[arg(long, value_name = "PATTERN")]
         scope: Option<String>,
+        /// Filter plans by workspace name (e.g. AI, BeFra)
+        #[arg(long, value_name = "NAME")]
+        workspace: Option<String>,
         /// Group output by scope_key
         #[arg(long)]
         group: bool,
@@ -402,8 +405,8 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::List { scope, group }) => {
-            match send_raw(&Request::ListPlans).await? {
+        Some(PlanCommand::List { scope, workspace, group }) => {
+            match send_raw(&Request::ListPlans { workspace_filter: workspace.clone() }).await? {
                 Response::Plans { mut plans } => {
                     if let Some(ref pat) = scope {
                         plans.retain(|p| p.scope.scope_key().contains(pat.as_str()));
@@ -1388,7 +1391,7 @@ async fn run_new() -> Result<()> {
                 println!();
                 println!("  Plan preview — {node_count} node(s):");
                 // Get the actual plan to show nodes
-                match send_raw(&Request::ListPlans).await? {
+                match send_raw(&Request::ListPlans { workspace_filter: None }).await? {
                     Response::Plans { plans } => {
                         if let Some(plan) = plans.last() {
                             for (i, node) in plan.nodes.iter().enumerate() {

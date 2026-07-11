@@ -1,12 +1,18 @@
 use orbit_core::{
-    audit::{append_event, AuditEvent},
+    audit::{append_event_for, AuditEvent},
     engine::Engine,
     hooks::{run_hooks, HookEvent},
     ipc::PlanStreamEvent,
-    memory::{append_plan_run, load_recent_runs, PlanRunRecord},
+    memory::{append_plan_run_for, load_recent_runs, PlanRunRecord},
     plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
     session::Session,
 };
+
+/// Extract the workspace name from a plan for workspace-scoped storage routing.
+#[inline]
+fn ws(plan: &Plan) -> Option<&str> {
+    plan.scope.workspace.as_deref()
+}
 use orbit_engine::{
     config, launcher,
     resolver::{self, ResolveArgs},
@@ -83,7 +89,7 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
     parent.status = outcome.clone();
     parent.completed_at = Some(now_secs());
 
-    let _ = append_event(&AuditEvent::PlanCompleted {
+    let _ = append_event_for(ws(parent), &AuditEvent::PlanCompleted {
         plan_id: parent.id.clone(),
         outcome: format!("{outcome:?}"),
         total_duration_secs: duration,
@@ -107,6 +113,8 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
 }
 
 fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
+    // Snapshot workspace before any mutable borrow of plan.nodes.
+    let workspace = plan.scope.workspace.clone();
     let all_sessions = Session::load_all();
 
     // ── 0. Enforce plan-level timeout ─────────────────────────────────────────
@@ -149,7 +157,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                 node.status = NodeStatus::Completed;
                 node.completed_at = Some(now_secs());
                 let duration = node.started_at.map(|s| now_secs().saturating_sub(s)).unwrap_or(0);
-                let _ = append_event(&AuditEvent::NodeCompleted {
+                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeCompleted {
                     plan_id: plan.id.clone(),
                     node_id: node.id.clone(),
                     duration_secs: duration,
@@ -186,7 +194,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                     node.status = NodeStatus::Failed;
                     node.completed_at = Some(now_secs());
                     node.error = Some(reason.clone());
-                    let _ = append_event(&AuditEvent::NodeFailed {
+                    let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
                         plan_id: plan.id.clone(),
                         node_id: node.id.clone(),
                         reason: reason.clone(),
@@ -276,7 +284,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             let node = &mut plan.nodes[idx];
             node.status = NodeStatus::AwaitingApproval;
             info!("node {node_id} requires approval ({risk:?}) in plan {}", plan.id);
-            let _ = append_event(&AuditEvent::PolicyBlocked {
+            let _ = append_event_for(workspace.as_deref(), &AuditEvent::PolicyBlocked {
                 plan_id: plan.id.clone(),
                 node_id: node_id.clone(),
                 reason: format!("{risk:?} risk requires approval"),
@@ -316,7 +324,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                 node.status = NodeStatus::Running;
                 node.started_at = Some(now_secs());
                 info!("dispatched node {} → session {} in plan {}", node_id, session.id, plan.id);
-                let _ = append_event(&AuditEvent::NodeStarted {
+                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeStarted {
                     plan_id: plan.id.clone(),
                     node_id: node_id.clone(),
                     engine: format!("{engine:?}"),
@@ -333,7 +341,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                 let node = &mut plan.nodes[idx];
                 node.status = NodeStatus::Failed;
                 node.error = Some(e.to_string());
-                let _ = append_event(&AuditEvent::NodeFailed {
+                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
                     plan_id: plan.id.clone(),
                     node_id: node_id.clone(),
                     reason: e.to_string(),
@@ -383,7 +391,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
         plan.status = outcome.clone();
         plan.completed_at = Some(now_secs());
 
-        let _ = append_event(&AuditEvent::PlanCompleted {
+        let _ = append_event_for(workspace.as_deref(), &AuditEvent::PlanCompleted {
             plan_id: plan.id.clone(),
             outcome: format!("{outcome:?}"),
             total_duration_secs: duration,
@@ -406,7 +414,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             .filter_map(|n| n.token_usage.as_ref())
             .map(|u| u.prompt_tokens + u.completion_tokens)
             .sum();
-        let _ = append_plan_run(&PlanRunRecord {
+        let _ = append_plan_run_for(workspace.as_deref(), &PlanRunRecord {
             plan_id: plan.id.clone(),
             intent: plan.intent.clone(),
             outcome: format!("{outcome:?}"),
@@ -633,6 +641,7 @@ fn fail_plan_enforced(
     reason: &str,
     event_tx: &broadcast::Sender<PlanStreamEvent>,
 ) -> anyhow::Result<()> {
+    let workspace = plan.scope.workspace.clone();
     let all_sessions = Session::load_all();
     for node in plan.nodes.iter_mut() {
         match node.status {
@@ -651,7 +660,7 @@ fn fail_plan_enforced(
                 node.status = NodeStatus::Failed;
                 node.completed_at = Some(now_secs());
                 node.error = Some(reason.to_string());
-                let _ = append_event(&AuditEvent::NodeFailed {
+                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
                     plan_id: plan.id.clone(),
                     node_id: node.id.clone(),
                     reason: reason.to_string(),
@@ -669,13 +678,13 @@ fn fail_plan_enforced(
     plan.status = PlanStatus::Failed;
     plan.completed_at = Some(now_secs());
 
-    let _ = append_event(&AuditEvent::PolicyBlocked {
+    let _ = append_event_for(workspace.as_deref(), &AuditEvent::PolicyBlocked {
         plan_id: plan.id.clone(),
         node_id: "plan".to_string(),
         reason: reason.to_string(),
         timestamp: now_secs(),
     });
-    let _ = append_event(&AuditEvent::PlanCompleted {
+    let _ = append_event_for(workspace.as_deref(), &AuditEvent::PlanCompleted {
         plan_id: plan.id.clone(),
         outcome: "Failed".to_string(),
         total_duration_secs: duration,

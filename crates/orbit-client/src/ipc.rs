@@ -129,7 +129,11 @@ pub async fn health() -> Result<HealthInfo> {
 }
 
 pub async fn list_plans() -> Result<Vec<orbit_core::plan::Plan>> {
-    match send(&Request::ListPlans).await? {
+    list_plans_filtered(None).await
+}
+
+pub async fn list_plans_filtered(workspace_filter: Option<&str>) -> Result<Vec<orbit_core::plan::Plan>> {
+    match send(&Request::ListPlans { workspace_filter: workspace_filter.map(|s| s.to_string()) }).await? {
         Response::Plans { plans } => Ok(plans),
         Response::Error { message } => bail!("{message}"),
         _ => bail!("unexpected response"),
