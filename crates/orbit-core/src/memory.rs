@@ -182,6 +182,8 @@ pub struct MemoryStats {
     pub top_scopes: Vec<(String, usize)>,
     /// Total estimated USD cost across all recorded plan runs.
     pub total_cost_usd: f64,
+    /// Total tokens consumed across all recorded plan runs (prompt + completion).
+    pub total_tokens: u64,
     /// Top 5 scope_keys by accumulated cost (scope_key, cost_usd).
     pub cost_by_scope: Vec<(String, f64)>,
     /// Top 5 template names by accumulated cost (template_name, cost_usd).
@@ -195,6 +197,7 @@ pub fn memory_stats() -> MemoryStats {
         avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
         top_scopes: vec![],
         total_cost_usd: 0.0,
+        total_tokens: 0,
         cost_by_scope: vec![],
         cost_by_template: vec![],
     };
@@ -218,6 +221,7 @@ pub fn memory_stats() -> MemoryStats {
     let avg_replan = records.iter().map(|r| r.replan_count as f64).sum::<f64>() / total as f64;
 
     let total_cost_usd: f64 = records.iter().map(|r| r.cost_usd).sum();
+    let total_tokens: u64 = records.iter().map(|r| r.total_tokens).sum();
 
     // Top scopes by run count
     let mut scope_counts: HashMap<&str, usize> = HashMap::new();
@@ -268,6 +272,7 @@ pub fn memory_stats() -> MemoryStats {
         avg_replan_count: avg_replan,
         top_scopes,
         total_cost_usd,
+        total_tokens,
         cost_by_scope,
         cost_by_template,
     }

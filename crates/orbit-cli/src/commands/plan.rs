@@ -488,6 +488,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     println!("Nodes:  {} dispatched, {} completed, {} failed",
                         stats.total_nodes_dispatched, stats.total_nodes_completed, stats.total_nodes_failed);
                     println!("Avg duration: {}s", stats.avg_duration_secs);
+                    if stats.total_cost_usd > 0.0 || stats.total_tokens > 0 {
+                        println!("Cost:   ${:.4} total, {} tokens",
+                            stats.total_cost_usd, stats.total_tokens);
+                    }
                 }
                 Response::Error { message } => {
                     eprintln!("Error: {message}");

@@ -134,6 +134,25 @@ pub fn run(args: MemoryArgs) -> Result<()> {
                     println!("    {} runs  —  {}", count, scope);
                 }
             }
+            if s.total_cost_usd > 0.0 {
+                println!();
+                println!("  Total cost:      ${:.4}", s.total_cost_usd);
+                println!("  Total tokens:    {}", s.total_tokens);
+                if !s.cost_by_scope.is_empty() {
+                    println!();
+                    println!("  Cost by scope:");
+                    for (scope, cost) in &s.cost_by_scope {
+                        println!("    ${:.4}  —  {}", cost, scope);
+                    }
+                }
+                if !s.cost_by_template.is_empty() {
+                    println!();
+                    println!("  Cost by template:");
+                    for (tmpl, cost) in &s.cost_by_template {
+                        println!("    ${:.4}  —  {}", cost, tmpl);
+                    }
+                }
+            }
         }
 
         MemoryCommand::Clear { dry_run } => {

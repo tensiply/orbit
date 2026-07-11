@@ -7,6 +7,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::plan::Plan;
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn now_secs() -> u64 {
@@ -131,6 +133,10 @@ pub struct AuditStats {
     pub total_nodes_dispatched: usize,
     pub total_nodes_completed: usize,
     pub total_nodes_failed: usize,
+    /// Total estimated USD cost summed from all plan files (best-effort, 0.0 if no token data).
+    pub total_cost_usd: f64,
+    /// Total tokens consumed across all plans (prompt + completion).
+    pub total_tokens: u64,
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -169,6 +175,17 @@ pub fn audit_stats() -> AuditStats {
     }
 
     stats.avg_duration_secs = total_duration.checked_div(duration_count).unwrap_or(0);
+
+    // Aggregate cost and token data from live plan files (both active and archived).
+    for plan in Plan::load_all() {
+        for node in &plan.nodes {
+            if let Some(ref usage) = node.token_usage {
+                stats.total_cost_usd += usage.estimated_cost_usd;
+                stats.total_tokens += usage.prompt_tokens + usage.completion_tokens;
+            }
+        }
+    }
+
     stats
 }
 
