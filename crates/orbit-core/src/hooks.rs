@@ -11,6 +11,10 @@ pub enum HookEvent {
     PostPlan,
     PreNode,
     PostNode,
+    /// Fired after a plan is saved and queued (applies to both manual and scheduled plans).
+    OnPlanCreated,
+    /// Fired when a scheduled plan is triggered by the scheduler loop.
+    OnScheduleFired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +63,8 @@ pub fn run_hooks(event: &HookEvent, env: &[(&str, &str)]) {
         HookEvent::PostPlan => "post_plan",
         HookEvent::PreNode => "pre_node",
         HookEvent::PostNode => "post_node",
+        HookEvent::OnPlanCreated => "on_plan_created",
+        HookEvent::OnScheduleFired => "on_schedule_fired",
     };
 
     for hook in hooks.iter().filter(|h| &h.event == event) {

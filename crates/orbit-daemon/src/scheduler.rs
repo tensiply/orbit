@@ -1,5 +1,6 @@
 use orbit_core::{
     audit::{AuditEvent, append_event},
+    hooks::{HookEvent, run_hooks},
     memory::{find_similar, load_recent_runs},
     plan::{CrossRepoSpec, PlanScope, PlanStatus},
     schedule::{ScheduleKind, load_all, next_cron_after, now_secs, upsert},
@@ -93,10 +94,22 @@ fn fire_schedule(sched: &orbit_core::schedule::ScheduledPlan, now: u64) {
                 node_count: plan.nodes.len(),
                 timestamp: now,
             });
+            run_hooks(
+                &HookEvent::OnScheduleFired,
+                &[
+                    ("ORBIT_SCHEDULE_ID", &sched.id),
+                    ("ORBIT_PLAN_ID", &plan_id),
+                    ("ORBIT_PLAN_INTENT", &sched.intent),
+                ],
+            );
             if let Err(e) = plan.save() {
                 warn!("scheduler: failed to save plan {plan_id}: {e}");
                 return;
             }
+            run_hooks(
+                &HookEvent::OnPlanCreated,
+                &[("ORBIT_PLAN_ID", &plan_id), ("ORBIT_PLAN_INTENT", &sched.intent)],
+            );
             info!("scheduler: created plan {plan_id} for schedule {}", sched.id);
 
             let mut updated = sched.clone();

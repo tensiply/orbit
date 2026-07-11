@@ -10,6 +10,7 @@ pub struct NotificationsConfig {
     pub enabled: bool,
     pub on_plan_complete: bool,
     pub on_plan_failed: bool,
+    pub webhook: WebhookConfig,
 }
 
 impl Default for NotificationsConfig {
@@ -18,8 +19,20 @@ impl Default for NotificationsConfig {
             enabled: true,
             on_plan_complete: true,
             on_plan_failed: true,
+            webhook: WebhookConfig::default(),
         }
     }
+}
+
+/// Outbound HTTP webhook fired on plan terminal events.
+/// Payload: `{ "event": "plan_completed"|"plan_failed", "plan_id", "intent", "timestamp" }`
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct WebhookConfig {
+    /// HTTP(S) endpoint to POST to. Empty = disabled.
+    pub url: String,
+    /// Optional `Authorization: Bearer <secret>` header.
+    pub secret: String,
 }
 
 // ── public API ────────────────────────────────────────────────────────────────

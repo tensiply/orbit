@@ -2,6 +2,7 @@ mod adf;
 mod launch;
 mod plans;
 mod popup;
+mod schedules;
 mod sessions;
 mod system;
 mod tasks;
@@ -35,6 +36,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Plans => plans::render(f, app, chunks[3]),
         Tab::System => system::render(f, app, chunks[3]),
         Tab::Tasks => tasks::render(f, app, chunks[3]),
+        Tab::Schedules => schedules::render(f, app, chunks[3]),
     }
 
     render_footer(f, app, chunks[4]);
@@ -82,6 +84,9 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         spans.push(tab_span("[5]", app.tab == Tab::Tasks, accent, dim));
         spans.push(Span::styled(" Tasks  ", tab_label_style(app.tab == Tab::Tasks, dim)));
     }
+
+    spans.push(tab_span("[6]", app.tab == Tab::Schedules, accent, dim));
+    spans.push(Span::styled(" Schedules  ", tab_label_style(app.tab == Tab::Schedules, dim)));
 
     let label = app.palette.label;
     spans.push(Span::styled("─  ", Style::default().fg(dim)));
@@ -152,6 +157,8 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" switch  "),
                 hint("[↑↓/jk]", accent),
                 Span::raw(" nav  "),
+                hint("[a]", accent),
+                Span::raw(" approve  "),
                 hint("[x]", accent),
                 Span::raw(" cancel  "),
                 hint("[r]", accent),
@@ -190,6 +197,20 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" details  "),
                 hint("[e]", accent),
                 Span::raw(" browser  "),
+                hint("[r]", accent),
+                Span::raw(" refresh  "),
+                hint("[q]", accent),
+                Span::raw(" quit"),
+            ]),
+            Tab::Schedules => Line::from(vec![
+                hint(" [Tab]", accent),
+                Span::raw(" switch  "),
+                hint("[↑↓/jk]", accent),
+                Span::raw(" nav  "),
+                hint("[x]", accent),
+                Span::raw(" cancel  "),
+                hint("[R]", accent),
+                Span::raw(" run now  "),
                 hint("[r]", accent),
                 Span::raw(" refresh  "),
                 hint("[q]", accent),

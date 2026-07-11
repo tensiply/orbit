@@ -659,7 +659,12 @@ fn fire_plan_notification(intent: &str, plan_id: &str, outcome: &PlanStatus) {
     let short_intent: String = intent.chars().take(72).collect();
     let title = if is_failure { "orbit · Plan Failed" } else { "orbit · Plan Completed" };
     let body = format!("{short_intent}  [{short_id}]");
-    std::thread::spawn(move || orbit_core::notify::maybe_send(title, &body, is_failure));
+    let plan_id = plan_id.to_string();
+    let intent = intent.to_string();
+    std::thread::spawn(move || {
+        orbit_core::notify::maybe_send(title, &body, is_failure);
+        crate::webhook::maybe_fire(&plan_id, &intent, is_failure);
+    });
 }
 
 fn now_secs() -> u64 {

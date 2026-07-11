@@ -156,6 +156,35 @@ pub async fn stream_plan_on(id: &str, sock: PathBuf) -> Result<tokio::sync::mpsc
     Ok(rx)
 }
 
+pub async fn approve_plan_node(plan_id: &str, node_id: &str) -> Result<()> {
+    match send(&Request::ApprovePlanNode {
+        plan_id: plan_id.to_string(),
+        node_id: node_id.to_string(),
+    })
+    .await?
+    {
+        Response::PlanApproved { .. } => Ok(()),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
+pub async fn list_schedules() -> Result<Vec<orbit_core::schedule::ScheduledPlan>> {
+    match send(&Request::ListSchedules).await? {
+        Response::Schedules { schedules } => Ok(schedules),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
+pub async fn cancel_schedule(id: &str) -> Result<()> {
+    match send(&Request::CancelSchedule { id: id.to_string() }).await? {
+        Response::ScheduleCancelled { .. } => Ok(()),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
 pub async fn launch_session(
     workspace: Option<String>,
     tenant: Option<String>,

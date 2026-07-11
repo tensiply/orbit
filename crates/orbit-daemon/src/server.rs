@@ -264,11 +264,17 @@ impl ServerState {
                                 &[("ORBIT_PLAN_ID", &plan.id), ("ORBIT_PLAN_INTENT", &intent)],
                             );
                             match plan.save() {
-                                Ok(_) => Response::PlanCreated {
-                                    id: plan.id,
-                                    node_count,
-                                    trace: trace_out,
-                                },
+                                Ok(_) => {
+                                    orbit_core::hooks::run_hooks(
+                                        &orbit_core::hooks::HookEvent::OnPlanCreated,
+                                        &[("ORBIT_PLAN_ID", &plan.id), ("ORBIT_PLAN_INTENT", &intent)],
+                                    );
+                                    Response::PlanCreated {
+                                        id: plan.id,
+                                        node_count,
+                                        trace: trace_out,
+                                    }
+                                }
                                 Err(e) => Response::Error {
                                     message: format!("save error: {e}"),
                                 },

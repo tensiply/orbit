@@ -5,8 +5,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use orbit_core::{
-    engine::Engine, ipc::socket_path, plan::Plan, session::Session, user_config::UserConfig,
-    workspace_config::detect_workspaces,
+    engine::Engine, ipc::socket_path, plan::Plan, schedule::ScheduledPlan, session::Session,
+    user_config::UserConfig, workspace_config::detect_workspaces,
 };
 use ratatui::{Terminal, backend::CrosstermBackend, widgets::TableState};
 use std::{
@@ -26,6 +26,7 @@ pub enum Tab {
     Plans,
     System,
     Tasks,
+    Schedules,
 }
 
 impl Tab {
@@ -38,26 +39,28 @@ impl Tab {
                 if jira_enabled {
                     Tab::Tasks
                 } else {
-                    Tab::Sessions
+                    Tab::Schedules
                 }
             }
-            Tab::Tasks => Tab::Sessions,
+            Tab::Tasks => Tab::Schedules,
+            Tab::Schedules => Tab::Sessions,
         }
     }
 
     pub fn prev(self, jira_enabled: bool) -> Self {
         match self {
-            Tab::Sessions => {
+            Tab::Sessions => Tab::Schedules,
+            Tab::Launch => Tab::Sessions,
+            Tab::Plans => Tab::Launch,
+            Tab::System => Tab::Plans,
+            Tab::Tasks => Tab::System,
+            Tab::Schedules => {
                 if jira_enabled {
                     Tab::Tasks
                 } else {
                     Tab::System
                 }
             }
-            Tab::Launch => Tab::Sessions,
-            Tab::Plans => Tab::Launch,
-            Tab::System => Tab::Plans,
-            Tab::Tasks => Tab::System,
         }
     }
 }
@@ -88,6 +91,38 @@ impl PlansState {
 
     pub fn move_down(&mut self) {
         let n = self.plans.len();
+        if n == 0 { return; }
+        self.selected = (self.selected + 1) % n;
+        self.table_state.select(Some(self.selected));
+    }
+}
+
+// ── schedules state ───────────────────────────────────────────────────────────
+
+pub struct SchedulesState {
+    pub schedules: Vec<ScheduledPlan>,
+    pub selected: usize,
+    pub table_state: ratatui::widgets::TableState,
+}
+
+impl SchedulesState {
+    pub fn new() -> Self {
+        Self { schedules: vec![], selected: 0, table_state: ratatui::widgets::TableState::default() }
+    }
+
+    pub fn selected_schedule(&self) -> Option<&ScheduledPlan> {
+        self.schedules.get(self.selected)
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.schedules.len();
+        if n == 0 { return; }
+        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        self.table_state.select(Some(self.selected));
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.schedules.len();
         if n == 0 { return; }
         self.selected = (self.selected + 1) % n;
         self.table_state.select(Some(self.selected));
@@ -683,6 +718,10 @@ pub enum AsyncAction {
     DaemonStop,
     RefreshPlans,
     CancelPlan(String),
+    ApprovePlanNode { plan_id: String, node_id: String },
+    RefreshSchedules,
+    CancelSchedule(String),
+    RunScheduleNow(String),
     /// Load tasks from cache; falls back to direct acli call if no cache exists.
     RefreshTasks,
     /// Force a direct acli call, bypassing cache (triggered by [r]).
@@ -708,6 +747,7 @@ pub struct App {
     pub launch: LaunchState,
     pub sys: SystemState,
     pub plans: PlansState,
+    pub schedules: SchedulesState,
     pub tasks: TasksState,
     pub jira_enabled: bool,
     pub status_msg: Option<String>,
@@ -750,6 +790,7 @@ impl App {
             launch,
             sys,
             plans: PlansState::new(),
+            schedules: SchedulesState::new(),
             tasks: TasksState::new(),
             jira_enabled,
             status_msg: None,
@@ -941,6 +982,11 @@ impl App {
                     }
                     return;
                 }
+                KeyCode::Char('6') => {
+                    self.tab = Tab::Schedules;
+                    self.pending_async = Some(AsyncAction::RefreshSchedules);
+                    return;
+                }
                 KeyCode::Char('w') => {
                     self.switch_workspace_next();
                     return;
@@ -955,6 +1001,7 @@ impl App {
             Tab::Plans => self.handle_plans_key(code),
             Tab::System => self.handle_system_key(code),
             Tab::Tasks => self.handle_tasks_key(code),
+            Tab::Schedules => self.handle_schedules_key(code),
         }
     }
 
@@ -1267,8 +1314,48 @@ impl App {
                     self.pending_async = Some(AsyncAction::CancelPlan(id));
                 }
             }
+            KeyCode::Char('a') => {
+                // Approve the first AwaitingApproval node in the selected plan.
+                if let Some(plan) = self.plans.selected_plan() {
+                    let waiting = plan.nodes.iter().find(|n| {
+                        n.status == orbit_core::plan::NodeStatus::AwaitingApproval
+                    });
+                    if let Some(node) = waiting {
+                        self.pending_async = Some(AsyncAction::ApprovePlanNode {
+                            plan_id: plan.id.clone(),
+                            node_id: node.id.clone(),
+                        });
+                    } else {
+                        self.status_msg = Some("No node awaiting approval.".into());
+                    }
+                }
+            }
             KeyCode::Char('r') => {
                 self.pending_async = Some(AsyncAction::RefreshPlans);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
+
+    fn handle_schedules_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => self.schedules.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.schedules.move_down(),
+            KeyCode::Char('x') | KeyCode::Delete => {
+                if let Some(sched) = self.schedules.selected_schedule() {
+                    let id = sched.id.clone();
+                    self.pending_async = Some(AsyncAction::CancelSchedule(id));
+                }
+            }
+            KeyCode::Char('R') => {
+                if let Some(sched) = self.schedules.selected_schedule() {
+                    let id = sched.id.clone();
+                    self.pending_async = Some(AsyncAction::RunScheduleNow(id));
+                }
+            }
+            KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::RefreshSchedules);
             }
             KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
             _ => {}
@@ -1569,6 +1656,79 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
             });
         }
 
+        AsyncAction::ApprovePlanNode { plan_id, node_id } => {
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::approve_plan_node(&plan_id, &node_id),
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    app.status_msg = Some(format!("Approved node {node_id}."));
+                    app.pending_async = Some(AsyncAction::RefreshPlans);
+                }
+                Ok(Err(e)) => {
+                    app.status_msg = Some(format!("Approve failed: {e}"));
+                }
+                _ => {
+                    app.status_msg = Some("Approve timed out.".into());
+                }
+            }
+        }
+
+        AsyncAction::RefreshSchedules => {
+            if let Ok(Ok(scheds)) = tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::list_schedules(),
+            )
+            .await
+            {
+                let n = scheds.len();
+                app.schedules.schedules = scheds;
+                app.schedules.selected = app.schedules.selected.min(n.saturating_sub(1));
+                app.schedules.table_state.select(if n > 0 { Some(app.schedules.selected) } else { None });
+            }
+        }
+
+        AsyncAction::CancelSchedule(id) => {
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::cancel_schedule(&id),
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    app.status_msg = Some(format!("Schedule {id} cancelled."));
+                    app.pending_async = Some(AsyncAction::RefreshSchedules);
+                }
+                Ok(Err(e)) => {
+                    app.status_msg = Some(format!("Cancel failed: {e}"));
+                }
+                _ => {
+                    app.status_msg = Some("Cancel timed out.".into());
+                }
+            }
+        }
+
+        AsyncAction::RunScheduleNow(id) => {
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::send_raw(&orbit_core::ipc::Request::RunScheduleNow { id: id.clone() }),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    app.status_msg = Some(format!("Schedule {id} fired."));
+                    app.pending_async = Some(AsyncAction::RefreshSchedules);
+                }
+                Ok(Err(e)) => {
+                    app.status_msg = Some(format!("Run failed: {e}"));
+                }
+                _ => {
+                    app.status_msg = Some("Run timed out.".into());
+                }
+            }
+        }
     }
 }
 
@@ -1629,6 +1789,20 @@ where
                     app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
                     app.plans.table_state
                         .select(if n > 0 { Some(app.plans.selected) } else { None });
+                }
+
+                if app.tab == Tab::Schedules
+                    && let Ok(Ok(scheds)) = tokio::time::timeout(
+                        Duration::from_millis(500),
+                        orbit_client::ipc::list_schedules(),
+                    )
+                    .await
+                {
+                    let n = scheds.len();
+                    app.schedules.schedules = scheds;
+                    app.schedules.selected = app.schedules.selected.min(n.saturating_sub(1));
+                    app.schedules.table_state
+                        .select(if n > 0 { Some(app.schedules.selected) } else { None });
                 }
             } else {
                 app.refresh_sessions();
