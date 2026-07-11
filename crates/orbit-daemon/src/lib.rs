@@ -1,3 +1,4 @@
+pub mod archival;
 pub mod jira_poller;
 pub mod plan_supervisor;
 pub mod scheduler;
