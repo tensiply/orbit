@@ -23,6 +23,7 @@ license = "MIT"
 # CLI
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
+clap_mangen = "0.2"
 
 # TUI
 ratatui = "0.30"

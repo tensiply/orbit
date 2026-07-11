@@ -131,6 +131,56 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     );
 
     println!();
+
+    // ── completions ───────────────────────────────────────────────────────────
+    section("completions");
+    let shell_bin = std::env::var("SHELL").unwrap_or_default();
+    let shell_name = shell_bin.split('/').last().unwrap_or("").to_string();
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+    let comp_path = match shell_name.as_str() {
+        "bash" => Some(home.join(".local/share/bash-completion/completions/orbit")),
+        "zsh" => Some(home.join(".local/share/zsh/site-functions/_orbit")),
+        "fish" => Some(home.join(".config/fish/completions/orbit.fish")),
+        _ => None,
+    };
+    if let Some(path) = comp_path {
+        check(
+            &format!("{shell_name} completions  {}", path.display()),
+            if path.exists() { Ok(()) } else { Err("not installed") },
+            Some("Run: orbit completions install"),
+        );
+    } else {
+        println!("  {} shell: {} (install manually with: orbit completions print <shell>)", dim("?"), shell_name);
+    }
+    println!();
+
+    // ── plan config ───────────────────────────────────────────────────────────
+    section("plan config");
+    let cfg_path = UserConfig::path();
+    println!("  {} {}", dim("config"), cfg_path.display());
+    let budget = &user_cfg.budget;
+    if budget.max_tokens.is_none() && budget.max_cost_usd.is_none()
+        && budget.max_duration_secs.is_none() && budget.max_nodes.is_none()
+    {
+        println!("  {} no budget limits set  (orbit config set plan.budget.*)", dim("budget"));
+    } else {
+        if let Some(v) = budget.max_tokens        { println!("  {} {v} tokens", dim("budget.max_tokens        ")); }
+        if let Some(v) = budget.max_cost_usd      { println!("  {} ${v:.4}", dim("budget.max_cost_usd      ")); }
+        if let Some(v) = budget.max_duration_secs { println!("  {} {v}s", dim("budget.max_duration_secs  ")); }
+        if let Some(v) = budget.max_nodes         { println!("  {} {v}", dim("budget.max_nodes          ")); }
+    }
+    let ret = &user_cfg.plan_retention;
+    println!(
+        "  {} enabled={} days={} archive={}",
+        dim("plan_retention"),
+        ret.auto_prune_enabled,
+        ret.auto_prune_days,
+        ret.archive_on_prune,
+    );
+    println!();
+
     Ok(())
 }
 

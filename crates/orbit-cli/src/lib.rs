@@ -68,6 +68,8 @@ pub enum Commands {
     Notify(commands::notify::NotifyArgs),
     /// Inspect context layers, instructions, and MCP for the current scope
     Context(commands::context::ContextArgs),
+    /// Generate or install man pages for orbit commands
+    Man(commands::man::ManArgs),
 }
 
 impl Cli {
@@ -81,6 +83,7 @@ fn needs_setup(cmd: &Option<Commands>) -> bool {
         cmd,
         Some(Commands::Setup(_))
             | Some(Commands::Completions(_))
+            | Some(Commands::Man(_))
             | Some(Commands::Update(_))
             | None
     )
@@ -132,6 +135,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Memory(args)) => commands::memory::run(args),
         Some(Commands::Notify(args)) => commands::notify::run(args),
         Some(Commands::Context(args)) => commands::context::run(args),
+        Some(Commands::Man(args)) => commands::man::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 
