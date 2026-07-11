@@ -27,6 +27,7 @@ pub enum Tab {
     System,
     Tasks,
     Schedules,
+    Scopes,
 }
 
 impl Tab {
@@ -43,13 +44,14 @@ impl Tab {
                 }
             }
             Tab::Tasks => Tab::Schedules,
-            Tab::Schedules => Tab::Sessions,
+            Tab::Schedules => Tab::Scopes,
+            Tab::Scopes => Tab::Sessions,
         }
     }
 
     pub fn prev(self, jira_enabled: bool) -> Self {
         match self {
-            Tab::Sessions => Tab::Schedules,
+            Tab::Sessions => Tab::Scopes,
             Tab::Launch => Tab::Sessions,
             Tab::Plans => Tab::Launch,
             Tab::System => Tab::Plans,
@@ -61,6 +63,7 @@ impl Tab {
                     Tab::System
                 }
             }
+            Tab::Scopes => Tab::Schedules,
         }
     }
 }
@@ -94,6 +97,46 @@ impl PlansState {
         if n == 0 { return; }
         self.selected = (self.selected + 1) % n;
         self.table_state.select(Some(self.selected));
+    }
+}
+
+// ── scopes state ──────────────────────────────────────────────────────────────
+
+pub struct ScopesState {
+    /// Unique scope_keys derived from all known plans.
+    pub scopes: Vec<String>,
+    pub selected: usize,
+}
+
+impl ScopesState {
+    pub fn new() -> Self {
+        Self { scopes: vec![], selected: 0 }
+    }
+
+    pub fn selected_scope(&self) -> Option<&str> {
+        self.scopes.get(self.selected).map(String::as_str)
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.scopes.len();
+        if n == 0 { return; }
+        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.scopes.len();
+        if n == 0 { return; }
+        self.selected = (self.selected + 1) % n;
+    }
+
+    pub fn refresh(&mut self, plans: &[Plan]) {
+        use std::collections::BTreeSet;
+        let mut keys: BTreeSet<String> = BTreeSet::new();
+        for p in plans {
+            keys.insert(p.scope.scope_key());
+        }
+        self.scopes = keys.into_iter().collect();
+        self.selected = self.selected.min(self.scopes.len().saturating_sub(1));
     }
 }
 
@@ -747,6 +790,7 @@ pub struct App {
     pub launch: LaunchState,
     pub sys: SystemState,
     pub plans: PlansState,
+    pub scopes: ScopesState,
     pub schedules: SchedulesState,
     pub tasks: TasksState,
     pub jira_enabled: bool,
@@ -790,6 +834,7 @@ impl App {
             launch,
             sys,
             plans: PlansState::new(),
+            scopes: ScopesState::new(),
             schedules: SchedulesState::new(),
             tasks: TasksState::new(),
             jira_enabled,
@@ -987,6 +1032,11 @@ impl App {
                     self.pending_async = Some(AsyncAction::RefreshSchedules);
                     return;
                 }
+                KeyCode::Char('7') => {
+                    self.tab = Tab::Scopes;
+                    self.pending_async = Some(AsyncAction::RefreshPlans);
+                    return;
+                }
                 KeyCode::Char('w') => {
                     self.switch_workspace_next();
                     return;
@@ -1002,6 +1052,7 @@ impl App {
             Tab::System => self.handle_system_key(code),
             Tab::Tasks => self.handle_tasks_key(code),
             Tab::Schedules => self.handle_schedules_key(code),
+            Tab::Scopes => self.handle_scopes_key(code),
         }
     }
 
@@ -1362,6 +1413,18 @@ impl App {
         }
     }
 
+    fn handle_scopes_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => self.scopes.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.scopes.move_down(),
+            KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::RefreshPlans);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
+
     fn handle_system_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Up | KeyCode::Char('k') => self.mcp_move_up(),
@@ -1507,6 +1570,7 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 app.plans.plans = plans;
                 app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
                 app.plans.table_state.select(if n > 0 { Some(app.plans.selected) } else { None });
+                app.scopes.refresh(&app.plans.plans);
             }
         }
 
@@ -1777,7 +1841,7 @@ where
                     _ => app.refresh_sessions(),
                 }
 
-                if app.tab == Tab::Plans
+                if (app.tab == Tab::Plans || app.tab == Tab::Scopes)
                     && let Ok(Ok(plans)) = tokio::time::timeout(
                         Duration::from_millis(500),
                         orbit_client::ipc::list_plans(),
@@ -1789,6 +1853,7 @@ where
                     app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
                     app.plans.table_state
                         .select(if n > 0 { Some(app.plans.selected) } else { None });
+                    app.scopes.refresh(&app.plans.plans);
                 }
 
                 if app.tab == Tab::Schedules
