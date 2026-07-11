@@ -1,3 +1,3 @@
 pub mod config;
 pub mod launcher;
-pub mod resolver;
+pub use orbit_core::resolver;

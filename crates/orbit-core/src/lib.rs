@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod resolver;
 pub mod catalog;
 pub mod data_paths;
 pub mod config;
