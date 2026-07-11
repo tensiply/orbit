@@ -778,7 +778,7 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 && project.is_none()
                 && repository.is_none()
             {
-                resolve_scope_from_cwd()
+                infer_scope()
             } else {
                 (workspace, tenant, project, repository)
             };
@@ -898,10 +898,26 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 && args.project.is_none()
                 && args.repository.is_none()
             {
-                resolve_scope_from_cwd()
+                infer_scope_with_ai_fallback(&intent)
             } else {
                 (args.workspace, args.tenant, args.project, args.repository)
             };
+
+            // Show inferred scope so the user knows what context the plan will run in.
+            {
+                let parts: Vec<&str> = [
+                    workspace.as_deref(),
+                    tenant.as_deref(),
+                    project.as_deref(),
+                    repository.as_deref(),
+                ]
+                .iter()
+                .filter_map(|x| *x)
+                .collect();
+                if !parts.is_empty() {
+                    eprintln!("orbit: scope → {}", parts.join("/"));
+                }
+            }
 
             let extra_repos: Vec<CrossRepoSpec> = args.extra_repos
                 .iter()
@@ -1196,50 +1212,61 @@ fn node_log_preview(session_key: &str, n: usize) -> Option<String> {
     Some(lines[start..].join("\n"))
 }
 
-fn resolve_scope_from_cwd() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
-    // Prefer git repo root over cwd — handles subdirectory invocations correctly.
-    let anchor = git_repo_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let home = directories::BaseDirs::new()
-        .map(|b| b.home_dir().to_path_buf())
-        .unwrap_or_default();
-
-    let parts: Vec<String> = anchor
-        .strip_prefix(&home)
-        .ok()
-        .map(|p| {
-            p.components()
-                .filter_map(|c| c.as_os_str().to_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    match parts.as_slice() {
-        [ws, tenant, project, repo, ..] => (
-            Some(ws.clone()),
-            Some(tenant.clone()),
-            Some(project.clone()),
-            Some(repo.clone()),
-        ),
-        [ws, tenant, project] => {
-            (Some(ws.clone()), Some(tenant.clone()), Some(project.clone()), None)
-        }
-        [ws, tenant] => (Some(ws.clone()), Some(tenant.clone()), None, None),
-        [ws] => (Some(ws.clone()), None, None, None),
-        _ => (None, None, None, None),
+/// Infers scope from cwd (git root preferred). Returns None fields when unresolvable.
+fn infer_scope() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+    match orbit_core::resolver::resolve_from_git_or_cwd() {
+        Ok(scope) => orbit_core::resolver::scope_to_tuple(&scope),
+        Err(_) => (None, None, None, None),
     }
 }
 
-/// Returns the git repository root for the current directory, if inside a git repo.
-fn git_repo_root() -> Option<std::path::PathBuf> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()?;
-    if output.status.success() {
-        let path = String::from_utf8(output.stdout).ok()?;
-        Some(std::path::PathBuf::from(path.trim()))
-    } else {
-        None
+/// Like `infer_scope` but falls back to the planner when scope cannot be
+/// detected from the filesystem. Prompts the user to confirm the suggestion.
+fn infer_scope_with_ai_fallback(
+    intent: &str,
+) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+    let tuple = infer_scope();
+    if tuple != (None, None, None, None) {
+        return tuple;
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let engine = orbit_core::user_config::UserConfig::load()
+        .engine
+        .default
+        .parse::<orbit_core::engine::Engine>()
+        .unwrap_or(orbit_core::engine::Engine::Claude);
+    let backend = orbit_planner::backend::CliBackend::new(engine);
+
+    eprintln!("orbit: could not detect scope from {}", cwd.display());
+    eprint!("orbit: asking planner for scope suggestion... ");
+    let _ = std::io::Write::flush(&mut std::io::stderr());
+
+    match orbit_planner::planner::suggest_scope(&cwd, intent, &backend) {
+        Some((ws, t, p, r)) => {
+            eprintln!("done.");
+            eprintln!("  Suggested scope:");
+            if let Some(ref v) = ws { eprintln!("    workspace:  {v}"); }
+            if let Some(ref v) = t { eprintln!("    tenant:     {v}"); }
+            if let Some(ref v) = p { eprintln!("    project:    {v}"); }
+            if let Some(ref v) = r { eprintln!("    repository: {v}"); }
+            eprint!("  Accept? [y/N] ");
+            let _ = std::io::Write::flush(&mut std::io::stderr());
+            let stdin = std::io::stdin();
+            let mut line = String::new();
+            if std::io::BufRead::read_line(&mut stdin.lock(), &mut line).is_ok()
+                && line.trim().eq_ignore_ascii_case("y")
+            {
+                (ws, t, p, r)
+            } else {
+                eprintln!("orbit: using global scope.");
+                (None, None, None, None)
+            }
+        }
+        None => {
+            eprintln!("failed — using global scope.");
+            (None, None, None, None)
+        }
     }
 }
 
@@ -1286,7 +1313,7 @@ async fn run_new() -> Result<()> {
     println!("  ─────────────────────────────────────────");
 
     // ── 1. Scope ──────────────────────────────────────────────────────────────
-    let (ws, tenant, project, repository) = resolve_scope_from_cwd();
+    let (ws, tenant, project, repository) = infer_scope();
     println!();
     println!("  Scope (auto-detected from cwd):");
     let scope_set = ws.is_some() || tenant.is_some() || project.is_some() || repository.is_some();
@@ -1516,7 +1543,7 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
 
             let (workspace, tenant, project, repository) =
                 if workspace.is_none() && tenant.is_none() && project.is_none() && repository.is_none() {
-                    resolve_scope_from_cwd()
+                    infer_scope()
                 } else {
                     (workspace, tenant, project, repository)
                 };

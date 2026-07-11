@@ -8,6 +8,7 @@ edition.workspace = true
 orbit-core.workspace = true
 orbit-client.workspace = true
 orbit-engine.workspace = true
+orbit-planner.workspace = true
 orbit-tui.workspace = true
 orbit-daemon.workspace = true
 clap.workspace = true
