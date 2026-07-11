@@ -76,6 +76,23 @@ pub enum PlanCommand {
     New,
     /// Show plan details
     Get { id: String },
+    /// Show a rich audit timeline for a specific plan (events + node costs)
+    Audit {
+        /// Plan ID
+        id: String,
+        /// Output raw JSON instead of formatted timeline
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show aggregated cost breakdown by scope or template
+    Costs {
+        /// Group by "scope" (default) or "template"
+        #[arg(long, default_value = "scope")]
+        by: String,
+        /// Limit output to top N entries (default: 10)
+        #[arg(long, default_value = "10")]
+        top: usize,
+    },
     /// List all plans
     List,
     /// Cancel a running plan
@@ -306,6 +323,14 @@ pub enum TemplateCommand {
 
 pub async fn run(args: PlanArgs) -> Result<()> {
     match args.command {
+        Some(PlanCommand::Audit { id, json }) => {
+            run_audit(&id, json).await?;
+        }
+
+        Some(PlanCommand::Costs { by, top }) => {
+            run_costs(&by, top).await?;
+        }
+
         Some(PlanCommand::Get { id }) => {
             match send_raw(&Request::GetPlan { id }).await? {
                 Response::PlanInfo { plan } => {
@@ -1692,6 +1717,153 @@ async fn run_schedule(command: ScheduleCommand) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+// ── orbit plan audit ──────────────────────────────────────────────────────────
+
+async fn run_audit(id: &str, json: bool) -> Result<()> {
+    use orbit_core::audit::{AuditEvent, events_for_plan};
+
+    let plan = Plan::load(id).map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
+    let events = events_for_plan(id);
+
+    if json {
+        #[derive(Serialize)]
+        struct AuditBundle<'a> {
+            plan: &'a Plan,
+            events: Vec<serde_json::Value>,
+        }
+        let evs: Vec<serde_json::Value> = events
+            .iter()
+            .map(|e| serde_json::to_value(e).unwrap_or_default())
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&AuditBundle { plan: &plan, events: evs })?);
+        return Ok(());
+    }
+
+    let status_sym = match plan.status {
+        orbit_core::plan::PlanStatus::Completed => "✓",
+        orbit_core::plan::PlanStatus::Failed => "✗",
+        orbit_core::plan::PlanStatus::Cancelled => "⊘",
+        orbit_core::plan::PlanStatus::Running => "▶",
+        _ => "·",
+    };
+    println!("Plan:    {} [{:?}] {}", plan.id, plan.status, status_sym);
+    println!("Intent:  {}", plan.intent);
+    println!("Nodes:   {}", plan.nodes.len());
+
+    // ── Timeline ──────────────────────────────────────────────────────────────
+    if events.is_empty() {
+        println!("\n(no audit events found for this plan)");
+    } else {
+        println!("\nTimeline");
+        let base = plan.created_at;
+        for ev in &events {
+            let (ts, label) = match ev {
+                AuditEvent::PlanCreated { timestamp, node_count, .. } =>
+                    (*timestamp, format!("PlanCreated     {node_count} node(s)")),
+                AuditEvent::NodeStarted { timestamp, node_id, engine, .. } =>
+                    (*timestamp, format!("NodeStarted     {node_id}  [{engine}]")),
+                AuditEvent::NodeCompleted { timestamp, node_id, duration_secs, .. } =>
+                    (*timestamp, format!("NodeCompleted   {node_id}  ({duration_secs}s)")),
+                AuditEvent::NodeFailed { timestamp, node_id, reason, .. } => {
+                    let short: String = reason.chars().take(55).collect();
+                    (*timestamp, format!("NodeFailed      {node_id}  — {short}"))
+                }
+                AuditEvent::ReplanTriggered { timestamp, from_node, replan_count, .. } =>
+                    (*timestamp, format!("ReplanTriggered from {from_node}  (#{replan_count} replan)")),
+                AuditEvent::PlanCompleted { timestamp, outcome, total_duration_secs, .. } =>
+                    (*timestamp, format!("PlanCompleted   {outcome}  ({total_duration_secs}s)")),
+                AuditEvent::PolicyBlocked { timestamp, node_id, reason, .. } => {
+                    let short: String = reason.chars().take(55).collect();
+                    (*timestamp, format!("PolicyBlocked   {node_id}  — {short}"))
+                }
+            };
+            let elapsed = ts.saturating_sub(base);
+            println!("  +{elapsed:>5}s  {label}");
+        }
+    }
+
+    // ── Node costs ────────────────────────────────────────────────────────────
+    let nodes_with_cost: Vec<_> = plan.nodes.iter().filter(|n| n.token_usage.is_some()).collect();
+    if !nodes_with_cost.is_empty() {
+        println!("\nNode costs");
+        let mut total_cost = 0.0f64;
+        for node in &nodes_with_cost {
+            let u = node.token_usage.as_ref().unwrap();
+            total_cost += u.estimated_cost_usd;
+            let label: String = node.label.chars().take(38).collect();
+            println!(
+                "  {:8}  [{:?}]  {:<38}  {}+{}tok  ~${:.4}",
+                node.id, node.task_type, label,
+                u.prompt_tokens, u.completion_tokens, u.estimated_cost_usd
+            );
+        }
+        println!("  {}", "─".repeat(72));
+        println!("  Total{:>63}~${:.4}", "", total_cost);
+    }
+
+    Ok(())
+}
+
+// ── orbit plan costs ──────────────────────────────────────────────────────────
+
+async fn run_costs(by: &str, top: usize) -> Result<()> {
+    use std::collections::HashMap;
+
+    let plans = Plan::load_all();
+    if plans.is_empty() {
+        println!("No plans found.");
+        return Ok(());
+    }
+
+    match by {
+        "scope" => {
+            // (total_cost, plan_count, node_count)
+            let mut acc: HashMap<String, (f64, usize, usize)> = HashMap::new();
+            for plan in &plans {
+                let cost: f64 = plan.nodes.iter()
+                    .filter_map(|n| n.token_usage.as_ref())
+                    .map(|u| u.estimated_cost_usd)
+                    .sum();
+                let e = acc.entry(plan.scope.scope_key()).or_default();
+                e.0 += cost;
+                e.1 += 1;
+                e.2 += plan.nodes.len();
+            }
+            let mut rows: Vec<(String, f64, usize, usize)> = acc
+                .into_iter()
+                .map(|(k, (c, p, n))| (k, c, p, n))
+                .collect();
+            rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            rows.truncate(top);
+
+            let total: f64 = rows.iter().map(|(_, c, _, _)| c).sum();
+            println!("Cost by scope (top {})", rows.len());
+            println!();
+            for (scope, cost, plans, nodes) in &rows {
+                let scope_trunc: String = scope.chars().take(44).collect();
+                println!("  {:<44}  ~${:.4}  ({plans} plan(s), {nodes} node(s))", scope_trunc, cost);
+            }
+            println!();
+            println!("  Total{:>39}~${:.4}", "", total);
+        }
+
+        "template" => {
+            // Template grouping requires PlanRunRecord.template_name (available after plans are
+            // run via `orbit plan template run`). Once records include the field, use
+            // orbit memory stats for per-template breakdowns.
+            println!("Template cost grouping tracks plans run via `orbit plan template run`.");
+            println!("Run a few template plans first, then use: orbit memory stats");
+        }
+
+        other => {
+            eprintln!("Unknown grouping '{other}'. Use --by scope or --by template");
+            std::process::exit(1);
+        }
+    }
+
     Ok(())
 }
 
