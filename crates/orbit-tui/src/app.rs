@@ -28,6 +28,7 @@ pub enum Tab {
     Tasks,
     Schedules,
     Scopes,
+    Workspaces,
 }
 
 impl Tab {
@@ -45,13 +46,14 @@ impl Tab {
             }
             Tab::Tasks => Tab::Schedules,
             Tab::Schedules => Tab::Scopes,
-            Tab::Scopes => Tab::Sessions,
+            Tab::Scopes => Tab::Workspaces,
+            Tab::Workspaces => Tab::Sessions,
         }
     }
 
     pub fn prev(self, jira_enabled: bool) -> Self {
         match self {
-            Tab::Sessions => Tab::Scopes,
+            Tab::Sessions => Tab::Workspaces,
             Tab::Launch => Tab::Sessions,
             Tab::Plans => Tab::Launch,
             Tab::System => Tab::Plans,
@@ -64,6 +66,7 @@ impl Tab {
                 }
             }
             Tab::Scopes => Tab::Schedules,
+            Tab::Workspaces => Tab::Scopes,
         }
     }
 }
@@ -137,6 +140,45 @@ impl ScopesState {
         }
         self.scopes = keys.into_iter().collect();
         self.selected = self.selected.min(self.scopes.len().saturating_sub(1));
+    }
+}
+
+// ── workspaces registry state ─────────────────────────────────────────────────
+
+pub struct WorkspacesRegState {
+    pub entries: Vec<orbit_core::workspace_registry::WorkspaceEntry>,
+    pub selected: usize,
+}
+
+impl WorkspacesRegState {
+    pub fn new() -> Self {
+        let entries = orbit_core::workspace_registry::WorkspaceRegistry::load().workspaces;
+        Self { entries, selected: 0 }
+    }
+
+    pub fn refresh(&mut self) {
+        let prev_name = self.entries.get(self.selected).map(|e| e.name.clone());
+        self.entries = orbit_core::workspace_registry::WorkspaceRegistry::load().workspaces;
+        // keep selection on same name if still present
+        if let Some(name) = prev_name {
+            if let Some(idx) = self.entries.iter().position(|e| e.name == name) {
+                self.selected = idx;
+                return;
+            }
+        }
+        self.selected = self.selected.min(self.entries.len().saturating_sub(1));
+    }
+
+    pub fn move_up(&mut self) {
+        let n = self.entries.len();
+        if n == 0 { return; }
+        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+    }
+
+    pub fn move_down(&mut self) {
+        let n = self.entries.len();
+        if n == 0 { return; }
+        self.selected = (self.selected + 1) % n;
     }
 }
 
@@ -792,6 +834,7 @@ pub struct App {
     pub plans: PlansState,
     pub scopes: ScopesState,
     pub schedules: SchedulesState,
+    pub workspaces_reg: WorkspacesRegState,
     pub tasks: TasksState,
     pub jira_enabled: bool,
     pub status_msg: Option<String>,
@@ -836,6 +879,7 @@ impl App {
             plans: PlansState::new(),
             scopes: ScopesState::new(),
             schedules: SchedulesState::new(),
+            workspaces_reg: WorkspacesRegState::new(),
             tasks: TasksState::new(),
             jira_enabled,
             status_msg: None,
@@ -1037,6 +1081,12 @@ impl App {
                     self.pending_async = Some(AsyncAction::RefreshPlans);
                     return;
                 }
+                KeyCode::Char('8') => {
+                    self.tab = Tab::Workspaces;
+                    self.workspaces_reg.refresh();
+                    self.pending_async = Some(AsyncAction::RefreshPlans);
+                    return;
+                }
                 KeyCode::Char('w') => {
                     self.switch_workspace_next();
                     return;
@@ -1053,6 +1103,7 @@ impl App {
             Tab::Tasks => self.handle_tasks_key(code),
             Tab::Schedules => self.handle_schedules_key(code),
             Tab::Scopes => self.handle_scopes_key(code),
+            Tab::Workspaces => self.handle_workspaces_key(code),
         }
     }
 
@@ -1418,6 +1469,19 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.scopes.move_up(),
             KeyCode::Down | KeyCode::Char('j') => self.scopes.move_down(),
             KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::RefreshPlans);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
+
+    fn handle_workspaces_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => self.workspaces_reg.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.workspaces_reg.move_down(),
+            KeyCode::Char('r') => {
+                self.workspaces_reg.refresh();
                 self.pending_async = Some(AsyncAction::RefreshPlans);
             }
             KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,

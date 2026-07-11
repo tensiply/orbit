@@ -7,6 +7,7 @@ mod scopes;
 mod sessions;
 mod system;
 mod tasks;
+mod workspaces;
 
 use crate::app::{App, Mode, Tab};
 use ratatui::{
@@ -39,6 +40,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Tasks => tasks::render(f, app, chunks[3]),
         Tab::Schedules => schedules::render(f, app, chunks[3]),
         Tab::Scopes => scopes::render(f, app, chunks[3]),
+        Tab::Workspaces => workspaces::render(f, app, chunks[3]),
     }
 
     render_footer(f, app, chunks[4]);
@@ -91,6 +93,8 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     spans.push(Span::styled(" Schedules  ", tab_label_style(app.tab == Tab::Schedules, dim)));
     spans.push(tab_span("[7]", app.tab == Tab::Scopes, accent, dim));
     spans.push(Span::styled(" Scopes  ", tab_label_style(app.tab == Tab::Scopes, dim)));
+    spans.push(tab_span("[8]", app.tab == Tab::Workspaces, accent, dim));
+    spans.push(Span::styled(" Workspaces  ", tab_label_style(app.tab == Tab::Workspaces, dim)));
 
     let label = app.palette.label;
     spans.push(Span::styled("─  ", Style::default().fg(dim)));
@@ -227,8 +231,16 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" select scope  "),
                 hint("[r]", accent),
                 Span::raw(" refresh  "),
-                hint("[7]", accent),
-                Span::raw(" scopes  "),
+                hint("[q]", accent),
+                Span::raw(" quit"),
+            ]),
+            Tab::Workspaces => Line::from(vec![
+                hint(" [Tab]", accent),
+                Span::raw(" switch  "),
+                hint("[↑↓/jk]", accent),
+                Span::raw(" select workspace  "),
+                hint("[r]", accent),
+                Span::raw(" refresh  "),
                 hint("[q]", accent),
                 Span::raw(" quit"),
             ]),
