@@ -62,6 +62,8 @@ pub enum Commands {
     Env(commands::env::EnvArgs),
     /// Create and manage autonomous execution plans
     Plan(commands::plan::PlanArgs),
+    /// Search and manage plan run memory
+    Memory(commands::memory::MemoryArgs),
 }
 
 impl Cli {
@@ -123,6 +125,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Secret(args)) => commands::secret::run(args),
         Some(Commands::Env(args)) => commands::env::run(args),
         Some(Commands::Plan(args)) => commands::plan::run(args).await,
+        Some(Commands::Memory(args)) => commands::memory::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

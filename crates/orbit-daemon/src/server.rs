@@ -205,14 +205,18 @@ impl ServerState {
             } => {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
-                    memory::load_recent_runs,
+                    memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
                 };
                 use orbit_engine::resolver::{self, ResolveArgs};
                 use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
 
                 let scope = PlanScope { workspace, tenant, project, repository };
-                let recent = load_recent_runs(5);
+                // Prefer semantically relevant past runs over purely chronological ones.
+                let recent = {
+                    let similar = find_similar(&intent, 5);
+                    if similar.is_empty() { load_recent_runs(3) } else { similar }
+                };
                 let cfg = PlannerConfig::default();
 
                 match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &extra_repos) {
