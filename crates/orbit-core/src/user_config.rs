@@ -19,6 +19,44 @@ pub struct UserConfig {
     pub install: InstallSection,
     pub update: UserUpdateSection,
     pub notifications: NotificationsConfig,
+    pub budget: BudgetConfig,
+    pub plan_retention: PlanRetentionConfig,
+}
+
+/// Default budget limits applied to every new plan unless overridden at creation time.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct BudgetConfig {
+    /// Maximum total tokens a plan may spend across all nodes (None = unlimited).
+    pub max_tokens: Option<u64>,
+    /// Maximum wall-clock seconds a plan may run before it is hard-stopped (None = unlimited).
+    pub max_duration_secs: Option<u64>,
+    /// Maximum estimated USD cost a plan may accumulate (None = unlimited).
+    pub max_cost_usd: Option<f64>,
+    /// Maximum number of nodes a plan may dispatch (None = unlimited).
+    pub max_nodes: Option<u32>,
+}
+
+/// Retention policy for completed/failed/cancelled plans.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlanRetentionConfig {
+    /// Automatically prune old terminal plans in the background (default: false).
+    pub auto_prune_enabled: bool,
+    /// Age in days after which terminal plans are pruned (default: 30).
+    pub auto_prune_days: u32,
+    /// Move pruned plans to an archive directory instead of deleting them (default: true).
+    pub archive_on_prune: bool,
+}
+
+impl Default for PlanRetentionConfig {
+    fn default() -> Self {
+        Self {
+            auto_prune_enabled: false,
+            auto_prune_days: 30,
+            archive_on_prune: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -83,6 +121,8 @@ impl Default for UserConfig {
             install: InstallSection::default(),
             update: UserUpdateSection::default(),
             notifications: NotificationsConfig::default(),
+            budget: BudgetConfig::default(),
+            plan_retention: PlanRetentionConfig::default(),
         }
     }
 }

@@ -213,7 +213,7 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
 
     // ── 2. Dispatch ready Pending nodes ───────────────────────────────────────
 
-    // Budget hard-stop: fail remaining work if token budget is exhausted.
+    // Budget hard-stop: fail remaining work if any budget limit is exhausted.
     if plan.is_budget_exhausted() {
         let spent: u64 = plan
             .nodes
@@ -224,6 +224,33 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
         let reason = format!(
             "budget exhausted: {spent} tokens spent, limit {}",
             plan.policy.max_tokens.unwrap_or(0)
+        );
+        warn!("{reason} — failing plan {}", plan.id);
+        fail_plan_enforced(plan, &reason, event_tx)?;
+        return Ok(());
+    }
+
+    if plan.is_cost_exhausted() {
+        let spent: f64 = plan
+            .nodes
+            .iter()
+            .filter_map(|n| n.token_usage.as_ref())
+            .map(|u| u.estimated_cost_usd)
+            .sum();
+        let reason = format!(
+            "cost budget exhausted: ${spent:.4} spent, limit ${:.4}",
+            plan.policy.max_cost_usd.unwrap_or(0.0)
+        );
+        warn!("{reason} — failing plan {}", plan.id);
+        fail_plan_enforced(plan, &reason, event_tx)?;
+        return Ok(());
+    }
+
+    if plan.is_nodes_exhausted() {
+        let dispatched = plan.nodes.iter().filter(|n| !matches!(n.status, NodeStatus::Pending)).count();
+        let reason = format!(
+            "node budget exhausted: {dispatched} node(s) dispatched, limit {}",
+            plan.policy.max_nodes.unwrap_or(0)
         );
         warn!("{reason} — failing plan {}", plan.id);
         fail_plan_enforced(plan, &reason, event_tx)?;

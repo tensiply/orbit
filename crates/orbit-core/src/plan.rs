@@ -140,6 +140,12 @@ pub struct PlanPolicy {
     pub max_duration_secs: Option<u64>,
     pub max_replan_count: u8,
     pub require_approval_for: Vec<RiskLevel>,
+    /// Hard stop when estimated USD cost exceeds this value (None = unlimited).
+    #[serde(default)]
+    pub max_cost_usd: Option<f64>,
+    /// Hard stop when dispatched node count reaches this value (None = unlimited).
+    #[serde(default)]
+    pub max_nodes: Option<u32>,
 }
 
 impl Default for PlanPolicy {
@@ -149,6 +155,8 @@ impl Default for PlanPolicy {
             max_duration_secs: None,
             max_replan_count: 2,
             require_approval_for: vec![],
+            max_cost_usd: None,
+            max_nodes: None,
         }
     }
 }
@@ -263,7 +271,8 @@ impl Plan {
         };
         let mut plans: Vec<Plan> = entries
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+            // Skip subdirectories (e.g. archive/) and non-json files.
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "json"))
             .filter_map(|e| {
                 fs::read_to_string(e.path())
                     .ok()
@@ -310,6 +319,64 @@ impl Plan {
             .map(|u| u.prompt_tokens + u.completion_tokens)
             .sum();
         spent >= max
+    }
+
+    pub fn is_cost_exhausted(&self) -> bool {
+        let Some(max) = self.policy.max_cost_usd else {
+            return false;
+        };
+        let spent: f64 = self
+            .nodes
+            .iter()
+            .filter_map(|n| n.token_usage.as_ref())
+            .map(|u| u.estimated_cost_usd)
+            .sum();
+        spent >= max
+    }
+
+    /// True when the number of dispatched (non-Pending) nodes has reached max_nodes.
+    pub fn is_nodes_exhausted(&self) -> bool {
+        let Some(max) = self.policy.max_nodes else {
+            return false;
+        };
+        let dispatched = self
+            .nodes
+            .iter()
+            .filter(|n| !matches!(n.status, NodeStatus::Pending))
+            .count();
+        dispatched as u32 >= max
+    }
+
+    /// Move this plan's JSON file to `plans/archive/{id}.json`.
+    pub fn archive(&self) -> Result<()> {
+        let src = plans_dir().join(format!("{}.json", self.id));
+        if !src.exists() {
+            return Ok(());
+        }
+        let archive_dir = plans_dir().join("archive");
+        fs::create_dir_all(&archive_dir)?;
+        let dst = archive_dir.join(format!("{}.json", self.id));
+        fs::rename(&src, &dst)?;
+        Ok(())
+    }
+
+    /// Load all non-archived plans (skips the `archive/` subdirectory).
+    pub fn load_archived() -> Vec<Plan> {
+        let dir = plans_dir().join("archive");
+        let Ok(entries) = fs::read_dir(&dir) else {
+            return vec![];
+        };
+        let mut plans: Vec<Plan> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+            .filter_map(|e| {
+                fs::read_to_string(e.path())
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+            })
+            .collect();
+        plans.sort_by_key(|p| p.created_at);
+        plans
     }
 }
 

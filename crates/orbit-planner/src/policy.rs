@@ -65,6 +65,8 @@ mod tests {
                 max_duration_secs: None,
                 max_replan_count: 2,
                 require_approval_for,
+                max_cost_usd: None,
+                max_nodes: None,
             },
             created_at: 0,
             completed_at: None,

@@ -52,6 +52,22 @@ pub struct PlanArgs {
     /// Additional repos available for cross-repo node targeting (path to local repo dir)
     #[arg(long = "repo", value_name = "PATH")]
     pub extra_repos: Vec<String>,
+
+    /// Hard-stop the plan after this many tokens across all nodes
+    #[arg(long, value_name = "TOKENS")]
+    pub max_tokens: Option<u64>,
+
+    /// Hard-stop the plan after this many seconds of wall-clock time
+    #[arg(long, value_name = "SECS")]
+    pub max_duration: Option<u64>,
+
+    /// Hard-stop the plan when estimated USD cost exceeds this value
+    #[arg(long, value_name = "USD")]
+    pub max_cost: Option<f64>,
+
+    /// Hard-stop the plan after dispatching this many nodes
+    #[arg(long, value_name = "N")]
+    pub max_nodes: Option<u32>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -567,6 +583,9 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 return Ok(());
             }
 
+            let archive_on_prune = orbit_core::user_config::UserConfig::load().plan_retention.archive_on_prune;
+            let action_label = if archive_on_prune { "archive" } else { "delete" };
+
             for plan in &prunable {
                 let age_days = now.saturating_sub(plan.created_at) / 86400;
                 println!(
@@ -574,14 +593,18 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     plan.id, plan.status, age_days, plan.intent
                 );
                 if !dry_run {
-                    let _ = plan.delete();
+                    if archive_on_prune {
+                        let _ = plan.archive();
+                    } else {
+                        let _ = plan.delete();
+                    }
                 }
             }
 
             if dry_run {
-                println!("\n(dry-run) {} plan(s) would be deleted.", prunable.len());
+                println!("\n(dry-run) {} plan(s) would be {}d.", prunable.len(), action_label);
             } else {
-                println!("\nDeleted {} plan(s).", prunable.len());
+                println!("\n{}d {} plan(s).", action_label.chars().next().unwrap().to_uppercase().collect::<String>() + &action_label[1..], prunable.len());
             }
         }
 
@@ -854,6 +877,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 dry_run: args.dry_run,
                 verbose: args.verbose,
                 extra_repos,
+                max_tokens: args.max_tokens,
+                max_duration_secs: args.max_duration,
+                max_cost_usd: args.max_cost,
+                max_nodes: args.max_nodes,
             })
             .await?
             {
@@ -1294,6 +1321,10 @@ async fn run_new() -> Result<()> {
             dry_run: true,
             verbose: false,
             extra_repos: extra_repos.clone(),
+            max_tokens: None,
+            max_duration_secs: None,
+            max_cost_usd: None,
+            max_nodes: None,
         })
         .await?
         {
@@ -1342,6 +1373,10 @@ async fn run_new() -> Result<()> {
         dry_run: false,
         verbose: false,
         extra_repos,
+        max_tokens: None,
+        max_duration_secs: None,
+        max_cost_usd: None,
+        max_nodes: None,
     })
     .await?
     {
@@ -1462,6 +1497,10 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
                 dry_run,
                 verbose: false,
                 extra_repos,
+                max_tokens: None,
+                max_duration_secs: None,
+                max_cost_usd: None,
+                max_nodes: None,
             })
             .await?
             {

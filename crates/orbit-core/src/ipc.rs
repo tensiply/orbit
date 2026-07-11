@@ -115,6 +115,18 @@ pub enum Request {
         verbose: bool,
         #[serde(default)]
         extra_repos: Vec<crate::plan::CrossRepoSpec>,
+        /// Override max token budget for this plan (None = use user config default).
+        #[serde(default)]
+        max_tokens: Option<u64>,
+        /// Override max wall-clock duration in seconds (None = use user config default).
+        #[serde(default)]
+        max_duration_secs: Option<u64>,
+        /// Override max estimated USD cost (None = use user config default).
+        #[serde(default)]
+        max_cost_usd: Option<f64>,
+        /// Override max dispatched node count (None = use user config default).
+        #[serde(default)]
+        max_nodes: Option<u32>,
     },
     GetPlan {
         id: String,
@@ -177,6 +189,8 @@ pub enum Request {
     CancelSchedule { id: String },
     /// Fire a scheduled plan immediately (ignoring next_run).
     RunScheduleNow { id: String },
+    /// Request a rich diagnostics snapshot from the daemon.
+    Health,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -256,5 +270,17 @@ pub enum Response {
     ScheduleFired {
         schedule_id: String,
         plan_id: String,
+    },
+    Health {
+        uptime_secs: u64,
+        pid: u32,
+        running_plans: usize,
+        completed_today: usize,
+        failed_today: usize,
+        plan_files: usize,
+        archived_plans: usize,
+        memory_records: usize,
+        auto_prune_enabled: bool,
+        auto_prune_days: u32,
     },
 }

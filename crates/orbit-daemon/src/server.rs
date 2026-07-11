@@ -52,6 +52,7 @@ impl ConnectionRole {
                     | Request::GetPlanStats
                     | Request::StreamPlan { .. }
                     | Request::ListSchedules
+                    | Request::Health
             ),
         }
     }
@@ -204,11 +205,16 @@ impl ServerState {
                 dry_run,
                 verbose,
                 extra_repos,
+                max_tokens,
+                max_duration_secs,
+                max_cost_usd,
+                max_nodes,
             } => {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
                     memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
+                    user_config::UserConfig,
                 };
                 use orbit_engine::resolver::{self, ResolveArgs};
                 use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
@@ -226,6 +232,13 @@ impl ServerState {
                         message: format!("planner error: {e}"),
                     },
                     Ok((mut plan, trace)) => {
+                        // Apply budget policy: CLI overrides take precedence over user config defaults.
+                        let user_cfg = UserConfig::load();
+                        plan.policy.max_tokens = max_tokens.or(user_cfg.budget.max_tokens);
+                        plan.policy.max_duration_secs = max_duration_secs.or(user_cfg.budget.max_duration_secs);
+                        plan.policy.max_cost_usd = max_cost_usd.or(user_cfg.budget.max_cost_usd);
+                        plan.policy.max_nodes = max_nodes.or(user_cfg.budget.max_nodes);
+
                         // Validate all scope_overrides resolve
                         for node in &plan.nodes {
                             if let Some(ref s) = node.scope_override {
@@ -574,6 +587,43 @@ impl ServerState {
                 }
             }
 
+            Request::Health => {
+                use orbit_core::{memory::load_recent_runs, plan::Plan, user_config::UserConfig};
+
+                let cfg = UserConfig::load();
+                let plans = Plan::load_all();
+                let now = now_secs();
+                let day_secs = 86_400u64;
+
+                let running_plans = plans.iter().filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Running)).count();
+                let completed_today = plans
+                    .iter()
+                    .filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Completed))
+                    .filter(|p| p.completed_at.is_some_and(|t| now.saturating_sub(t) < day_secs))
+                    .count();
+                let failed_today = plans
+                    .iter()
+                    .filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Failed))
+                    .filter(|p| p.completed_at.is_some_and(|t| now.saturating_sub(t) < day_secs))
+                    .count();
+                let plan_files = plans.len();
+                let archived_plans = Plan::load_archived().len();
+                let memory_records = load_recent_runs(usize::MAX).len();
+
+                Response::Health {
+                    uptime_secs: self.started_at.elapsed().as_secs(),
+                    pid: std::process::id(),
+                    running_plans,
+                    completed_today,
+                    failed_today,
+                    plan_files,
+                    archived_plans,
+                    memory_records,
+                    auto_prune_enabled: cfg.plan_retention.auto_prune_enabled,
+                    auto_prune_days: cfg.plan_retention.auto_prune_days,
+                }
+            }
+
             Request::RunScheduleNow { id } => {
                 use orbit_core::{
                     audit::{append_event, AuditEvent},
@@ -809,6 +859,12 @@ pub async fn run() -> Result<()> {
     // Background: check scheduled plans every 60s
     tokio::spawn(crate::scheduler::run_scheduler_loop(
         Duration::from_secs(60),
+        shutdown_tx.subscribe(),
+    ));
+
+    // Background: auto-prune old plans every 24h (if enabled in user config)
+    tokio::spawn(crate::archival::run_archival_loop(
+        Duration::from_secs(86_400),
         shutdown_tx.subscribe(),
     ));
 
