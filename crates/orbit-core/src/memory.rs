@@ -9,18 +9,8 @@ use std::{
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn xdg_data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
-}
-
 fn memory_path() -> PathBuf {
-    xdg_data_dir().join("orbit/memory/plan_runs.jsonl")
+    crate::data_paths::memory_path_for(None)
 }
 
 /// BM25 relevance score for `query` against a single `doc` string.
@@ -92,39 +82,63 @@ pub fn append_plan_run(record: &PlanRunRecord) -> Result<()> {
     Ok(())
 }
 
+/// Write a plan run record to a specific workspace's memory file.
+/// Pass `workspace_name = None` to write to the legacy flat path.
+pub fn append_plan_run_for(workspace_name: Option<&str>, record: &PlanRunRecord) -> Result<()> {
+    let path = crate::data_paths::memory_path_for(workspace_name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let line = serde_json::to_string(record)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+    writeln!(file, "{line}")?;
+    Ok(())
+}
+
 pub fn load_recent_runs(n: usize) -> Vec<PlanRunRecord> {
-    let path = memory_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return vec![];
-    };
-    let all: Vec<PlanRunRecord> = text
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+    // Aggregate from all workspaces so the planner has full context.
+    let mut all: Vec<PlanRunRecord> = crate::data_paths::all_memory_paths()
+        .into_iter()
+        .filter_map(|p| fs::read_to_string(&p).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<PlanRunRecord>(line).ok())
+                .collect::<Vec<_>>()
+        })
         .collect();
+    all.sort_by_key(|r| r.created_at);
     let skip = all.len().saturating_sub(n);
     all.into_iter().skip(skip).collect()
 }
 
 pub fn find_run(plan_id: &str) -> Option<PlanRunRecord> {
-    let path = memory_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return None;
-    };
-    text.lines()
-        .filter_map(|line| serde_json::from_str::<PlanRunRecord>(line).ok())
-        .find(|r| r.plan_id == plan_id)
+    // Search all workspace memory files.
+    for path in crate::data_paths::all_memory_paths() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(record) = text
+            .lines()
+            .filter_map(|line| serde_json::from_str::<PlanRunRecord>(line).ok())
+            .find(|r| r.plan_id == plan_id)
+        {
+            return Some(record);
+        }
+    }
+    None
 }
 
 /// Return up to `n` records ranked by BM25 similarity to `intent`.
-/// Falls back to an empty vec when no records score above zero.
+/// Searches across all registered workspaces. Falls back to empty vec when nothing scores above zero.
 pub fn find_similar(intent: &str, n: usize) -> Vec<PlanRunRecord> {
-    let path = memory_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return vec![];
-    };
-    let records: Vec<PlanRunRecord> = text
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
+    let records: Vec<PlanRunRecord> = crate::data_paths::all_memory_paths()
+        .into_iter()
+        .filter_map(|p| fs::read_to_string(&p).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|l| serde_json::from_str::<PlanRunRecord>(l).ok())
+                .collect::<Vec<_>>()
+        })
         .collect();
 
     if records.is_empty() {
@@ -191,7 +205,6 @@ pub struct MemoryStats {
 }
 
 pub fn memory_stats() -> MemoryStats {
-    let path = memory_path();
     let empty = MemoryStats {
         total_runs: 0, completed: 0, failed: 0,
         avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
@@ -201,12 +214,15 @@ pub fn memory_stats() -> MemoryStats {
         cost_by_scope: vec![],
         cost_by_template: vec![],
     };
-    let Ok(text) = fs::read_to_string(&path) else {
-        return empty;
-    };
-    let records: Vec<PlanRunRecord> = text
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
+    // Aggregate from all workspaces.
+    let records: Vec<PlanRunRecord> = crate::data_paths::all_memory_paths()
+        .into_iter()
+        .filter_map(|p| fs::read_to_string(&p).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|l| serde_json::from_str::<PlanRunRecord>(l).ok())
+                .collect::<Vec<_>>()
+        })
         .collect();
 
     let total = records.len();

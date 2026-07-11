@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -16,18 +16,20 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn xdg_data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
+fn plans_dir_for_scope(scope: &PlanScope) -> PathBuf {
+    crate::data_paths::plans_dir_for(scope.workspace.as_deref())
 }
 
-fn plans_dir() -> PathBuf {
-    xdg_data_dir().join("orbit/plans")
+/// Search all known plans directories for `{id}.json`. Returns the first match.
+fn find_plan_path(id: &str) -> Option<PathBuf> {
+    let filename = format!("{id}.json");
+    for dir in crate::data_paths::all_plans_dirs() {
+        let p = dir.join(&filename);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 fn gen_id() -> String {
@@ -248,7 +250,7 @@ impl Plan {
     }
 
     pub fn save(&self) -> Result<()> {
-        let dir = plans_dir();
+        let dir = plans_dir_for_scope(&self.scope);
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.json", self.id));
         fs::write(path, serde_json::to_string_pretty(self)?)?;
@@ -256,23 +258,47 @@ impl Plan {
     }
 
     pub fn load(id: &str) -> Result<Plan> {
-        let path = plans_dir().join(format!("{id}.json"));
-        if !path.exists() {
-            bail!("plan not found: {id}");
-        }
+        let path = find_plan_path(id)
+            .ok_or_else(|| anyhow::anyhow!("plan not found: {id}"))?;
         let text = fs::read_to_string(path)?;
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// Load all plans from all workspaces (legacy flat + every registered workspace).
     pub fn load_all() -> Vec<Plan> {
-        let dir = plans_dir();
+        let mut plans: Vec<Plan> = crate::data_paths::all_plans_dirs()
+            .into_iter()
+            .filter_map(|dir| fs::read_dir(&dir).ok())
+            .flat_map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_type().is_ok_and(|t| t.is_file())
+                            && e.path().extension().is_some_and(|x| x == "json")
+                    })
+                    .filter_map(|e| {
+                        fs::read_to_string(e.path())
+                            .ok()
+                            .and_then(|text| serde_json::from_str(&text).ok())
+                    })
+            })
+            .collect();
+        plans.sort_by_key(|p| p.created_at);
+        plans
+    }
+
+    /// Load plans scoped to a specific workspace name (or legacy flat when `None`).
+    pub fn load_all_for_workspace(workspace_name: Option<&str>) -> Vec<Plan> {
+        let dir = crate::data_paths::plans_dir_for(workspace_name);
         let Ok(entries) = fs::read_dir(&dir) else {
             return vec![];
         };
         let mut plans: Vec<Plan> = entries
             .filter_map(|e| e.ok())
-            // Skip subdirectories (e.g. archive/) and non-json files.
-            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "json"))
+            .filter(|e| {
+                e.file_type().is_ok_and(|t| t.is_file())
+                    && e.path().extension().is_some_and(|x| x == "json")
+            })
             .filter_map(|e| {
                 fs::read_to_string(e.path())
                     .ok()
@@ -301,7 +327,7 @@ impl Plan {
     }
 
     pub fn delete(&self) -> Result<()> {
-        let path = plans_dir().join(format!("{}.json", self.id));
+        let path = plans_dir_for_scope(&self.scope).join(format!("{}.json", self.id));
         if path.exists() {
             fs::remove_file(path)?;
         }
@@ -347,32 +373,35 @@ impl Plan {
         dispatched as u32 >= max
     }
 
-    /// Move this plan's JSON file to `plans/archive/{id}.json`.
+    /// Move this plan's JSON file to `plans/archive/{id}.json` within its workspace.
     pub fn archive(&self) -> Result<()> {
-        let src = plans_dir().join(format!("{}.json", self.id));
+        let plans_dir = plans_dir_for_scope(&self.scope);
+        let src = plans_dir.join(format!("{}.json", self.id));
         if !src.exists() {
             return Ok(());
         }
-        let archive_dir = plans_dir().join("archive");
+        let archive_dir = plans_dir.join("archive");
         fs::create_dir_all(&archive_dir)?;
         let dst = archive_dir.join(format!("{}.json", self.id));
         fs::rename(&src, &dst)?;
         Ok(())
     }
 
-    /// Load all non-archived plans (skips the `archive/` subdirectory).
+    /// Load all archived plans from all workspaces.
     pub fn load_archived() -> Vec<Plan> {
-        let dir = plans_dir().join("archive");
-        let Ok(entries) = fs::read_dir(&dir) else {
-            return vec![];
-        };
-        let mut plans: Vec<Plan> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
-            .filter_map(|e| {
-                fs::read_to_string(e.path())
-                    .ok()
-                    .and_then(|text| serde_json::from_str(&text).ok())
+        let mut plans: Vec<Plan> = crate::data_paths::all_plans_dirs()
+            .into_iter()
+            .map(|dir| dir.join("archive"))
+            .filter_map(|dir| fs::read_dir(&dir).ok())
+            .flat_map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+                    .filter_map(|e| {
+                        fs::read_to_string(e.path())
+                            .ok()
+                            .and_then(|text| serde_json::from_str(&text).ok())
+                    })
             })
             .collect();
         plans.sort_by_key(|p| p.created_at);

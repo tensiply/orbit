@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod catalog;
+pub mod data_paths;
 pub mod config;
 pub mod context;
 pub mod engine;
@@ -18,6 +19,7 @@ pub mod session;
 pub mod template;
 pub mod user_config;
 pub mod workspace_config;
+pub mod workspace_registry;
 
 /// Serialises tests that mutate XDG_DATA_HOME so they don't race in parallel.
 #[cfg(test)]

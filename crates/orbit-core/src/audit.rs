@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -16,20 +15,6 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-fn xdg_data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
-}
-
-fn audit_path() -> PathBuf {
-    xdg_data_dir().join("orbit/audit.jsonl")
 }
 
 // ── AuditEvent ────────────────────────────────────────────────────────────────
@@ -142,13 +127,15 @@ pub struct AuditStats {
 // ── API ───────────────────────────────────────────────────────────────────────
 
 pub fn audit_stats() -> AuditStats {
-    let path = audit_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return AuditStats::default();
-    };
-    let events: Vec<AuditEvent> = text
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+    // Aggregate events from all workspace audit logs.
+    let events: Vec<AuditEvent> = crate::data_paths::all_audit_paths()
+        .into_iter()
+        .filter_map(|p| fs::read_to_string(&p).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<AuditEvent>(line).ok())
+                .collect::<Vec<_>>()
+        })
         .collect();
 
     let mut stats = AuditStats::default();
@@ -190,7 +177,13 @@ pub fn audit_stats() -> AuditStats {
 }
 
 pub fn append_event(event: &AuditEvent) -> Result<()> {
-    let path = audit_path();
+    append_event_for(None, event)
+}
+
+/// Write an audit event to a specific workspace's audit log.
+/// Pass `workspace_name = None` to write to the legacy flat path.
+pub fn append_event_for(workspace_name: Option<&str>, event: &AuditEvent) -> Result<()> {
+    let path = crate::data_paths::audit_path_for(workspace_name);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -201,13 +194,16 @@ pub fn append_event(event: &AuditEvent) -> Result<()> {
 }
 
 pub fn events_for_plan(plan_id: &str) -> Vec<AuditEvent> {
-    let path = audit_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return vec![];
-    };
-    text.lines()
-        .filter_map(|line| serde_json::from_str::<AuditEvent>(line).ok())
-        .filter(|e| e.plan_id() == plan_id)
+    // Search all workspace audit logs.
+    crate::data_paths::all_audit_paths()
+        .into_iter()
+        .filter_map(|p| fs::read_to_string(&p).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<AuditEvent>(line).ok())
+                .filter(|e| e.plan_id() == plan_id)
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 

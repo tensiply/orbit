@@ -45,17 +45,7 @@ pub struct ScheduledPlan {
 // ── storage ───────────────────────────────────────────────────────────────────
 
 fn schedules_path() -> PathBuf {
-    xdg_data_dir().join("orbit/schedules.json")
-}
-
-fn xdg_data_dir() -> PathBuf {
-    if let Ok(d) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(d)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
+    crate::data_paths::schedules_path_for(None)
 }
 
 pub fn load_all() -> Vec<ScheduledPlan> {
