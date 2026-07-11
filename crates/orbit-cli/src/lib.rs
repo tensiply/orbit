@@ -70,6 +70,8 @@ pub enum Commands {
     Context(commands::context::ContextArgs),
     /// Generate or install man pages for orbit commands
     Man(commands::man::ManArgs),
+    /// Manage registered workspaces (multi-workspace support)
+    Workspace(commands::workspace::WorkspaceArgs),
 }
 
 impl Cli {
@@ -136,6 +138,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Notify(args)) => commands::notify::run(args),
         Some(Commands::Context(args)) => commands::context::run(args),
         Some(Commands::Man(args)) => commands::man::run(args),
+        Some(Commands::Workspace(args)) => commands::workspace::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

@@ -23,3 +23,4 @@ pub mod snapshot;
 pub mod status;
 pub mod man;
 pub mod update;
+pub mod workspace;
