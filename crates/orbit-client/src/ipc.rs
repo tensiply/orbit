@@ -85,6 +85,49 @@ pub async fn status() -> Result<StatusInfo> {
     }
 }
 
+pub struct HealthInfo {
+    pub uptime_secs: u64,
+    pub pid: u32,
+    pub running_plans: usize,
+    pub completed_today: usize,
+    pub failed_today: usize,
+    pub plan_files: usize,
+    pub archived_plans: usize,
+    pub memory_records: usize,
+    pub auto_prune_enabled: bool,
+    pub auto_prune_days: u32,
+}
+
+pub async fn health() -> Result<HealthInfo> {
+    match send(&Request::Health).await? {
+        Response::Health {
+            uptime_secs,
+            pid,
+            running_plans,
+            completed_today,
+            failed_today,
+            plan_files,
+            archived_plans,
+            memory_records,
+            auto_prune_enabled,
+            auto_prune_days,
+        } => Ok(HealthInfo {
+            uptime_secs,
+            pid,
+            running_plans,
+            completed_today,
+            failed_today,
+            plan_files,
+            archived_plans,
+            memory_records,
+            auto_prune_enabled,
+            auto_prune_days,
+        }),
+        Response::Error { message } => bail!("{message}"),
+        _ => bail!("unexpected response"),
+    }
+}
+
 pub async fn list_plans() -> Result<Vec<orbit_core::plan::Plan>> {
     match send(&Request::ListPlans).await? {
         Response::Plans { plans } => Ok(plans),

@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use orbit_client::ipc;
 use std::time::Duration;
+use serde_json;
 
 #[derive(Debug, Args)]
 pub struct DaemonArgs {
@@ -15,8 +16,14 @@ pub enum DaemonCommand {
     Start,
     /// Stop the running orbit daemon
     Stop,
-    /// Show daemon status
+    /// Show daemon status (uptime, sessions)
     Status,
+    /// Show daemon health diagnostics (plans, costs, archival)
+    Health {
+        /// Output raw JSON instead of formatted table
+        #[arg(long)]
+        json: bool,
+    },
     /// [INTERNAL] Run the daemon server in the foreground (used by `start`)
     #[command(hide = true)]
     Serve,
@@ -27,6 +34,7 @@ pub async fn run(args: DaemonArgs) -> Result<()> {
         DaemonCommand::Start => start().await,
         DaemonCommand::Stop => stop().await,
         DaemonCommand::Status => status().await,
+        DaemonCommand::Health { json } => health(json).await,
         DaemonCommand::Serve => serve().await,
     }
 }
@@ -99,6 +107,64 @@ async fn status() -> Result<()> {
             println!("  PID:      {}", info.pid);
             println!("  Uptime:   {uptime}");
             println!("  Sessions: {} active", info.session_count);
+        }
+        Err(e) => {
+            println!("Daemon: socket exists but not responding ({e})");
+        }
+    }
+
+    Ok(())
+}
+
+// ── health ────────────────────────────────────────────────────────────────────
+
+async fn health(json: bool) -> Result<()> {
+    if !ipc::is_available() {
+        println!("Daemon: not running");
+        return Ok(());
+    }
+
+    match ipc::health().await {
+        Ok(h) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "uptime_secs": h.uptime_secs,
+                        "pid": h.pid,
+                        "running_plans": h.running_plans,
+                        "completed_today": h.completed_today,
+                        "failed_today": h.failed_today,
+                        "plan_files": h.plan_files,
+                        "archived_plans": h.archived_plans,
+                        "memory_records": h.memory_records,
+                        "auto_prune_enabled": h.auto_prune_enabled,
+                        "auto_prune_days": h.auto_prune_days,
+                    })
+                );
+            } else {
+                println!("Daemon health");
+                println!("  PID:              {}", h.pid);
+                println!("  Uptime:           {}", format_uptime(h.uptime_secs));
+                println!();
+                println!("Plans");
+                println!("  Running:          {}", h.running_plans);
+                println!("  Completed today:  {}", h.completed_today);
+                println!("  Failed today:     {}", h.failed_today);
+                println!("  Plan files:       {}", h.plan_files);
+                println!("  Archived:         {}", h.archived_plans);
+                println!();
+                println!("Memory");
+                println!("  History records:  {}", h.memory_records);
+                println!();
+                println!("Retention");
+                if h.auto_prune_enabled {
+                    println!("  Auto-prune:       enabled ({} days)", h.auto_prune_days);
+                } else {
+                    println!("  Auto-prune:       disabled");
+                    println!("  Enable with:      orbit config set plan_retention.auto_prune_enabled true");
+                }
+            }
         }
         Err(e) => {
             println!("Daemon: socket exists but not responding ({e})");
