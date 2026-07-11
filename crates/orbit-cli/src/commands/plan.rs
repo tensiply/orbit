@@ -94,7 +94,25 @@ pub enum PlanCommand {
         top: usize,
     },
     /// List all plans
-    List,
+    List {
+        /// Filter plans whose scope_key contains this string
+        #[arg(long, value_name = "PATTERN")]
+        scope: Option<String>,
+        /// Group output by scope_key
+        #[arg(long)]
+        group: bool,
+    },
+    /// Import a plan bundle exported from another machine
+    Import {
+        /// Path to the export file (JSON); use "-" to read from stdin
+        file: Option<String>,
+        /// Overwrite if a plan with the same ID already exists
+        #[arg(long)]
+        force: bool,
+        /// Import the accompanying memory record if present
+        #[arg(long)]
+        with_memory: bool,
+    },
     /// Cancel a running plan
     Cancel { id: String },
     /// Show recent plan history
@@ -384,17 +402,26 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::List) => {
+        Some(PlanCommand::List { scope, group }) => {
             match send_raw(&Request::ListPlans).await? {
-                Response::Plans { plans } => {
+                Response::Plans { mut plans } => {
+                    if let Some(ref pat) = scope {
+                        plans.retain(|p| p.scope.scope_key().contains(pat.as_str()));
+                    }
                     if plans.is_empty() {
                         println!("No plans found.");
+                    } else if group {
+                        print_plans_grouped(&plans);
                     } else {
                         print_plan_tree(&plans);
                     }
                 }
                 _ => eprintln!("Unexpected response"),
             }
+        }
+
+        Some(PlanCommand::Import { file, force, with_memory }) => {
+            run_import(file.as_deref(), force, with_memory)?;
         }
 
         Some(PlanCommand::Cancel { id }) => {
@@ -516,14 +543,14 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     println!("Exported to {filename}");
                 }
             } else {
-                #[derive(Serialize)]
-                struct PlanExportBundle<'a> {
-                    plan: &'a Plan,
-                    audit_trail: &'a Vec<orbit_core::audit::AuditEvent>,
-                    memory_run: Option<&'a orbit_core::memory::PlanRunRecord>,
-                }
-
-                let bundle = PlanExportBundle { plan: &plan, audit_trail: &audit_trail, memory_run: memory_run.as_ref() };
+                let node_count = plan.nodes.len();
+                let audit_count = audit_trail.len();
+                let has_memory = memory_run.is_some();
+                let bundle = orbit_core::plan::PlanExportBundle {
+                    plan,
+                    audit_trail,
+                    memory_run,
+                };
                 let json = serde_json::to_string_pretty(&bundle)?;
 
                 if stdout {
@@ -534,9 +561,9 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     println!("Exported to {filename}");
                     println!(
                         "  {} node(s), {} audit event(s){}",
-                        plan.nodes.len(),
-                        audit_trail.len(),
-                        if memory_run.is_some() { ", memory record included" } else { "" }
+                        node_count,
+                        audit_count,
+                        if has_memory { ", memory record included" } else { "" }
                     );
                 }
             }
@@ -1912,4 +1939,100 @@ fn ymd_hm_to_ts(y: u32, mo: u32, d: u32, h: u32, m: u32) -> u64 {
 
 fn is_leap_year(y: u32) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+// ── P11-B: grouped list ───────────────────────────────────────────────────────
+
+fn print_plans_grouped(plans: &[Plan]) {
+    use std::collections::BTreeMap;
+    let mut by_scope: BTreeMap<String, Vec<&Plan>> = BTreeMap::new();
+    for plan in plans {
+        by_scope.entry(plan.scope.scope_key()).or_default().push(plan);
+    }
+    for (scope, group) in &by_scope {
+        let label = if scope.trim_matches('/').is_empty() { "(global)" } else { scope.as_str() };
+        println!("▸ {} ({} plan(s))", label, group.len());
+        for plan in group.iter() {
+            let status_icon = match plan.status {
+                orbit_core::plan::PlanStatus::Completed => "✓",
+                orbit_core::plan::PlanStatus::Failed => "✗",
+                orbit_core::plan::PlanStatus::Cancelled => "⊘",
+                orbit_core::plan::PlanStatus::Running => "▶",
+                _ => "·",
+            };
+            println!("  {} {} [{:?}] — {}", status_icon, plan.id, plan.status, plan.intent);
+        }
+        println!();
+    }
+}
+
+// ── P11-A: import ─────────────────────────────────────────────────────────────
+
+fn run_import(file: Option<&str>, force: bool, with_memory: bool) -> anyhow::Result<()> {
+    use orbit_core::{audit, memory, plan::{Plan, PlanExportBundle, PlanStatus}};
+    use std::io::Read;
+
+    let json = match file {
+        None | Some("-") => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("cannot read {path}: {e}"))?,
+    };
+
+    // Try full bundle first, fall back to bare Plan.
+    let bundle: PlanExportBundle = if let Ok(b) = serde_json::from_str::<PlanExportBundle>(&json) {
+        b
+    } else {
+        let plan: Plan = serde_json::from_str(&json)
+            .map_err(|e| anyhow::anyhow!("not a valid plan or export bundle: {e}"))?;
+        PlanExportBundle { plan, audit_trail: vec![], memory_run: None }
+    };
+
+    let mut plan = bundle.plan;
+    let original_id = plan.id.clone();
+
+    // Check for collision
+    let existing = Plan::load(&plan.id).is_ok();
+    if existing && !force {
+        anyhow::bail!(
+            "Plan {} already exists locally. Use --force to overwrite.",
+            plan.id
+        );
+    }
+
+    // Running state is machine-local; reset to a completed marker so it's not
+    // inadvertently picked up by the local supervisor.
+    if plan.status == PlanStatus::Running || plan.status == PlanStatus::Planning {
+        plan.status = PlanStatus::Cancelled;
+    }
+
+    plan.save()?;
+    println!("Imported plan {} ({} node(s), {:?})", plan.id, plan.nodes.len(), plan.status);
+    if original_id != plan.id {
+        println!("  (ID reassigned: {} → {})", original_id, plan.id);
+    }
+
+    if !bundle.audit_trail.is_empty() {
+        let mut imported = 0usize;
+        for event in &bundle.audit_trail {
+            if audit::append_event(event).is_ok() {
+                imported += 1;
+            }
+        }
+        println!("  {} audit event(s) imported", imported);
+    }
+
+    if with_memory {
+        if let Some(record) = bundle.memory_run {
+            memory::append_plan_run(&record)?;
+            println!("  Memory record imported");
+        } else {
+            println!("  (no memory record in bundle)");
+        }
+    }
+
+    Ok(())
 }

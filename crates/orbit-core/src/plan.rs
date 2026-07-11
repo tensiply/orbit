@@ -380,6 +380,17 @@ impl Plan {
     }
 }
 
+// ── PlanExportBundle ──────────────────────────────────────────────────────────
+
+/// Portable snapshot of a plan with its audit trail and memory record.
+/// Written by `orbit plan export`, read by `orbit plan import`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanExportBundle {
+    pub plan: Plan,
+    pub audit_trail: Vec<crate::audit::AuditEvent>,
+    pub memory_run: Option<crate::memory::PlanRunRecord>,
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
