@@ -24,3 +24,4 @@ anyhow.workspace = true
 tracing.workspace = true
 tokio = { workspace = true }
 directories.workspace = true
+tempfile.workspace = true

@@ -56,6 +56,8 @@ pub struct PlanArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum PlanCommand {
+    /// Interactive plan creation wizard
+    New,
     /// Show plan details
     Get { id: String },
     /// List all plans
@@ -788,6 +790,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
+        Some(PlanCommand::New) => {
+            run_new().await?;
+        }
+
         Some(PlanCommand::Template { command }) => {
             run_template(command).await?;
         }
@@ -1149,6 +1155,209 @@ fn git_repo_root() -> Option<std::path::PathBuf> {
     } else {
         None
     }
+}
+
+// ── interactive wizard ────────────────────────────────────────────────────────
+
+fn wizard_prompt(label: &str) -> String {
+    use std::io::Write;
+    print!("{label}");
+    let _ = std::io::stdout().flush();
+    let mut buf = String::new();
+    let _ = std::io::stdin().read_line(&mut buf);
+    buf.trim().to_string()
+}
+
+fn wizard_confirm(label: &str, default_yes: bool) -> bool {
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    let answer = wizard_prompt(&format!("{label} {hint}: "));
+    if answer.is_empty() {
+        return default_yes;
+    }
+    matches!(answer.to_lowercase().as_str(), "y" | "yes")
+}
+
+fn intent_from_editor(initial: &str) -> Result<String> {
+    use std::io::Write;
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    if !initial.is_empty() {
+        writeln!(tmp, "{initial}")?;
+    }
+    let path = tmp.path().to_owned();
+    std::process::Command::new(&editor).arg(&path).status()?;
+    let content = std::fs::read_to_string(&path)?;
+    let text = content.trim().to_string();
+    if text.is_empty() {
+        anyhow::bail!("no intent entered");
+    }
+    Ok(text)
+}
+
+async fn run_new() -> Result<()> {
+    println!();
+    println!("  orbit plan — interactive wizard");
+    println!("  ─────────────────────────────────────────");
+
+    // ── 1. Scope ──────────────────────────────────────────────────────────────
+    let (ws, tenant, project, repository) = resolve_scope_from_cwd();
+    println!();
+    println!("  Scope (auto-detected from cwd):");
+    let scope_set = ws.is_some() || tenant.is_some() || project.is_some() || repository.is_some();
+    if scope_set {
+        if let Some(ref v) = ws { println!("    workspace: {v}"); }
+        if let Some(ref v) = tenant { println!("    tenant:    {v}"); }
+        if let Some(ref v) = project { println!("    project:   {v}"); }
+        if let Some(ref v) = repository { println!("    repo:      {v}"); }
+    } else {
+        println!("    (none — running without scope)");
+    }
+
+    // Override? (only if something was detected)
+    let (workspace, tenant, project, repository) = if scope_set {
+        if wizard_confirm("\n  Use detected scope?", true) {
+            (ws, tenant, project, repository)
+        } else {
+            let ws_in = wizard_prompt("  Workspace (Enter to skip): ");
+            let tn_in = wizard_prompt("  Tenant    (Enter to skip): ");
+            let pr_in = wizard_prompt("  Project   (Enter to skip): ");
+            let re_in = wizard_prompt("  Repo      (Enter to skip): ");
+            (
+                if ws_in.is_empty() { None } else { Some(ws_in) },
+                if tn_in.is_empty() { None } else { Some(tn_in) },
+                if pr_in.is_empty() { None } else { Some(pr_in) },
+                if re_in.is_empty() { None } else { Some(re_in) },
+            )
+        }
+    } else {
+        let tn_in = wizard_prompt("  Tenant  (Enter to skip): ");
+        let pr_in = wizard_prompt("  Project (Enter to skip): ");
+        let re_in = wizard_prompt("  Repo    (Enter to skip): ");
+        (
+            None,
+            if tn_in.is_empty() { None } else { Some(tn_in) },
+            if pr_in.is_empty() { None } else { Some(pr_in) },
+            if re_in.is_empty() { None } else { Some(re_in) },
+        )
+    };
+
+    // ── 2. Intent ─────────────────────────────────────────────────────────────
+    println!();
+    let use_editor = std::env::var("EDITOR").is_ok()
+        && wizard_confirm("  Open $EDITOR for intent?", false);
+
+    let intent = if use_editor {
+        intent_from_editor("")?
+    } else {
+        let raw = wizard_prompt("  Intent › ");
+        if raw.is_empty() {
+            anyhow::bail!("no intent entered");
+        }
+        raw
+    };
+
+    // ── 3. Extra repos ────────────────────────────────────────────────────────
+    println!();
+    let repos_raw = wizard_prompt("  Extra repos (space-separated paths, Enter to skip): ");
+    let extra_repos: Vec<CrossRepoSpec> = repos_raw
+        .split_whitespace()
+        .map(|p| {
+            let path = std::path::Path::new(p);
+            let alias = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(p)
+                .to_string();
+            CrossRepoSpec {
+                alias: alias.clone(),
+                workspace: None,
+                tenant: None,
+                project: None,
+                repository: Some(alias),
+            }
+        })
+        .collect();
+
+    // ── 4. Preview (dry-run) ──────────────────────────────────────────────────
+    println!();
+    let do_preview = wizard_confirm("  Preview plan nodes before launching?", true);
+
+    if do_preview {
+        println!();
+        println!("  Generating plan preview…");
+        match send_raw(&Request::CreatePlan {
+            intent: intent.clone(),
+            workspace: workspace.clone(),
+            tenant: tenant.clone(),
+            project: project.clone(),
+            repository: repository.clone(),
+            dry_run: true,
+            verbose: false,
+            extra_repos: extra_repos.clone(),
+        })
+        .await?
+        {
+            Response::PlanCreated { node_count, .. } => {
+                println!();
+                println!("  Plan preview — {node_count} node(s):");
+                // Get the actual plan to show nodes
+                match send_raw(&Request::ListPlans).await? {
+                    Response::Plans { plans } => {
+                        if let Some(plan) = plans.last() {
+                            for (i, node) in plan.nodes.iter().enumerate() {
+                                let idx = i + 1;
+                                println!("    {idx}. [{:?}]  {}", node.task_type, node.label);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Response::Error { message } => {
+                eprintln!("  Preview error: {message}");
+                if !wizard_confirm("  Continue anyway?", false) {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // ── 5. Confirm and launch ─────────────────────────────────────────────────
+    println!();
+    if !wizard_confirm("  Launch plan?", true) {
+        println!("  Cancelled.");
+        return Ok(());
+    }
+
+    println!();
+    println!("  Launching: {intent}");
+
+    match send_raw(&Request::CreatePlan {
+        intent: intent.clone(),
+        workspace,
+        tenant,
+        project,
+        repository,
+        dry_run: false,
+        verbose: false,
+        extra_repos,
+    })
+    .await?
+    {
+        Response::PlanCreated { id, node_count, .. } => {
+            println!("  Plan created: {id} ({node_count} node(s))");
+            println!("  Stream: orbit plan watch {id}");
+            println!("  Status: orbit plan get {id}");
+        }
+        Response::Error { message } => {
+            eprintln!("  Error: {message}");
+            std::process::exit(1);
+        }
+        _ => eprintln!("  Unexpected response"),
+    }
+
+    Ok(())
 }
 
 // ── template subcommands ──────────────────────────────────────────────────────
