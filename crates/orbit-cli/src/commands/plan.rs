@@ -7,6 +7,7 @@ use orbit_core::{
     ipc::{PlanStreamEvent, ProjectRole, Request, Response},
     memory::find_run,
     plan::{CrossRepoSpec, Plan, PlanNodeType},
+    schedule,
     template,
 };
 use serde::Serialize;
@@ -184,6 +185,53 @@ pub enum PlanCommand {
     Template {
         #[command(subcommand)]
         command: TemplateCommand,
+    },
+    /// Schedule plans to run automatically (once or on a cron schedule)
+    Schedule {
+        #[command(subcommand)]
+        command: ScheduleCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ScheduleCommand {
+    /// Create a new scheduled plan
+    Create {
+        /// Plan intent
+        intent: String,
+        /// Run once at this UTC time (format: YYYY-MM-DDTHH:MM or Unix timestamp)
+        #[arg(long)]
+        at: Option<String>,
+        /// Run on a cron schedule (5-field: "min hour dom mon dow")
+        #[arg(long)]
+        cron: Option<String>,
+        /// Additional repos to pass to the planner (local paths)
+        #[arg(long = "repo", value_name = "PATH")]
+        repos: Vec<String>,
+        /// Workspace scope override
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Tenant scope override
+        #[arg(long)]
+        tenant: Option<String>,
+        /// Project scope override
+        #[arg(long)]
+        project: Option<String>,
+        /// Repository scope override
+        #[arg(long)]
+        repository: Option<String>,
+    },
+    /// List all scheduled plans
+    List,
+    /// Delete a scheduled plan
+    Cancel {
+        /// Schedule ID (from `orbit plan schedule list`)
+        id: String,
+    },
+    /// Fire a scheduled plan immediately (regardless of next_run time)
+    Run {
+        /// Schedule ID
+        id: String,
     },
 }
 
@@ -744,6 +792,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             run_template(command).await?;
         }
 
+        Some(PlanCommand::Schedule { command }) => {
+            run_schedule(command).await?;
+        }
+
         None => {
             let intent = match args.intent {
                 Some(i) => i,
@@ -1277,4 +1329,163 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// ── schedule ──────────────────────────────────────────────────────────────────
+
+async fn run_schedule(command: ScheduleCommand) -> Result<()> {
+    match command {
+        ScheduleCommand::Create { intent, at, cron, repos, workspace, tenant, project, repository } => {
+            let at_ts = if let Some(ref s) = at {
+                Some(parse_at(s)?)
+            } else {
+                None
+            };
+
+            let req = Request::CreateSchedule {
+                intent: intent.clone(),
+                at: at_ts,
+                cron: cron.clone(),
+                repos,
+                workspace,
+                tenant,
+                project,
+                repository,
+            };
+
+            match send_raw(&req).await? {
+                Response::ScheduleCreated { id, next_run } => {
+                    println!("  \x1b[32m✓\x1b[0m  Schedule created: {id}");
+                    println!("  intent:   {intent}");
+                    match (&cron, &at) {
+                        (Some(expr), _) => println!("  schedule: cron  {expr}"),
+                        (_, Some(s)) => println!("  schedule: once  {s}"),
+                        _ => {}
+                    }
+                    if let Some(ts) = next_run {
+                        println!("  next run: {}", schedule::format_ts(ts));
+                    } else {
+                        println!("  next run: (exhausted — run with `orbit plan schedule run {id}`)");
+                    }
+                }
+                Response::Error { message } => {
+                    eprintln!("  Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("  Unexpected response"),
+            }
+        }
+
+        ScheduleCommand::List => {
+            match send_raw(&Request::ListSchedules).await? {
+                Response::Schedules { schedules } => {
+                    if schedules.is_empty() {
+                        println!("No scheduled plans.");
+                        println!("Create one with: orbit plan schedule create \"<intent>\" --cron \"0 9 * * 1-5\"");
+                        return Ok(());
+                    }
+
+                    let id_w = schedules.iter().map(|s| s.id.len()).max().unwrap_or(8).max(8);
+                    let intent_w = schedules.iter().map(|s| s.intent.len().min(40)).max().unwrap_or(20).max(20);
+
+                    println!(
+                        "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  NEXT RUN",
+                        "ID", "INTENT", "RUNS", "SCHEDULE",
+                        id_w = id_w, intent_w = intent_w,
+                    );
+                    println!("  {}", "-".repeat(id_w + intent_w + 55));
+
+                    for s in &schedules {
+                        let short_intent: String = s.intent.chars().take(40).collect();
+                        let sched_str = schedule::format_schedule(&s.schedule);
+                        let next = s.next_run
+                            .map(|ts| schedule::format_ts(ts))
+                            .unwrap_or_else(|| "exhausted".to_string());
+                        println!(
+                            "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  {}",
+                            s.id, short_intent, s.run_count, sched_str, next,
+                            id_w = id_w, intent_w = intent_w,
+                        );
+                    }
+                }
+                Response::Error { message } => {
+                    eprintln!("  Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("  Unexpected response"),
+            }
+        }
+
+        ScheduleCommand::Cancel { id } => {
+            match send_raw(&Request::CancelSchedule { id: id.clone() }).await? {
+                Response::ScheduleCancelled { id } => {
+                    println!("  \x1b[32m✓\x1b[0m  Schedule {id} cancelled.");
+                }
+                Response::Error { message } => {
+                    eprintln!("  Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("  Unexpected response"),
+            }
+        }
+
+        ScheduleCommand::Run { id } => {
+            match send_raw(&Request::RunScheduleNow { id: id.clone() }).await? {
+                Response::ScheduleFired { schedule_id, plan_id } => {
+                    println!("  \x1b[32m✓\x1b[0m  Schedule {schedule_id} fired → plan {plan_id}");
+                    println!("  Track:  orbit plan get {plan_id}");
+                    println!("  Watch:  orbit plan watch {plan_id}");
+                }
+                Response::Error { message } => {
+                    eprintln!("  Error: {message}");
+                    std::process::exit(1);
+                }
+                _ => eprintln!("  Unexpected response"),
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Parse `--at` value: accepts Unix timestamp (integer) or ISO-8601 "YYYY-MM-DDTHH:MM".
+fn parse_at(s: &str) -> Result<u64> {
+    // Try integer first
+    if let Ok(n) = s.parse::<u64>() {
+        return Ok(n);
+    }
+    // Parse YYYY-MM-DDTHH:MM
+    let parts: Vec<&str> = s.splitn(2, 'T').collect();
+    if parts.len() == 2 {
+        let date_parts: Vec<u32> = parts[0].split('-').filter_map(|p| p.parse().ok()).collect();
+        let time_parts: Vec<u32> = parts[1].split(':').filter_map(|p| p.parse().ok()).collect();
+        if date_parts.len() == 3 && time_parts.len() >= 2 {
+            let ts = ymd_hm_to_ts(
+                date_parts[0],
+                date_parts[1],
+                date_parts[2],
+                time_parts[0],
+                time_parts[1],
+            );
+            return Ok(ts);
+        }
+    }
+    anyhow::bail!("invalid --at value '{s}': use Unix timestamp or YYYY-MM-DDTHH:MM")
+}
+
+fn ymd_hm_to_ts(y: u32, mo: u32, d: u32, h: u32, m: u32) -> u64 {
+    let mut days = 0u64;
+    for year in 1970..y {
+        days += if is_leap_year(year) { 366 } else { 365 };
+    }
+    const MONTH_DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for month in 1..mo {
+        let extra = if month == 2 && is_leap_year(y) { 1 } else { 0 };
+        days += (MONTH_DAYS[(month - 1) as usize] + extra) as u64;
+    }
+    days += (d - 1) as u64;
+    days * 86400 + h as u64 * 3600 + m as u64 * 60
+}
+
+fn is_leap_year(y: u32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }

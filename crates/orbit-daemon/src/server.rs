@@ -43,6 +43,7 @@ impl ConnectionRole {
                     | Request::PausePlan { .. }
                     | Request::ResumePlan { .. }
                     | Request::StreamPlan { .. }
+                    | Request::ListSchedules
             ),
             ConnectionRole::Observer => matches!(
                 req,
@@ -50,6 +51,7 @@ impl ConnectionRole {
                     | Request::ListPlans
                     | Request::GetPlanStats
                     | Request::StreamPlan { .. }
+                    | Request::ListSchedules
             ),
         }
     }
@@ -505,6 +507,122 @@ impl ServerState {
                     }
                 }
             }
+
+            Request::CreateSchedule { intent, at, cron, repos, workspace, tenant, project, repository } => {
+                use orbit_core::{
+                    schedule::{ScheduleKind, ScheduledPlan, new_id, next_cron_after, now_secs, upsert},
+                };
+
+                let kind = match (at, cron) {
+                    (Some(ts), _) => ScheduleKind::Once { at: ts },
+                    (None, Some(expr)) => ScheduleKind::Cron { expr: expr.clone() },
+                    (None, None) => return Response::Error {
+                        message: "CreateSchedule requires either `at` (timestamp) or `cron` (expression)".into(),
+                    },
+                };
+
+                let next_run = match &kind {
+                    ScheduleKind::Once { at } => Some(*at),
+                    ScheduleKind::Cron { expr } => {
+                        match next_cron_after(expr, now_secs()) {
+                            Ok(t) => t,
+                            Err(e) => return Response::Error {
+                                message: format!("invalid cron expression: {e}"),
+                            },
+                        }
+                    }
+                };
+
+                let repos_paths = repos.iter().map(std::path::PathBuf::from).collect();
+                let id = new_id();
+                let sched = ScheduledPlan {
+                    id: id.clone(),
+                    intent,
+                    schedule: kind,
+                    repos: repos_paths,
+                    workspace,
+                    tenant,
+                    project,
+                    repository,
+                    next_run,
+                    last_run: None,
+                    run_count: 0,
+                    created_at: now_secs(),
+                };
+
+                match upsert(sched) {
+                    Ok(_) => Response::ScheduleCreated { id, next_run },
+                    Err(e) => Response::Error { message: format!("failed to save schedule: {e}") },
+                }
+            }
+
+            Request::ListSchedules => {
+                Response::Schedules { schedules: orbit_core::schedule::load_all() }
+            }
+
+            Request::CancelSchedule { id } => {
+                match orbit_core::schedule::delete(&id) {
+                    Ok(true) => Response::ScheduleCancelled { id },
+                    Ok(false) => Response::Error { message: format!("schedule not found: {id}") },
+                    Err(e) => Response::Error { message: format!("failed to delete schedule: {e}") },
+                }
+            }
+
+            Request::RunScheduleNow { id } => {
+                use orbit_core::{
+                    audit::{append_event, AuditEvent},
+                    memory::{find_similar, load_recent_runs},
+                    plan::{PlanScope, PlanStatus},
+                    schedule::{upsert, now_secs},
+                };
+                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
+
+                let sched = match orbit_core::schedule::find(&id) {
+                    Some(s) => s,
+                    None => return Response::Error { message: format!("schedule not found: {id}") },
+                };
+
+                let scope = PlanScope {
+                    workspace: sched.workspace.clone(),
+                    tenant: sched.tenant.clone(),
+                    project: sched.project.clone(),
+                    repository: sched.repository.clone(),
+                };
+                let extra_repos: Vec<_> = sched.repos.iter().map(|p| {
+                    orbit_core::plan::CrossRepoSpec {
+                        alias: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                        workspace: None, tenant: None, project: None,
+                        repository: Some(p.to_string_lossy().to_string()),
+                    }
+                }).collect();
+                let recent = {
+                    let similar = find_similar(&sched.intent, 5);
+                    if similar.is_empty() { load_recent_runs(3) } else { similar }
+                };
+                let cfg = PlannerConfig::default();
+
+                match invoke_planner(&sched.intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &extra_repos) {
+                    Err(e) => Response::Error { message: format!("planner error: {e}") },
+                    Ok((mut plan, _trace)) => {
+                        plan.status = PlanStatus::Running;
+                        let plan_id = plan.id.clone();
+                        let _ = append_event(&AuditEvent::PlanCreated {
+                            plan_id: plan_id.clone(),
+                            intent: sched.intent.clone(),
+                            node_count: plan.nodes.len(),
+                            timestamp: now_secs(),
+                        });
+                        if let Err(e) = plan.save() {
+                            return Response::Error { message: format!("failed to save plan: {e}") };
+                        }
+                        let mut updated = sched;
+                        updated.last_run = Some(now_secs());
+                        updated.run_count += 1;
+                        let _ = upsert(updated);
+                        Response::ScheduleFired { schedule_id: id, plan_id }
+                    }
+                }
+            }
         }
     }
 }
@@ -680,6 +798,12 @@ pub async fn run() -> Result<()> {
         Duration::from_secs(5),
         shutdown_tx.subscribe(),
         event_tx.clone(),
+    ));
+
+    // Background: check scheduled plans every 60s
+    tokio::spawn(crate::scheduler::run_scheduler_loop(
+        Duration::from_secs(60),
+        shutdown_tx.subscribe(),
     ));
 
     // Background: poll Jira and write cache if plugin is installed

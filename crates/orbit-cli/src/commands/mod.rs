@@ -1,7 +1,9 @@
 pub mod auth;
+pub mod context;
 pub mod env;
 pub mod jira;
 pub mod memory;
+pub mod notify;
 pub mod plan;
 pub mod completions;
 pub mod config;

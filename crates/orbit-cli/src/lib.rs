@@ -64,6 +64,10 @@ pub enum Commands {
     Plan(commands::plan::PlanArgs),
     /// Search and manage plan run memory
     Memory(commands::memory::MemoryArgs),
+    /// Configure and test desktop notifications
+    Notify(commands::notify::NotifyArgs),
+    /// Inspect context layers, instructions, and MCP for the current scope
+    Context(commands::context::ContextArgs),
 }
 
 impl Cli {
@@ -126,6 +130,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Env(args)) => commands::env::run(args),
         Some(Commands::Plan(args)) => commands::plan::run(args).await,
         Some(Commands::Memory(args)) => commands::memory::run(args),
+        Some(Commands::Notify(args)) => commands::notify::run(args),
+        Some(Commands::Context(args)) => commands::context::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

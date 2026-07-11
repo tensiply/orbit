@@ -1,3 +1,4 @@
+use crate::notify::NotificationsConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -17,6 +18,7 @@ pub struct UserConfig {
     pub engine: EngineSection,
     pub install: InstallSection,
     pub update: UserUpdateSection,
+    pub notifications: NotificationsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -80,6 +82,7 @@ impl Default for UserConfig {
             engine: EngineSection::default(),
             install: InstallSection::default(),
             update: UserUpdateSection::default(),
+            notifications: NotificationsConfig::default(),
         }
     }
 }

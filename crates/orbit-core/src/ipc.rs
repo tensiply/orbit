@@ -1,6 +1,7 @@
 use crate::audit::AuditStats;
 use crate::eval::{EvalConstraint, EvalResult};
 use crate::plan::Plan;
+use crate::schedule::ScheduledPlan;
 use crate::session::Session;
 use serde::{Deserialize, Serialize};
 
@@ -156,6 +157,26 @@ pub enum Request {
         #[serde(default)]
         role: ProjectRole,
     },
+    /// Create a new scheduled plan (once or cron).
+    CreateSchedule {
+        intent: String,
+        /// Unix timestamp for a one-shot schedule.
+        at: Option<u64>,
+        /// 5-field cron expression for a recurring schedule.
+        cron: Option<String>,
+        #[serde(default)]
+        repos: Vec<String>,
+        workspace: Option<String>,
+        tenant: Option<String>,
+        project: Option<String>,
+        repository: Option<String>,
+    },
+    /// List all scheduled plans.
+    ListSchedules,
+    /// Delete a scheduled plan.
+    CancelSchedule { id: String },
+    /// Fire a scheduled plan immediately (ignoring next_run).
+    RunScheduleNow { id: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -221,5 +242,19 @@ pub enum Response {
     },
     ProjectSocketAdded {
         path: String,
+    },
+    ScheduleCreated {
+        id: String,
+        next_run: Option<u64>,
+    },
+    Schedules {
+        schedules: Vec<ScheduledPlan>,
+    },
+    ScheduleCancelled {
+        id: String,
+    },
+    ScheduleFired {
+        schedule_id: String,
+        plan_id: String,
     },
 }

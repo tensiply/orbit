@@ -96,6 +96,8 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
     };
     let _ = event_tx.send(ev);
 
+    fire_plan_notification(&parent.intent, &parent.id, &outcome);
+
     info!(
         "parent plan {} closed as {outcome:?} (child: {})",
         parent.id, child.id
@@ -366,6 +368,8 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             _ => PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() },
         };
         let _ = event_tx.send(ev);
+
+        fire_plan_notification(&plan.intent, &plan.id, &outcome);
 
         let _ = append_plan_run(&PlanRunRecord {
             plan_id: plan.id.clone(),
@@ -641,8 +645,21 @@ fn fail_plan_enforced(
     });
     let _ = event_tx.send(PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() });
 
+    fire_plan_notification(&plan.intent, &plan.id, &PlanStatus::Failed);
+
     plan.save()?;
     Ok(())
+}
+
+// ── notification ──────────────────────────────────────────────────────────────
+
+fn fire_plan_notification(intent: &str, plan_id: &str, outcome: &PlanStatus) {
+    let is_failure = !matches!(outcome, PlanStatus::Completed);
+    let short_id = &plan_id[plan_id.len().saturating_sub(8)..];
+    let short_intent: String = intent.chars().take(72).collect();
+    let title = if is_failure { "orbit · Plan Failed" } else { "orbit · Plan Completed" };
+    let body = format!("{short_intent}  [{short_id}]");
+    std::thread::spawn(move || orbit_core::notify::maybe_send(title, &body, is_failure));
 }
 
 fn now_secs() -> u64 {

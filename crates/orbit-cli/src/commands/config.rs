@@ -35,6 +35,9 @@ const VALID_KEYS: &[&str] = &[
     "engine.default_tenant",
     "engine.default_workspace",
     "install.dir",
+    "notifications.enabled",
+    "notifications.on_plan_complete",
+    "notifications.on_plan_failed",
 ];
 
 pub fn run(args: ConfigArgs) -> Result<()> {
@@ -92,6 +95,9 @@ fn get_value(cfg: &UserConfig, key: &str) -> Result<String> {
         "engine.default_tenant" => cfg.engine.default_tenant.clone(),
         "engine.default_workspace" => cfg.engine.default_workspace.clone(),
         "install.dir" => cfg.install.dir.to_string_lossy().into_owned(),
+        "notifications.enabled" => cfg.notifications.enabled.to_string(),
+        "notifications.on_plan_complete" => cfg.notifications.on_plan_complete.to_string(),
+        "notifications.on_plan_failed" => cfg.notifications.on_plan_failed.to_string(),
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",
             VALID_KEYS
@@ -135,6 +141,13 @@ fn set_value(cfg: &mut UserConfig, key: &str, value: &str) -> Result<()> {
             }
         }
         "install.dir" => cfg.install.dir = PathBuf::from(value),
+        "notifications.enabled" => cfg.notifications.enabled = parse_bool(key, value)?,
+        "notifications.on_plan_complete" => {
+            cfg.notifications.on_plan_complete = parse_bool(key, value)?
+        }
+        "notifications.on_plan_failed" => {
+            cfg.notifications.on_plan_failed = parse_bool(key, value)?
+        }
         other => bail!(
             "unknown key: {other}\n\n  Valid keys:\n{}",
             VALID_KEYS
@@ -145,4 +158,12 @@ fn set_value(cfg: &mut UserConfig, key: &str, value: &str) -> Result<()> {
         ),
     }
     Ok(())
+}
+
+fn parse_bool(key: &str, value: &str) -> Result<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        _ => bail!("invalid value for {key}: '{value}'  (expected true/false)"),
+    }
 }
