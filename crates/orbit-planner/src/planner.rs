@@ -313,18 +313,7 @@ fn parse_llm_response(
     cfg: &PlannerConfig,
     system_prompt: &str,
 ) -> Result<Plan> {
-    // Extract JSON block from markdown fences or raw
-    let json_str = if let Some(start) = raw.find("```json") {
-        let after = &raw[start + 7..];
-        let end = after.find("```").unwrap_or(after.len());
-        after[..end].trim()
-    } else if let Some(start) = raw.find("```") {
-        let after = &raw[start + 3..];
-        let end = after.find("```").unwrap_or(after.len());
-        after[..end].trim()
-    } else {
-        raw.trim()
-    };
+    let json_str = extract_json_str(raw);
 
     let mut plan = Plan::new(intent, scope.clone(), cfg.engine);
     plan.status = PlanStatus::Planning;
@@ -351,6 +340,60 @@ fn parse_llm_response(
     tracing::warn!("planner response unparseable, using fallback single-node plan");
     plan.nodes = vec![fallback_single_node(intent, cfg.engine)];
     Ok(plan)
+}
+
+// ── Scope suggestion ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ScopeSuggestion {
+    workspace: Option<String>,
+    tenant: Option<String>,
+    project: Option<String>,
+    repository: Option<String>,
+}
+
+/// Ask the engine to suggest an Orbit scope based on the cwd path and intent.
+/// Returns `None` if the engine call fails or the response is unparseable.
+pub fn suggest_scope(
+    cwd: &std::path::Path,
+    intent: &str,
+    backend: &dyn PlannerBackend,
+) -> Option<(Option<String>, Option<String>, Option<String>, Option<String>)> {
+    let prompt = format!(
+        r#"You are helping identify the workspace scope for a coding task in the Orbit CLI.
+
+Current directory: {cwd}
+Intent: "{intent}"
+
+The Orbit scope hierarchy maps to a directory structure like:
+  ~/WORKSPACE/TENANT/PROJECT/REPOSITORY
+
+Based ONLY on the directory path provided, suggest the most likely scope fields.
+Return ONLY valid JSON (no explanation, no markdown fences), like:
+{{"workspace":"AI","tenant":"AIDEV","project":"AI-ECOSYSTEM","repository":"orbit"}}
+
+Use null for any field you cannot determine from the path alone."#,
+        cwd = cwd.display()
+    );
+
+    let raw = backend.call(&prompt).ok()?;
+    let json_str = extract_json_str(&raw);
+    let suggestion: ScopeSuggestion = serde_json::from_str(json_str).ok()?;
+    Some((suggestion.workspace, suggestion.tenant, suggestion.project, suggestion.repository))
+}
+
+fn extract_json_str(raw: &str) -> &str {
+    if let Some(start) = raw.find("```json") {
+        let after = &raw[start + 7..];
+        let end = after.find("```").unwrap_or(after.len());
+        return after[..end].trim();
+    }
+    if let Some(start) = raw.find("```") {
+        let after = &raw[start + 3..];
+        let end = after.find("```").unwrap_or(after.len());
+        return after[..end].trim();
+    }
+    raw.trim()
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
