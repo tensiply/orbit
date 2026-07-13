@@ -29,6 +29,7 @@ pub enum Tab {
     Schedules,
     Scopes,
     Workspaces,
+    Peers,
 }
 
 impl Tab {
@@ -47,13 +48,14 @@ impl Tab {
             Tab::Tasks => Tab::Schedules,
             Tab::Schedules => Tab::Scopes,
             Tab::Scopes => Tab::Workspaces,
-            Tab::Workspaces => Tab::Sessions,
+            Tab::Workspaces => Tab::Peers,
+            Tab::Peers => Tab::Sessions,
         }
     }
 
     pub fn prev(self, jira_enabled: bool) -> Self {
         match self {
-            Tab::Sessions => Tab::Workspaces,
+            Tab::Sessions => Tab::Peers,
             Tab::Launch => Tab::Sessions,
             Tab::Plans => Tab::Launch,
             Tab::System => Tab::Plans,
@@ -67,6 +69,7 @@ impl Tab {
             }
             Tab::Scopes => Tab::Schedules,
             Tab::Workspaces => Tab::Scopes,
+            Tab::Peers => Tab::Workspaces,
         }
     }
 }
@@ -277,6 +280,45 @@ pub enum Mode {
     TaskDetails(Box<orbit_core::jira::JiraIssueDetail>),
     TaskDetailsError(String),
     AddComment(Box<WriteJiraState>),
+    ShareDialog(Box<ShareDialogState>),
+}
+
+// ── share / peers state ───────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ShareRole {
+    Observer,
+    Contributor,
+}
+
+pub struct ShareDialogState {
+    pub role: ShareRole,
+    pub port_input: crate::widget::TextInput,
+    pub name_input: crate::widget::TextInput,
+    pub status: ShareStatus,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+pub enum ShareStatus {
+    Idle,
+    Active { port: u16 },
+    Error(String),
+}
+
+pub struct PeersState {
+    pub peers: Vec<orbit_core::net::NetworkPeerInfo>,
+    #[allow(dead_code)]
+    pub selected: usize,
+}
+
+impl PeersState {
+    pub fn new() -> Self {
+        Self {
+            peers: vec![],
+            selected: 0,
+        }
+    }
 }
 
 // ── tasks state ───────────────────────────────────────────────────────────────
@@ -867,6 +909,13 @@ pub enum AsyncAction {
         key: String,
         body: String,
     },
+    StartSharing {
+        role: ShareRole,
+        port: u16,
+        name: String,
+    },
+    StopSharing,
+    RefreshPeers,
 }
 
 // ── post-exit actions ─────────────────────────────────────────────────────────
@@ -896,6 +945,8 @@ pub struct App {
     pub workspaces: Vec<PathBuf>,
     pub workspace_idx: usize,
     pub palette: crate::theme::Palette,
+    pub serving_active: bool,
+    pub peers_state: PeersState,
     should_quit: bool,
     post_action: Option<PostAction>,
 }
@@ -941,6 +992,8 @@ impl App {
             workspaces,
             workspace_idx,
             palette: crate::theme::Palette::detect(),
+            serving_active: false,
+            peers_state: PeersState::new(),
             should_quit: false,
             post_action: None,
         }
@@ -1141,6 +1194,11 @@ impl App {
                     self.pending_async = Some(AsyncAction::RefreshPlans);
                     return;
                 }
+                KeyCode::Char('9') => {
+                    self.tab = Tab::Peers;
+                    self.pending_async = Some(AsyncAction::RefreshPeers);
+                    return;
+                }
                 KeyCode::Char('w') => {
                     self.switch_workspace_next();
                     return;
@@ -1158,6 +1216,7 @@ impl App {
             Tab::Schedules => self.handle_schedules_key(code),
             Tab::Scopes => self.handle_scopes_key(code),
             Tab::Workspaces => self.handle_workspaces_key(code),
+            Tab::Peers => self.handle_peers_key(code),
         }
     }
 
@@ -1344,6 +1403,34 @@ impl App {
                 other => {
                     state.input.handle_key(other);
                     self.mode = Mode::AddComment(state);
+                }
+            },
+            Mode::ShareDialog(mut state) => match code {
+                KeyCode::Esc => {
+                    // close, mode already Normal
+                }
+                KeyCode::Enter => {
+                    let port: u16 = state.port_input.as_str().parse().unwrap_or(7373);
+                    let name = state.name_input.as_str().to_string();
+                    let role = state.role;
+                    if matches!(state.status, ShareStatus::Active { .. }) {
+                        self.pending_async = Some(AsyncAction::StopSharing);
+                        state.status = ShareStatus::Idle;
+                    } else {
+                        self.pending_async =
+                            Some(AsyncAction::StartSharing { role, port, name });
+                    }
+                    self.mode = Mode::ShareDialog(state);
+                }
+                KeyCode::Left | KeyCode::Right => {
+                    state.role = match state.role {
+                        ShareRole::Observer => ShareRole::Contributor,
+                        ShareRole::Contributor => ShareRole::Observer,
+                    };
+                    self.mode = Mode::ShareDialog(state);
+                }
+                _ => {
+                    self.mode = Mode::ShareDialog(state);
                 }
             },
             Mode::Normal => {}
@@ -1538,6 +1625,26 @@ impl App {
             KeyCode::Char('r') => {
                 self.workspaces_reg.refresh();
                 self.pending_async = Some(AsyncAction::RefreshPlans);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
+            _ => {}
+        }
+    }
+
+    fn handle_peers_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Char('r') => {
+                self.pending_async = Some(AsyncAction::RefreshPeers);
+            }
+            KeyCode::Char('S') => {
+                let hostname = hostname_or_orbit();
+                self.mode = Mode::ShareDialog(Box::new(ShareDialogState {
+                    role: ShareRole::Observer,
+                    port_input: crate::widget::TextInput::new("Port", "7373").with_value("7373"),
+                    name_input: crate::widget::TextInput::new("Name", "orbit")
+                        .with_value(&hostname),
+                    status: ShareStatus::Idle,
+                }));
             }
             KeyCode::Char('q') | KeyCode::Esc => self.tab = Tab::Sessions,
             _ => {}
@@ -1908,6 +2015,62 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
             }
         }
 
+        AsyncAction::StartSharing { role, port, name } => {
+            use orbit_core::ipc::{ProjectRole, Request, Response};
+            let max_role = match role {
+                ShareRole::Observer => ProjectRole::Observer,
+                ShareRole::Contributor => ProjectRole::Contributor,
+            };
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                orbit_client::ipc::send_raw(&Request::StartServing {
+                    port,
+                    max_role,
+                    name: name.clone(),
+                }),
+            )
+            .await
+            {
+                Ok(Ok(Response::ServingStarted { port, .. })) => {
+                    app.serving_active = true;
+                    app.status_msg =
+                        Some(format!("Sharing on port {port} via mDNS as '{name}'"));
+                }
+                Ok(Ok(Response::Error { message })) => {
+                    app.status_msg = Some(format!("Serve error: {message}"));
+                }
+                Ok(Err(e)) => {
+                    app.status_msg = Some(format!("Serve error: {e}"));
+                }
+                _ => {
+                    app.status_msg = Some("Serve timed out.".into());
+                }
+            }
+        }
+
+        AsyncAction::StopSharing => {
+            use orbit_core::ipc::Request;
+            let _ = tokio::time::timeout(
+                Duration::from_secs(3),
+                orbit_client::ipc::send_raw(&Request::StopServing),
+            )
+            .await;
+            app.serving_active = false;
+            app.status_msg = Some("Sharing stopped.".into());
+        }
+
+        AsyncAction::RefreshPeers => {
+            use orbit_core::ipc::{Request, Response};
+            if let Ok(Ok(Response::NetworkPeers { peers })) = tokio::time::timeout(
+                Duration::from_millis(500),
+                orbit_client::ipc::send_raw(&Request::ListNetworkPeers),
+            )
+            .await
+            {
+                app.peers_state.peers = peers;
+            }
+        }
+
         AsyncAction::RunScheduleNow(id) => {
             match tokio::time::timeout(
                 Duration::from_millis(500),
@@ -2109,4 +2272,11 @@ fn dirs_home() -> PathBuf {
     directories::BaseDirs::new()
         .map(|b| b.home_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("/tmp"))
+}
+
+pub fn hostname_or_orbit() -> String {
+    hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "orbit".to_string())
 }

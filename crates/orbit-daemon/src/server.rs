@@ -21,7 +21,7 @@ use tracing::{debug, info, warn};
 
 /// Restricts which requests a connection may issue.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ConnectionRole {
+pub(crate) enum ConnectionRole {
     /// Full access (owner Unix socket).
     Owner,
     /// Read + approve AwaitingApproval nodes (project socket, contributor role).
@@ -31,7 +31,7 @@ enum ConnectionRole {
 }
 
 impl ConnectionRole {
-    fn allows(&self, req: &Request) -> bool {
+    pub(crate) fn allows(&self, req: &Request) -> bool {
         match self {
             ConnectionRole::Owner => true,
             ConnectionRole::Contributor => matches!(
@@ -60,14 +60,17 @@ impl ConnectionRole {
 
 // ── state ─────────────────────────────────────────────────────────────────────
 
-struct ServerState {
-    started_at: Instant,
-    shutdown_tx: broadcast::Sender<()>,
-    event_tx: broadcast::Sender<PlanStreamEvent>,
+pub(crate) struct ServerState {
+    pub(crate) started_at: Instant,
+    pub(crate) shutdown_tx: broadcast::Sender<()>,
+    pub(crate) event_tx: broadcast::Sender<PlanStreamEvent>,
+    pub(crate) tcp_bridge: std::sync::Mutex<Option<crate::serve::TcpBridgeHandle>>,
+    pub(crate) mdns_announcer: std::sync::Mutex<Option<crate::mdns_announce::MdnsAnnouncer>>,
+    pub(crate) signing_key: std::sync::Mutex<Option<[u8; 32]>>,
 }
 
 impl ServerState {
-    fn new(
+    pub(crate) fn new(
         shutdown_tx: broadcast::Sender<()>,
         event_tx: broadcast::Sender<PlanStreamEvent>,
     ) -> Arc<Self> {
@@ -75,10 +78,122 @@ impl ServerState {
             started_at: Instant::now(),
             shutdown_tx,
             event_tx,
+            tcp_bridge: std::sync::Mutex::new(None),
+            mdns_announcer: std::sync::Mutex::new(None),
+            signing_key: std::sync::Mutex::new(None),
         })
     }
 
-    fn handle(&self, req: Request, role: ConnectionRole) -> Response {
+    pub(crate) async fn handle_start_serving(
+        self: &Arc<Self>,
+        port: u16,
+        max_role: orbit_core::ipc::ProjectRole,
+        name: String,
+    ) -> Response {
+        use crate::{
+            auth,
+            mdns_announce::{AnnounceConfig, MdnsAnnouncer},
+            serve,
+        };
+        use orbit_core::{ipc::ProjectRole, net::NetworkRole};
+
+        let key = {
+            let mut guard = self.signing_key.lock().unwrap();
+            if guard.is_none() {
+                match auth::load_or_create_signing_key() {
+                    Ok(k) => {
+                        *guard = Some(k);
+                        k
+                    }
+                    Err(e) => return Response::Error { message: format!("key error: {e}") },
+                }
+            } else {
+                (*guard).unwrap()
+            }
+        };
+
+        let max_network_role = match max_role {
+            ProjectRole::Contributor => NetworkRole::Contributor,
+            ProjectRole::Observer => NetworkRole::Observer,
+        };
+
+        let instance_name = if name.is_empty() {
+            hostname::get()
+                .ok()
+                .and_then(|h| h.into_string().ok())
+                .unwrap_or_else(|| "orbit".to_string())
+        } else {
+            name
+        };
+
+        let observer_token =
+            match auth::mint_token(NetworkRole::Observer, &key, 86_400, &instance_name) {
+                Ok(t) => t,
+                Err(e) => return Response::Error { message: format!("token error: {e}") },
+            };
+
+        let contributor_token = if max_network_role == NetworkRole::Contributor {
+            auth::mint_token(NetworkRole::Contributor, &key, 86_400, &instance_name).ok()
+        } else {
+            None
+        };
+
+        let config = serve::TcpBridgeConfig {
+            port,
+            max_role: max_network_role,
+            signing_key: key,
+        };
+
+        let state_clone = Arc::new(ServerState {
+            started_at: self.started_at,
+            shutdown_tx: self.shutdown_tx.clone(),
+            event_tx: self.event_tx.clone(),
+            tcp_bridge: std::sync::Mutex::new(None),
+            mdns_announcer: std::sync::Mutex::new(None),
+            signing_key: std::sync::Mutex::new(None),
+        });
+
+        let bridge =
+            match serve::start(config, state_clone, self.shutdown_tx.subscribe()).await {
+                Ok(b) => b,
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("TCP bridge error: {e}"),
+                    }
+                }
+            };
+
+        let actual_port = bridge.port;
+        *self.tcp_bridge.lock().unwrap() = Some(bridge);
+
+        let hostname_str = hostname::get()
+            .ok()
+            .and_then(|h| h.into_string().ok())
+            .unwrap_or_else(|| "orbit".to_string());
+
+        let announce_cfg = AnnounceConfig {
+            instance_name: &instance_name,
+            port: actual_port,
+            observer_token: &observer_token,
+            hostname: &hostname_str,
+        };
+
+        match MdnsAnnouncer::start(announce_cfg) {
+            Ok(announcer) => {
+                *self.mdns_announcer.lock().unwrap() = Some(announcer);
+                tracing::info!("mDNS: announcing {instance_name} on port {actual_port}");
+            }
+            Err(e) => tracing::warn!("mDNS announcement failed (serving continues): {e}"),
+        }
+
+        Response::ServingStarted {
+            port: actual_port,
+            observer_token,
+            contributor_token,
+        }
+    }
+
+    pub(crate) fn handle(&self, req: Request, role: ConnectionRole) -> Response {
         if !role.allows(&req) {
             return Response::Error {
                 message: "operation not permitted on project socket".into(),
@@ -498,6 +613,33 @@ impl ServerState {
                 message: "StreamPlan must be the first request on a connection".into(),
             },
 
+            // StartServing is handled async in handle_connection before reaching here.
+            Request::StartServing { .. } => Response::Error {
+                message: "StartServing must be handled asynchronously".into(),
+            },
+
+            Request::StopServing => {
+                let bridge = self.tcp_bridge.lock().unwrap().take();
+                let announcer = self.mdns_announcer.lock().unwrap().take();
+                if let Some(a) = announcer {
+                    a.stop();
+                }
+                if bridge.is_some() {
+                    info!("TCP serving stopped");
+                    Response::ServingStopped
+                } else {
+                    Response::Error {
+                        message: "not currently serving".into(),
+                    }
+                }
+            }
+
+            Request::ListNetworkPeers => {
+                let guard = self.tcp_bridge.lock().unwrap();
+                let peers = guard.as_ref().map(|b| b.peers.list()).unwrap_or_default();
+                Response::NetworkPeers { peers }
+            }
+
             Request::AddProjectSocket { path, role } => {
                 use orbit_core::ipc::ProjectRole;
                 let conn_role = match role {
@@ -521,6 +663,9 @@ impl ServerState {
                             started_at: self.started_at,
                             shutdown_tx: self.shutdown_tx.clone(),
                             event_tx: self.event_tx.clone(),
+                            tcp_bridge: std::sync::Mutex::new(None),
+                            mdns_announcer: std::sync::Mutex::new(None),
+                            signing_key: std::sync::Mutex::new(None),
                         });
                         let mut shutdown_rx = self.shutdown_tx.subscribe();
                         tokio::spawn(async move {
@@ -825,6 +970,25 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
                 break;
             }
         };
+
+        // ── StartServing: async path ──────────────────────────────────────────
+        if matches!(req, Request::StartServing { .. }) {
+            let resp = if !role.allows(&req) {
+                Response::Error {
+                    message: "operation not permitted on project socket".into(),
+                }
+            } else if let Request::StartServing { port, max_role, name } = req {
+                state.handle_start_serving(port, max_role, name).await
+            } else {
+                unreachable!()
+            };
+            let mut json = serde_json::to_string(&resp).unwrap_or_default();
+            json.push('\n');
+            if writer.write_all(json.as_bytes()).await.is_err() {
+                break;
+            }
+            continue;
+        }
 
         // ── streaming path ────────────────────────────────────────────────────
         if let Request::StreamPlan { ref id } = req {

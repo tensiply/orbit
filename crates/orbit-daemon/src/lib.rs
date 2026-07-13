@@ -1,7 +1,10 @@
 pub mod archival;
+pub mod auth;
 pub mod jira_poller;
+pub mod mdns_announce;
 pub mod plan_supervisor;
 pub mod scheduler;
+pub mod serve;
 pub mod server;
 pub mod session_monitor;
 pub mod webhook;

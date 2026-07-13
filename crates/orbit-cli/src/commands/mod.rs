@@ -1,4 +1,6 @@
 pub mod auth;
+pub mod discover;
+pub mod serve;
 pub mod completions;
 pub mod config;
 pub mod context;

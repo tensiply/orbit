@@ -16,3 +16,9 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
+jsonwebtoken = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+tempfile = { workspace = true }
+mdns-sd = { workspace = true }
+hostname = { workspace = true }

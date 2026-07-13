@@ -221,6 +221,18 @@ pub enum Request {
     },
     /// Request a rich diagnostics snapshot from the daemon.
     Health,
+    /// Start TCP serving with JWT-authenticated access.
+    StartServing {
+        port: u16,
+        #[serde(default)]
+        max_role: ProjectRole,
+        #[serde(default)]
+        name: String,
+    },
+    /// Stop TCP serving and mDNS announcement.
+    StopServing,
+    /// List network peers currently connected via TCP.
+    ListNetworkPeers,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -312,5 +324,14 @@ pub enum Response {
         memory_records: usize,
         auto_prune_enabled: bool,
         auto_prune_days: u32,
+    },
+    ServingStarted {
+        port: u16,
+        observer_token: String,
+        contributor_token: Option<String>,
+    },
+    ServingStopped,
+    NetworkPeers {
+        peers: Vec<crate::net::NetworkPeerInfo>,
     },
 }

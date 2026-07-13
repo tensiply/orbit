@@ -60,7 +60,10 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 "(global)".to_string()
             } else {
                 // Show only the last component of the path for brevity
-                key.split('/').rfind(|s| !s.is_empty()).unwrap_or(key).to_string()
+                key.split('/')
+                    .rfind(|s| !s.is_empty())
+                    .unwrap_or(key)
+                    .to_string()
             };
             let summary = format!(
                 " {} ─ {}/{} ok{}",

@@ -1,5 +1,6 @@
 use crate::app::{
-    AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, WriteJiraState,
+    AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, ShareDialogState,
+    ShareRole, ShareStatus, WriteJiraState,
 };
 use crate::mcp::McpEntry;
 use crate::theme::Palette;
@@ -750,6 +751,70 @@ pub fn render_add_comment(f: &mut Frame, area: Rect, state: &WriteJiraState, pal
         palette.accent,
         palette.dim,
     );
+}
+
+// ── share dialog popup ────────────────────────────────────────────────────────
+
+pub fn render_share_dialog(
+    f: &mut Frame,
+    area: Rect,
+    state: &ShareDialogState,
+    palette: &Palette,
+) {
+    let popup_area = centered_rect(52, 12, area);
+    f.render_widget(Clear, popup_area);
+
+    let accent = palette.accent;
+    let dim = palette.dim;
+
+    let role_str = match state.role {
+        ShareRole::Observer => "● Observer  ○ Contributor",
+        ShareRole::Contributor => "○ Observer  ● Contributor",
+    };
+
+    let status_str = match &state.status {
+        ShareStatus::Idle => "Press Enter to start sharing".to_string(),
+        ShareStatus::Active { port } => format!("Sharing on port {} (mDNS active)", port),
+        ShareStatus::Error(e) => format!("Error: {}", e),
+    };
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Role: ", Style::default().fg(dim)),
+            Span::raw(role_str),
+            Span::styled("  [←→]", Style::default().fg(dim)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Port: ", Style::default().fg(dim)),
+            Span::raw(state.port_input.as_str().to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Name: ", Style::default().fg(dim)),
+            Span::raw(state.name_input.as_str().to_string()),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::raw("  "), Span::raw(status_str)]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [Enter]", Style::default().fg(accent)),
+            Span::raw(" start/stop  "),
+            Span::styled("[Esc]", Style::default().fg(dim)),
+            Span::raw(" close"),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(accent))
+        .title(Span::styled(
+            " Share via LAN ",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_write_popup(

@@ -1,5 +1,6 @@
 mod adf;
 mod launch;
+mod peers;
 mod plans;
 mod popup;
 mod schedules;
@@ -44,6 +45,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Schedules => schedules::render(f, app, chunks[3]),
         Tab::Scopes => scopes::render(f, app, chunks[3]),
         Tab::Workspaces => workspaces::render(f, app, chunks[3]),
+        Tab::Peers => peers::render(f, app, chunks[3]),
     }
 
     render_footer(f, app, chunks[4]);
@@ -61,6 +63,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Mode::TaskDetailsError(msg) => popup::render_task_details_error(f, full, msg, &p),
         Mode::TaskDetails(detail) => popup::render_task_details(f, full, detail, &p),
         Mode::AddComment(state) => popup::render_add_comment(f, full, state, &p),
+        Mode::ShareDialog(state) => popup::render_share_dialog(f, full, state, &p),
         Mode::Normal => {}
     }
 }
@@ -112,6 +115,11 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     spans.push(Span::styled(
         " Workspaces  ",
         tab_label_style(app.tab == Tab::Workspaces, dim),
+    ));
+    spans.push(tab_span("[9]", app.tab == Tab::Peers, accent, dim));
+    spans.push(Span::styled(
+        " Peers  ",
+        tab_label_style(app.tab == Tab::Peers, dim),
     ));
 
     let label = app.palette.label;
@@ -267,6 +275,16 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Span::raw(" switch  "),
                 hint("[↑↓/jk]", accent),
                 Span::raw(" select workspace  "),
+                hint("[r]", accent),
+                Span::raw(" refresh  "),
+                hint("[q]", accent),
+                Span::raw(" quit"),
+            ]),
+            Tab::Peers => Line::from(vec![
+                hint(" [Tab]", accent),
+                Span::raw(" switch  "),
+                hint("[S]", accent),
+                Span::raw(" share via LAN  "),
                 hint("[r]", accent),
                 Span::raw(" refresh  "),
                 hint("[q]", accent),

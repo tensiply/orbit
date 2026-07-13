@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod net;
 pub mod catalog;
 pub mod config;
 pub mod context;
