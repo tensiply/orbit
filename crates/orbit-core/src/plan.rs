@@ -207,6 +207,10 @@ pub struct PlanNode {
     pub error: Option<String>,
     #[serde(default)]
     pub retry_count: u8,
+    /// Set to `true` by `ApprovePlanNode` so the approval gate does not
+    /// re-block the node on the next supervisor tick.
+    #[serde(default)]
+    pub approved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,6 +482,7 @@ mod tests {
             completed_at: None,
             error: None,
             retry_count: 0,
+            approved: false,
         });
         p.nodes.push(PlanNode {
             id: "n1".into(),
@@ -496,6 +501,7 @@ mod tests {
             completed_at: None,
             error: None,
             retry_count: 0,
+            approved: false,
         });
         let ready = p.ready_nodes();
         assert_eq!(ready.len(), 1);

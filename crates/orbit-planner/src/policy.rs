@@ -100,6 +100,7 @@ mod tests {
             completed_at: None,
             error: None,
             retry_count: 0,
+            approved: false,
         }
     }
 

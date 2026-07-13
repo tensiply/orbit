@@ -25,3 +25,7 @@ path = "tests/plan.rs"
 [[test]]
 name = "streaming"
 path = "tests/streaming.rs"
+
+[[test]]
+name = "supervisor"
+path = "tests/supervisor.rs"

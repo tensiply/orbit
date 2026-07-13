@@ -278,9 +278,10 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             continue;
         };
 
-        // AwaitingApproval gate: block high-risk nodes that need human sign-off
+        // AwaitingApproval gate: block high-risk nodes that need human sign-off.
+        // Skip the gate if the node was already explicitly approved (node.approved = true).
         let risk = plan.nodes[idx].policy.risk_level.clone();
-        if plan.policy.require_approval_for.contains(&risk) {
+        if !plan.nodes[idx].approved && plan.policy.require_approval_for.contains(&risk) {
             let node = &mut plan.nodes[idx];
             node.status = NodeStatus::AwaitingApproval;
             info!("node {node_id} requires approval ({risk:?}) in plan {}", plan.id);

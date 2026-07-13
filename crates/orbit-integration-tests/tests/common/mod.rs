@@ -112,6 +112,7 @@ pub fn make_plan(id: &str, intent: &str, status: PlanStatus) -> Plan {
             completed_at: None,
             error: None,
             retry_count: 0,
+            approved: false,
         }],
         edges: vec![],
         status,

@@ -343,6 +343,7 @@ impl ServerState {
                             }
                             Some(node) => {
                                 node.status = NodeStatus::Pending;
+                                node.approved = true;
                                 match plan.save() {
                                     Ok(_) => {
                                         info!("node {node_id} approved in plan {plan_id}");

@@ -69,6 +69,7 @@ mod tests {
             completed_at: None,
             error: Some("verification failed".into()),
             retry_count: 1,
+            approved: false,
         }
     }
 
