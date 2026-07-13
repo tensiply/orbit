@@ -1,4 +1,7 @@
-use orbit_core::{engine::Engine, plan::{PlanNode, PlanNodeType}};
+use orbit_core::{
+    engine::Engine,
+    plan::{PlanNode, PlanNodeType},
+};
 
 // ── DispatchConfig ────────────────────────────────────────────────────────────
 
@@ -46,6 +49,8 @@ mod tests {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: Default::default(),
         }
     }
 

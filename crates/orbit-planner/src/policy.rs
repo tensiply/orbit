@@ -12,22 +12,18 @@ pub struct PolicyDecision {
 pub fn evaluate(plan: &Plan, node: &PlanNode, budget_spent: u64) -> PolicyDecision {
     // Budget exhausted → block
     if let Some(max) = plan.policy.max_tokens
-        && budget_spent >= max {
-            return PolicyDecision {
-                allowed: false,
-                reason: Some(format!(
-                    "token budget exhausted: {budget_spent} >= {max}"
-                )),
-                require_approval: false,
-            };
-        }
+        && budget_spent >= max
+    {
+        return PolicyDecision {
+            allowed: false,
+            reason: Some(format!("token budget exhausted: {budget_spent} >= {max}")),
+            require_approval: false,
+        };
+    }
 
     // High-risk node with approval required for High
     let require_approval = node.policy.risk_level == RiskLevel::High
-        && plan
-            .policy
-            .require_approval_for
-            .contains(&RiskLevel::High);
+        && plan.policy.require_approval_for.contains(&RiskLevel::High);
 
     PolicyDecision {
         allowed: true,
@@ -101,6 +97,8 @@ mod tests {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: Default::default(),
         }
     }
 

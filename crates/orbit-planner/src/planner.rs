@@ -1,4 +1,11 @@
 use anyhow::Result;
+
+type ScopeComponents = Option<(
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+)>;
 use orbit_core::{
     engine::Engine,
     ipc::PlannerTrace,
@@ -148,15 +155,17 @@ fn user_prompt_path() -> PathBuf {
 pub fn build_system_prompt(cfg: &PlannerConfig) -> String {
     // Explicit override from config takes priority
     if let Some(ref path) = cfg.system_prompt_path
-        && let Ok(text) = std::fs::read_to_string(path) {
-            return text;
-        }
+        && let Ok(text) = std::fs::read_to_string(path)
+    {
+        return text;
+    }
     // User-editable fallback: ~/.config/orbit/planner.md
     let user_path = user_prompt_path();
     if user_path.exists()
-        && let Ok(text) = std::fs::read_to_string(&user_path) {
-            return text;
-        }
+        && let Ok(text) = std::fs::read_to_string(&user_path)
+    {
+        return text;
+    }
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
 
@@ -184,10 +193,18 @@ pub fn create_plan_prompt(
         prompt.push_str("\nAvailable repos for cross-repo nodes:\n");
         for repo in extra_repos {
             prompt.push_str(&format!("  alias: {}\n", repo.alias));
-            if let Some(ref w) = repo.workspace { prompt.push_str(&format!("    workspace: {w}\n")); }
-            if let Some(ref t) = repo.tenant { prompt.push_str(&format!("    tenant: {t}\n")); }
-            if let Some(ref p) = repo.project { prompt.push_str(&format!("    project: {p}\n")); }
-            if let Some(ref r) = repo.repository { prompt.push_str(&format!("    repository: {r}\n")); }
+            if let Some(ref w) = repo.workspace {
+                prompt.push_str(&format!("    workspace: {w}\n"));
+            }
+            if let Some(ref t) = repo.tenant {
+                prompt.push_str(&format!("    tenant: {t}\n"));
+            }
+            if let Some(ref p) = repo.project {
+                prompt.push_str(&format!("    project: {p}\n"));
+            }
+            if let Some(ref r) = repo.repository {
+                prompt.push_str(&format!("    repository: {r}\n"));
+            }
         }
     }
 
@@ -282,7 +299,9 @@ fn draft_to_node(d: NodeDraft) -> PlanNode {
         completed_at: None,
         error: None,
         retry_count: 0,
-            approved: false,
+        approved: false,
+        executor: None,
+        executor_params: Default::default(),
     }
 }
 
@@ -304,7 +323,9 @@ fn fallback_single_node(intent: &str, engine: Engine) -> PlanNode {
         completed_at: None,
         error: None,
         retry_count: 0,
-            approved: false,
+        approved: false,
+        executor: None,
+        executor_params: Default::default(),
     }
 }
 
@@ -327,7 +348,10 @@ fn parse_llm_response(
         plan.edges = draft
             .edges
             .into_iter()
-            .map(|e| PlanEdge { from: e.from, to: e.to })
+            .map(|e| PlanEdge {
+                from: e.from,
+                to: e.to,
+            })
             .collect();
         return Ok(plan);
     }
@@ -360,7 +384,7 @@ pub fn suggest_scope(
     cwd: &std::path::Path,
     intent: &str,
     backend: &dyn PlannerBackend,
-) -> Option<(Option<String>, Option<String>, Option<String>, Option<String>)> {
+) -> ScopeComponents {
     let prompt = format!(
         r#"You are helping identify the workspace scope for a coding task in the Orbit CLI.
 
@@ -381,7 +405,12 @@ Use null for any field you cannot determine from the path alone."#,
     let raw = backend.call(&prompt).ok()?;
     let json_str = extract_json_str(&raw);
     let suggestion: ScopeSuggestion = serde_json::from_str(json_str).ok()?;
-    Some((suggestion.workspace, suggestion.tenant, suggestion.project, suggestion.repository))
+    Some((
+        suggestion.workspace,
+        suggestion.tenant,
+        suggestion.project,
+        suggestion.repository,
+    ))
 }
 
 fn extract_json_str(raw: &str) -> &str {
@@ -414,7 +443,11 @@ pub fn invoke_planner(
 
     let raw = backend.call(&full_prompt)?;
     let plan = parse_llm_response(&raw, intent, scope, cfg, &system_prompt)?;
-    let trace = PlannerTrace { system_prompt, user_prompt, raw_response: raw };
+    let trace = PlannerTrace {
+        system_prompt,
+        user_prompt,
+        raw_response: raw,
+    };
     Ok((plan, trace))
 }
 

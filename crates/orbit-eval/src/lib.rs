@@ -108,7 +108,9 @@ mod tests {
                 completed_at: None,
                 error: None,
                 retry_count: 0,
-            approved: false,
+                approved: false,
+                executor: None,
+                executor_params: Default::default(),
             });
         }
         plan
@@ -119,7 +121,9 @@ mod tests {
         let plan = make_plan(vec![PlanNodeType::Code, PlanNodeType::Test]);
         let result = eval(
             &plan,
-            &[EvalConstraint::HasNodeType { node_type: PlanNodeType::Code }],
+            &[EvalConstraint::HasNodeType {
+                node_type: PlanNodeType::Code,
+            }],
         );
         assert!(result.passed);
         assert!(result.checks[0].passed);
@@ -130,7 +134,9 @@ mod tests {
         let plan = make_plan(vec![PlanNodeType::Code]);
         let result = eval(
             &plan,
-            &[EvalConstraint::HasNodeType { node_type: PlanNodeType::Review }],
+            &[EvalConstraint::HasNodeType {
+                node_type: PlanNodeType::Review,
+            }],
         );
         assert!(!result.passed);
     }

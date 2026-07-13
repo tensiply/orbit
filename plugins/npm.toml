@@ -1,0 +1,29 @@
+name = "npm"
+description = "npm — run npm scripts as plan nodes"
+category = "build"
+
+[check]
+binary = "npm"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "node"]
+label = "Homebrew (macOS) — installs node + npm"
+
+[[install]]
+method = "apt-get"
+cmd = ["apt-get", "install", "-y", "npm"]
+label = "apt (Debian/Ubuntu)"
+
+[executor]
+command = ["sh", "-c", "npm run {script} {args}"]
+
+[[executor.params]]
+name = "script"
+description = "npm script name (from package.json scripts)"
+required = true
+
+[[executor.params]]
+name = "args"
+description = "Additional arguments passed after the script (e.g. -- --watch)"
+default = ""

@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -211,6 +212,14 @@ pub struct PlanNode {
     /// re-block the node on the next supervisor tick.
     #[serde(default)]
     pub approved: bool,
+    /// Named executor plugin (e.g. "pytest", "make") or "shell" for the built-in
+    /// escape hatch. When set, the node runs via an external process instead of
+    /// an AI engine.
+    #[serde(default)]
+    pub executor: Option<String>,
+    /// Parameter values for the executor plugin, keyed by param name.
+    #[serde(default)]
+    pub executor_params: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,8 +271,7 @@ impl Plan {
     }
 
     pub fn load(id: &str) -> Result<Plan> {
-        let path = find_plan_path(id)
-            .ok_or_else(|| anyhow::anyhow!("plan not found: {id}"))?;
+        let path = find_plan_path(id).ok_or_else(|| anyhow::anyhow!("plan not found: {id}"))?;
         let text = fs::read_to_string(path)?;
         Ok(serde_json::from_str(&text)?)
     }
@@ -451,7 +459,9 @@ mod tests {
     fn save_and_load() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        }
 
         let p = Plan::new("test intent", make_scope(), Engine::Claude);
         let id = p.id.clone();
@@ -483,6 +493,8 @@ mod tests {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: HashMap::new(),
         });
         p.nodes.push(PlanNode {
             id: "n1".into(),
@@ -502,6 +514,8 @@ mod tests {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: HashMap::new(),
         });
         let ready = p.ready_nodes();
         assert_eq!(ready.len(), 1);

@@ -31,6 +31,9 @@ pub struct Plugin {
     pub context: Option<ContextSpec>,
     /// Command run before launching a session; output optionally injected as context.
     pub pre_launch: Option<PreLaunchSpec>,
+    /// When present, this plugin can be used as a plan node executor.
+    #[serde(default)]
+    pub executor: Option<ExecutorSpec>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -94,6 +97,31 @@ pub struct PreLaunchSpec {
 
 fn default_output_mode() -> String {
     "none".to_string()
+}
+
+/// Executor specification: when present the plugin can run plan nodes as an
+/// external process instead of an AI engine.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecutorSpec {
+    /// Command template. Tokens containing `{param_name}` are substituted with
+    /// the provided (or default) parameter value. Empty tokens after substitution
+    /// are dropped from the final command.
+    pub command: Vec<String>,
+    #[serde(default)]
+    pub params: Vec<ExecutorParam>,
+}
+
+/// A named parameter accepted by an executor plugin.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecutorParam {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub default: Option<String>,
+    /// When true, the executor errors if no value is provided and there is no default.
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -190,6 +218,54 @@ impl Plugin {
 
     pub fn install_method_by_name(&self, name: &str) -> Option<&InstallMethod> {
         self.install.iter().find(|m| m.method == name)
+    }
+
+    /// Render the executor command by substituting `{param_name}` placeholders
+    /// with values from `params` (falling back to declared defaults). Required
+    /// params without a value or default produce an error. Empty tokens after
+    /// substitution are dropped.
+    pub fn render_executor_command(
+        &self,
+        params: &HashMap<String, String>,
+    ) -> anyhow::Result<Vec<String>> {
+        let spec = self
+            .executor
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("plugin '{}' has no [executor] spec", self.name))?;
+
+        for p in &spec.params {
+            if p.required && !params.contains_key(&p.name) && p.default.is_none() {
+                anyhow::bail!(
+                    "executor plugin '{}': required param '{}' not provided",
+                    self.name,
+                    p.name
+                );
+            }
+        }
+
+        let rendered: Vec<String> = spec
+            .command
+            .iter()
+            .map(|token| {
+                let mut t = token.clone();
+                for p in &spec.params {
+                    let value = params
+                        .get(&p.name)
+                        .map(|v| v.as_str())
+                        .or(p.default.as_deref())
+                        .unwrap_or("");
+                    t = t.replace(&format!("{{{}}}", p.name), value);
+                }
+                t
+            })
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        if rendered.is_empty() {
+            anyhow::bail!("executor plugin '{}': rendered command is empty", self.name);
+        }
+
+        Ok(rendered)
     }
 }
 
@@ -334,4 +410,113 @@ pub fn bin_available(bin: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_executor_plugin(command: &[&str], params_toml: &str) -> Plugin {
+        let params_section = if params_toml.is_empty() {
+            String::new()
+        } else {
+            params_toml.to_string()
+        };
+        let toml = format!(
+            r#"
+name = "testplugin"
+description = "test"
+category = "test"
+[check]
+binary = "testplugin"
+[executor]
+command = [{cmd}]
+{params}
+"#,
+            cmd = command
+                .iter()
+                .map(|s| format!("\"{s}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            params = params_section,
+        );
+        toml::from_str(&toml).expect("valid test plugin TOML")
+    }
+
+    #[test]
+    fn render_basic_substitution() {
+        let plugin = make_executor_plugin(
+            &["pytest", "{test_path}"],
+            r#"
+[[executor.params]]
+name = "test_path"
+default = "."
+"#,
+        );
+        let mut params = HashMap::new();
+        params.insert("test_path".to_string(), "tests/unit/".to_string());
+        let cmd = plugin.render_executor_command(&params).unwrap();
+        assert_eq!(cmd, vec!["pytest", "tests/unit/"]);
+    }
+
+    #[test]
+    fn render_uses_default_when_param_not_provided() {
+        let plugin = make_executor_plugin(
+            &["make", "{target}"],
+            r#"
+[[executor.params]]
+name = "target"
+default = "build"
+"#,
+        );
+        let cmd = plugin.render_executor_command(&HashMap::new()).unwrap();
+        assert_eq!(cmd, vec!["make", "build"]);
+    }
+
+    #[test]
+    fn render_empty_token_dropped() {
+        let plugin = make_executor_plugin(
+            &["cargo", "test", "{args}"],
+            r#"
+[[executor.params]]
+name = "args"
+default = ""
+"#,
+        );
+        let cmd = plugin.render_executor_command(&HashMap::new()).unwrap();
+        assert_eq!(cmd, vec!["cargo", "test"]);
+    }
+
+    #[test]
+    fn render_required_param_missing_errors() {
+        let plugin = make_executor_plugin(
+            &["cargo", "{subcommand}"],
+            r#"
+[[executor.params]]
+name = "subcommand"
+required = true
+"#,
+        );
+        let err = plugin.render_executor_command(&HashMap::new()).unwrap_err();
+        assert!(err.to_string().contains("required param"));
+        assert!(err.to_string().contains("subcommand"));
+    }
+
+    #[test]
+    fn render_error_when_no_executor_spec() {
+        let plugin: Plugin = toml::from_str(
+            r#"
+name = "plain"
+description = "no executor"
+category = "test"
+[check]
+binary = "plain"
+"#,
+        )
+        .unwrap();
+        let err = plugin.render_executor_command(&HashMap::new()).unwrap_err();
+        assert!(err.to_string().contains("no [executor] spec"));
+    }
 }

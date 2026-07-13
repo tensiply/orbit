@@ -118,7 +118,13 @@ pub fn launch(
     set_terminal_title(&title);
 
     if use_tmux {
-        exec_with_tmux(engine, &paths.config_file, context_file.as_deref(), &tmux_name, &title)
+        exec_with_tmux(
+            engine,
+            &paths.config_file,
+            context_file.as_deref(),
+            &tmux_name,
+            &title,
+        )
     } else {
         exec_engine(engine, &paths.config_file, context_file.as_deref())
     }
@@ -130,7 +136,10 @@ pub fn launch(
 /// Uses only tmux-safe characters (alphanumerics, `-`).
 /// Example: "eloir-orbit-claude-jafraus-ecommerce"
 pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
-    let safe = |s: &str| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "-");
+    let safe = |s: &str| {
+        s.to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric(), "-")
+    };
     let mut parts: Vec<String> = Vec::new();
     if !username.is_empty() {
         parts.push(safe(username));
@@ -188,7 +197,13 @@ fn exec_with_tmux(
 
     // Prevent the engine from overriding the window name via terminal title OSC sequences.
     Command::new("tmux")
-        .args(["set-window-option", "-t", session_name, "allow-rename", "off"])
+        .args([
+            "set-window-option",
+            "-t",
+            session_name,
+            "allow-rename",
+            "off",
+        ])
         .status()
         .ok();
 
@@ -210,7 +225,11 @@ fn exec_engine(engine: Engine, config_file: &Path, context_file: Option<&Path>) 
     bail!("failed to exec {}: {}", bin, err);
 }
 
-fn engine_cmd(engine: Engine, config_file: &Path, context_file: Option<&Path>) -> (String, Vec<String>) {
+fn engine_cmd(
+    engine: Engine,
+    config_file: &Path,
+    context_file: Option<&Path>,
+) -> (String, Vec<String>) {
     match engine {
         Engine::Claude => {
             let mut args = vec![
@@ -242,34 +261,35 @@ pub fn cleanup_claude_md_overlapping_refs(work_dir: &Path, instructions: &[std::
     loop {
         let candidate = current.join(".claude").join("CLAUDE.md");
         if candidate.is_file()
-            && let Ok(content) = fs::read_to_string(&candidate) {
-                let cleaned: String = content
-                    .lines()
-                    .filter(|line| {
-                        let trimmed = line.trim();
-                        if let Some(rest) = trimmed.strip_prefix('@') {
-                            let p = rest.trim();
-                            if p.starts_with('/') {
-                                return !injected.contains(&std::path::PathBuf::from(p));
-                            }
+            && let Ok(content) = fs::read_to_string(&candidate)
+        {
+            let cleaned: String = content
+                .lines()
+                .filter(|line| {
+                    let trimmed = line.trim();
+                    if let Some(rest) = trimmed.strip_prefix('@') {
+                        let p = rest.trim();
+                        if p.starts_with('/') {
+                            return !injected.contains(&std::path::PathBuf::from(p));
                         }
-                        true
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let cleaned = if cleaned.ends_with('\n') {
-                    cleaned
-                } else {
-                    cleaned + "\n"
-                };
-                if cleaned != content {
-                    if let Err(e) = fs::write(&candidate, &cleaned) {
-                        tracing::warn!("could not clean {}: {e}", candidate.display());
-                    } else {
-                        tracing::debug!("cleaned orbit-injected @refs from {}", candidate.display());
                     }
+                    true
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let cleaned = if cleaned.ends_with('\n') {
+                cleaned
+            } else {
+                cleaned + "\n"
+            };
+            if cleaned != content {
+                if let Err(e) = fs::write(&candidate, &cleaned) {
+                    tracing::warn!("could not clean {}: {e}", candidate.display());
+                } else {
+                    tracing::debug!("cleaned orbit-injected @refs from {}", candidate.display());
                 }
             }
+        }
         if current == home {
             break;
         }
@@ -297,26 +317,31 @@ pub fn find_claude_md_overlapping_refs(
     loop {
         let candidate = current.join(".claude").join("CLAUDE.md");
         if candidate.is_file()
-            && let Ok(content) = fs::read_to_string(&candidate) {
-                let overlaps: Vec<std::path::PathBuf> = content
-                    .lines()
-                    .filter_map(|line| {
-                        let trimmed = line.trim();
-                        trimmed.strip_prefix('@').and_then(|rest| {
-                            let p = rest.trim();
-                            if p.starts_with('/') {
-                                let pb = std::path::PathBuf::from(p);
-                                if injected.contains(&pb) { Some(pb) } else { None }
+            && let Ok(content) = fs::read_to_string(&candidate)
+        {
+            let overlaps: Vec<std::path::PathBuf> = content
+                .lines()
+                .filter_map(|line| {
+                    let trimmed = line.trim();
+                    trimmed.strip_prefix('@').and_then(|rest| {
+                        let p = rest.trim();
+                        if p.starts_with('/') {
+                            let pb = std::path::PathBuf::from(p);
+                            if injected.contains(&pb) {
+                                Some(pb)
                             } else {
                                 None
                             }
-                        })
+                        } else {
+                            None
+                        }
                     })
-                    .collect();
-                if !overlaps.is_empty() {
-                    result.push((candidate, overlaps));
-                }
+                })
+                .collect();
+            if !overlaps.is_empty() {
+                result.push((candidate, overlaps));
             }
+        }
         if current == home {
             break;
         }
@@ -660,7 +685,8 @@ pub fn spawn_plan_node(
     };
 
     // 4. Build the headless engine command (print / run mode)
-    let (bin, extra_args) = plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
+    let (bin, extra_args) =
+        plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
 
     // 5. Launch in a dedicated detached tmux session
     let mut cmd = Command::new("tmux");
@@ -695,6 +721,63 @@ pub fn spawn_plan_node(
     );
     if let Err(e) = session.save() {
         tracing::warn!("could not save plan-node session: {e}");
+    }
+
+    Ok(session)
+}
+
+/// Spawn an external executable as a plan node in a dedicated tmux session.
+///
+/// Unlike `spawn_plan_node`, this bypasses all engine and MCP setup — it runs
+/// `rendered_cmd` directly in the node's `work_dir`. The supervisor's output
+/// capture and verify strategies apply unchanged.
+///
+/// Injects ORBIT_* env vars so the subprocess can inspect its context:
+/// `ORBIT_PLAN_ID`, `ORBIT_NODE_ID`, `ORBIT_NODE_LABEL`, `ORBIT_NODE_INTENT`.
+pub fn spawn_plugin_executor(
+    session_name: &str,
+    rendered_cmd: &[String],
+    work_dir: &Path,
+    orbit_env: &std::collections::HashMap<String, String>,
+) -> Result<orbit_core::session::Session> {
+    anyhow::ensure!(
+        !rendered_cmd.is_empty(),
+        "executor command must not be empty"
+    );
+
+    let mut cmd = Command::new("tmux");
+    cmd.arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(session_name)
+        .arg("--")
+        .arg(&rendered_cmd[0]);
+    for arg in rendered_cmd.iter().skip(1) {
+        cmd.arg(arg);
+    }
+    for (k, v) in orbit_env {
+        cmd.env(k, v);
+    }
+    cmd.current_dir(work_dir);
+
+    let status = cmd.status()?;
+    if !status.success() {
+        anyhow::bail!("failed to create plugin-executor tmux session '{session_name}'");
+    }
+
+    let pid = tmux_pane_pid(session_name).unwrap_or(std::process::id());
+    let session = orbit_core::session::Session::new(
+        pid,
+        "shell",
+        "",
+        "",
+        "",
+        work_dir.to_path_buf(),
+        false,
+        Some(session_name.to_string()),
+    );
+    if let Err(e) = session.save() {
+        tracing::warn!("could not save plugin-executor session: {e}");
     }
 
     Ok(session)
@@ -913,8 +996,14 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(tmux_session_name(&scope, Engine::Claude, ""), "orbit-claude");
-        assert_eq!(tmux_session_name(&scope, Engine::Claude, "eloir"), "eloir-orbit-claude");
+        assert_eq!(
+            tmux_session_name(&scope, Engine::Claude, ""),
+            "orbit-claude"
+        );
+        assert_eq!(
+            tmux_session_name(&scope, Engine::Claude, "eloir"),
+            "eloir-orbit-claude"
+        );
     }
 
     #[test]

@@ -1,0 +1,24 @@
+name = "make"
+description = "GNU Make — run Makefile targets as plan nodes"
+category = "build"
+
+[check]
+binary = "make"
+
+[[install]]
+method = "apt-get"
+cmd = ["apt-get", "install", "-y", "make"]
+label = "apt (Debian/Ubuntu)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "make"]
+label = "Homebrew (macOS)"
+
+[executor]
+command = ["sh", "-c", "make {target}"]
+
+[[executor.params]]
+name = "target"
+description = "Makefile target to run"
+default = "build"

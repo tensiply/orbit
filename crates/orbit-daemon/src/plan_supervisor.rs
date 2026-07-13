@@ -1,9 +1,9 @@
 use orbit_core::{
-    audit::{append_event_for, AuditEvent},
+    audit::{AuditEvent, append_event_for},
     engine::Engine,
-    hooks::{run_hooks, HookEvent},
+    hooks::{HookEvent, run_hooks},
     ipc::PlanStreamEvent,
-    memory::{append_plan_run_for, load_recent_runs, PlanRunRecord},
+    memory::{PlanRunRecord, append_plan_run_for, load_recent_runs},
     plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
     session::Session,
 };
@@ -20,9 +20,8 @@ use orbit_engine::{
 use orbit_planner::{
     backend::CliBackend,
     planner::PlannerConfig,
-    replanner,
-    selector,
-    verifier::{verify_node, VerifyOutcome},
+    replanner, selector,
+    verifier::{VerifyOutcome, verify_node},
 };
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -56,7 +55,11 @@ fn tick(event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
             warn!("advance_plan error for {}: {e}", plan.id);
         }
     }
-    for mut plan in plans.iter().filter(|p| p.status == PlanStatus::Replanning).cloned() {
+    for mut plan in plans
+        .iter()
+        .filter(|p| p.status == PlanStatus::Replanning)
+        .cloned()
+    {
         if let Err(e) = close_replanning_plan(&mut plan, &plans, event_tx) {
             warn!("close_replanning error for {}: {e}", plan.id);
         }
@@ -65,7 +68,11 @@ fn tick(event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
 }
 
 /// Propagate a child plan's terminal outcome back to its Replanning parent.
-fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
+fn close_replanning_plan(
+    parent: &mut Plan,
+    all_plans: &[Plan],
+    event_tx: &broadcast::Sender<PlanStreamEvent>,
+) -> anyhow::Result<()> {
     let child = all_plans
         .iter()
         .find(|p| p.parent_plan_id.as_deref() == Some(&parent.id));
@@ -89,16 +96,23 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
     parent.status = outcome.clone();
     parent.completed_at = Some(now_secs());
 
-    let _ = append_event_for(ws(parent), &AuditEvent::PlanCompleted {
-        plan_id: parent.id.clone(),
-        outcome: format!("{outcome:?}"),
-        total_duration_secs: duration,
-        timestamp: now_secs(),
-    });
+    let _ = append_event_for(
+        ws(parent),
+        &AuditEvent::PlanCompleted {
+            plan_id: parent.id.clone(),
+            outcome: format!("{outcome:?}"),
+            total_duration_secs: duration,
+            timestamp: now_secs(),
+        },
+    );
 
     let ev = match &outcome {
-        PlanStatus::Completed => PlanStreamEvent::PlanCompleted { plan_id: parent.id.clone() },
-        _ => PlanStreamEvent::PlanFailed { plan_id: parent.id.clone() },
+        PlanStatus::Completed => PlanStreamEvent::PlanCompleted {
+            plan_id: parent.id.clone(),
+        },
+        _ => PlanStreamEvent::PlanFailed {
+            plan_id: parent.id.clone(),
+        },
     };
     let _ = event_tx.send(ev);
 
@@ -112,7 +126,10 @@ fn close_replanning_plan(parent: &mut Plan, all_plans: &[Plan], event_tx: &broad
     Ok(())
 }
 
-fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) -> anyhow::Result<()> {
+fn advance_plan(
+    plan: &mut Plan,
+    event_tx: &broadcast::Sender<PlanStreamEvent>,
+) -> anyhow::Result<()> {
     // Snapshot workspace before any mutable borrow of plan.nodes.
     let workspace = plan.scope.workspace.clone();
     let all_sessions = Session::load_all();
@@ -156,13 +173,19 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
             VerifyOutcome::Pass => {
                 node.status = NodeStatus::Completed;
                 node.completed_at = Some(now_secs());
-                let duration = node.started_at.map(|s| now_secs().saturating_sub(s)).unwrap_or(0);
-                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeCompleted {
-                    plan_id: plan.id.clone(),
-                    node_id: node.id.clone(),
-                    duration_secs: duration,
-                    timestamp: now_secs(),
-                });
+                let duration = node
+                    .started_at
+                    .map(|s| now_secs().saturating_sub(s))
+                    .unwrap_or(0);
+                let _ = append_event_for(
+                    workspace.as_deref(),
+                    &AuditEvent::NodeCompleted {
+                        plan_id: plan.id.clone(),
+                        node_id: node.id.clone(),
+                        duration_secs: duration,
+                        timestamp: now_secs(),
+                    },
+                );
                 let _ = event_tx.send(PlanStreamEvent::NodeCompleted {
                     plan_id: plan.id.clone(),
                     node_id: node.id.clone(),
@@ -194,12 +217,15 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                     node.status = NodeStatus::Failed;
                     node.completed_at = Some(now_secs());
                     node.error = Some(reason.clone());
-                    let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
-                        plan_id: plan.id.clone(),
-                        node_id: node.id.clone(),
-                        reason: reason.clone(),
-                        timestamp: now_secs(),
-                    });
+                    let _ = append_event_for(
+                        workspace.as_deref(),
+                        &AuditEvent::NodeFailed {
+                            plan_id: plan.id.clone(),
+                            node_id: node.id.clone(),
+                            reason: reason.clone(),
+                            timestamp: now_secs(),
+                        },
+                    );
                     let _ = event_tx.send(PlanStreamEvent::NodeFailed {
                         plan_id: plan.id.clone(),
                         node_id: node.id.clone(),
@@ -255,7 +281,11 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
     }
 
     if plan.is_nodes_exhausted() {
-        let dispatched = plan.nodes.iter().filter(|n| !matches!(n.status, NodeStatus::Pending)).count();
+        let dispatched = plan
+            .nodes
+            .iter()
+            .filter(|n| !matches!(n.status, NodeStatus::Pending))
+            .count();
         let reason = format!(
             "node budget exhausted: {dispatched} node(s) dispatched, limit {}",
             plan.policy.max_nodes.unwrap_or(0)
@@ -284,19 +314,27 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
         if !plan.nodes[idx].approved && plan.policy.require_approval_for.contains(&risk) {
             let node = &mut plan.nodes[idx];
             node.status = NodeStatus::AwaitingApproval;
-            info!("node {node_id} requires approval ({risk:?}) in plan {}", plan.id);
-            let _ = append_event_for(workspace.as_deref(), &AuditEvent::PolicyBlocked {
-                plan_id: plan.id.clone(),
-                node_id: node_id.clone(),
-                reason: format!("{risk:?} risk requires approval"),
-                timestamp: now_secs(),
-            });
+            info!(
+                "node {node_id} requires approval ({risk:?}) in plan {}",
+                plan.id
+            );
+            let _ = append_event_for(
+                workspace.as_deref(),
+                &AuditEvent::PolicyBlocked {
+                    plan_id: plan.id.clone(),
+                    node_id: node_id.clone(),
+                    reason: format!("{risk:?} risk requires approval"),
+                    timestamp: now_secs(),
+                },
+            );
             continue;
         }
 
         let node_engine = plan.nodes[idx].engine;
         let node_intent = plan.nodes[idx].intent.clone();
         let node_label = plan.nodes[idx].label.clone();
+        let node_executor = plan.nodes[idx].executor.clone();
+        let node_executor_params = plan.nodes[idx].executor_params.clone();
         let dispatch_scope = plan.nodes[idx]
             .scope_override
             .clone()
@@ -315,7 +353,15 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
         );
 
         let node_task_type = plan.nodes[idx].task_type.clone();
-        match dispatch_node(&plan.id, &node_id, &node_label, &node_intent, &node_task_type, &dispatch_scope, engine) {
+        match dispatch_node(
+            &plan.id,
+            NodeInfo { id: &node_id, label: &node_label, intent: &node_intent },
+            &node_task_type,
+            &dispatch_scope,
+            engine,
+            node_executor.as_deref(),
+            &node_executor_params,
+        ) {
             Ok(session) => {
                 let plan_suffix = plan.id.trim_start_matches("plan_");
                 let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
@@ -324,13 +370,19 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                 node.session_id = Some(session.id.clone());
                 node.status = NodeStatus::Running;
                 node.started_at = Some(now_secs());
-                info!("dispatched node {} → session {} in plan {}", node_id, session.id, plan.id);
-                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeStarted {
-                    plan_id: plan.id.clone(),
-                    node_id: node_id.clone(),
-                    engine: format!("{engine:?}"),
-                    timestamp: now_secs(),
-                });
+                info!(
+                    "dispatched node {} → session {} in plan {}",
+                    node_id, session.id, plan.id
+                );
+                let _ = append_event_for(
+                    workspace.as_deref(),
+                    &AuditEvent::NodeStarted {
+                        plan_id: plan.id.clone(),
+                        node_id: node_id.clone(),
+                        engine: format!("{engine:?}"),
+                        timestamp: now_secs(),
+                    },
+                );
                 let _ = event_tx.send(PlanStreamEvent::NodeStarted {
                     plan_id: plan.id.clone(),
                     node_id: node_id.clone(),
@@ -338,16 +390,22 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                 });
             }
             Err(e) => {
-                warn!("dispatch failed for node {node_id} in plan {}: {e}", plan.id);
+                warn!(
+                    "dispatch failed for node {node_id} in plan {}: {e}",
+                    plan.id
+                );
                 let node = &mut plan.nodes[idx];
                 node.status = NodeStatus::Failed;
                 node.error = Some(e.to_string());
-                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
-                    plan_id: plan.id.clone(),
-                    node_id: node_id.clone(),
-                    reason: e.to_string(),
-                    timestamp: now_secs(),
-                });
+                let _ = append_event_for(
+                    workspace.as_deref(),
+                    &AuditEvent::NodeFailed {
+                        plan_id: plan.id.clone(),
+                        node_id: node_id.clone(),
+                        reason: e.to_string(),
+                        timestamp: now_secs(),
+                    },
+                );
             }
         }
     }
@@ -382,53 +440,74 @@ fn advance_plan(plan: &mut Plan, event_tx: &broadcast::Sender<PlanStreamEvent>) 
                     }
                 }
                 Err(e) => {
-                    warn!("replanning failed for plan {}: {e} — marking Failed", plan.id);
+                    warn!(
+                        "replanning failed for plan {}: {e} — marking Failed",
+                        plan.id
+                    );
                 }
             }
         }
 
-        let outcome = if any_failed { PlanStatus::Failed } else { PlanStatus::Completed };
+        let outcome = if any_failed {
+            PlanStatus::Failed
+        } else {
+            PlanStatus::Completed
+        };
         let duration = now_secs().saturating_sub(plan.created_at);
         plan.status = outcome.clone();
         plan.completed_at = Some(now_secs());
 
-        let _ = append_event_for(workspace.as_deref(), &AuditEvent::PlanCompleted {
-            plan_id: plan.id.clone(),
-            outcome: format!("{outcome:?}"),
-            total_duration_secs: duration,
-            timestamp: now_secs(),
-        });
+        let _ = append_event_for(
+            workspace.as_deref(),
+            &AuditEvent::PlanCompleted {
+                plan_id: plan.id.clone(),
+                outcome: format!("{outcome:?}"),
+                total_duration_secs: duration,
+                timestamp: now_secs(),
+            },
+        );
 
         let ev = match &outcome {
-            PlanStatus::Completed => PlanStreamEvent::PlanCompleted { plan_id: plan.id.clone() },
-            _ => PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() },
+            PlanStatus::Completed => PlanStreamEvent::PlanCompleted {
+                plan_id: plan.id.clone(),
+            },
+            _ => PlanStreamEvent::PlanFailed {
+                plan_id: plan.id.clone(),
+            },
         };
         let _ = event_tx.send(ev);
 
         fire_plan_notification(&plan.intent, &plan.id, &outcome);
 
-        let total_cost: f64 = plan.nodes.iter()
+        let total_cost: f64 = plan
+            .nodes
+            .iter()
             .filter_map(|n| n.token_usage.as_ref())
             .map(|u| u.estimated_cost_usd)
             .sum();
-        let total_tokens: u64 = plan.nodes.iter()
+        let total_tokens: u64 = plan
+            .nodes
+            .iter()
             .filter_map(|n| n.token_usage.as_ref())
             .map(|u| u.prompt_tokens + u.completion_tokens)
             .sum();
-        let _ = append_plan_run_for(workspace.as_deref(), &PlanRunRecord {
-            plan_id: plan.id.clone(),
-            intent: plan.intent.clone(),
-            outcome: format!("{outcome:?}"),
-            node_count: plan.nodes.len(),
-            replan_count: plan.replan_count,
-            duration_secs: duration,
-            created_at: plan.created_at,
-            scope_key: plan.scope.scope_key(),
-            tags: vec![],
-            cost_usd: total_cost,
-            total_tokens,
-            template_name: None,
-        });
+        let _ = append_plan_run_for(
+            workspace.as_deref(),
+            &PlanRunRecord {
+                plan_id: plan.id.clone(),
+                intent: plan.intent.clone(),
+                outcome: format!("{outcome:?}"),
+                node_count: plan.nodes.len(),
+                replan_count: plan.replan_count,
+                duration_secs: duration,
+                created_at: plan.created_at,
+                scope_key: plan.scope.scope_key(),
+                tags: vec![],
+                cost_usd: total_cost,
+                total_tokens,
+                template_name: None,
+            },
+        );
 
         let outcome_str = format!("{outcome:?}");
         run_hooks(
@@ -455,29 +534,93 @@ fn try_replan(plan: &Plan) -> anyhow::Result<Plan> {
         .find(|n| n.status == NodeStatus::Failed)
         .ok_or_else(|| anyhow::anyhow!("no failed node for replanning"))?;
 
-    let reason = failed_node.error.as_deref().unwrap_or("verification failed");
+    let reason = failed_node
+        .error
+        .as_deref()
+        .unwrap_or("verification failed");
     let recent_runs = load_recent_runs(5);
-    let replan_engine = plan.planner_model.parse::<Engine>().unwrap_or(Engine::Claude);
+    let replan_engine = plan
+        .planner_model
+        .parse::<Engine>()
+        .unwrap_or(Engine::Claude);
 
     let cfg = PlannerConfig {
         engine: replan_engine,
         system_prompt_path: None,
     };
 
-    replanner::replan(plan, failed_node, reason, &recent_runs, &cfg, &CliBackend::new(replan_engine))
+    replanner::replan(
+        plan,
+        failed_node,
+        reason,
+        &recent_runs,
+        &cfg,
+        &CliBackend::new(replan_engine),
+    )
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
+struct NodeInfo<'a> {
+    id: &'a str,
+    label: &'a str,
+    intent: &'a str,
+}
+
 fn dispatch_node(
     plan_id: &str,
-    node_id: &str,
-    node_label: &str,
-    node_intent: &str,
+    node: NodeInfo<'_>,
     task_type: &PlanNodeType,
     scope: &PlanScope,
     engine: Engine,
+    executor: Option<&str>,
+    executor_params: &std::collections::HashMap<String, String>,
 ) -> anyhow::Result<Session> {
+    let node_id = node.id;
+    let node_label = node.label;
+    let node_intent = node.intent;
+    let plan_suffix = plan_id.trim_start_matches("plan_");
+    let session_name = format!("orbit-plan-{plan_suffix}-{node_id}");
+
+    // ── Executor plugin path ───────────────────────────────────────────────────
+    if let Some(exec_name) = executor {
+        let rendered_cmd = if exec_name == "shell" {
+            let command = executor_params.get("command").ok_or_else(|| {
+                anyhow::anyhow!("shell executor requires 'command' in executor_params")
+            })?;
+            vec!["sh".to_string(), "-c".to_string(), command.clone()]
+        } else {
+            let plugin = orbit_core::plugin::find(exec_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "executor plugin '{}' not found — is it installed?",
+                    exec_name
+                )
+            })?;
+            plugin.render_executor_command(executor_params)?
+        };
+
+        let orbit_scope = resolver::resolve(ResolveArgs {
+            workspace: scope.workspace.clone(),
+            tenant: scope.tenant.clone(),
+            project: scope.project.clone(),
+            repository: scope.repository.clone(),
+        })?;
+
+        let mut orbit_env = std::collections::HashMap::new();
+        orbit_env.insert("ORBIT_PLAN_ID".to_string(), plan_id.to_string());
+        orbit_env.insert("ORBIT_NODE_ID".to_string(), node_id.to_string());
+        orbit_env.insert("ORBIT_NODE_LABEL".to_string(), node_label.to_string());
+        orbit_env.insert("ORBIT_NODE_INTENT".to_string(), node_intent.to_string());
+
+        return launcher::spawn_plugin_executor(
+            &session_name,
+            &rendered_cmd,
+            &orbit_scope.work_dir,
+            &orbit_env,
+        );
+    }
+
+    // ── AI engine path (existing) ─────────────────────────────────────────────
     let orbit_scope = resolver::resolve(ResolveArgs {
         workspace: scope.workspace.clone(),
         tenant: scope.tenant.clone(),
@@ -486,10 +629,6 @@ fn dispatch_node(
     })?;
 
     let mut merged = config::load(&orbit_scope, engine)?;
-
-    // Unique per-node session name doubles as the filesystem key for logs/intent files
-    let plan_suffix = plan_id.trim_start_matches("plan_");
-    let session_name = format!("orbit-plan-{plan_suffix}-{node_id}");
 
     // Specialist template injected before the intent (orbit context → specialist → intent)
     if let Some(template) = orbit_planner::templates::get_template(task_type) {
@@ -606,7 +745,11 @@ fn write_node_template(session_key: &str, content: &str) -> anyhow::Result<std::
     Ok(path)
 }
 
-fn write_node_intent(session_key: &str, label: &str, intent: &str) -> anyhow::Result<std::path::PathBuf> {
+fn write_node_intent(
+    session_key: &str,
+    label: &str,
+    intent: &str,
+) -> anyhow::Result<std::path::PathBuf> {
     let dir = std::env::temp_dir().join("orbit-plan-nodes");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{session_key}.md"));
@@ -631,7 +774,11 @@ fn estimate_token_usage(node: &PlanNode) -> TokenUsage {
         .unwrap_or(0);
     let estimated_cost_usd = (prompt_tokens as f64 * 3.0 / 1_000_000.0)
         + (completion_tokens as f64 * 15.0 / 1_000_000.0);
-    TokenUsage { prompt_tokens, completion_tokens, estimated_cost_usd }
+    TokenUsage {
+        prompt_tokens,
+        completion_tokens,
+        estimated_cost_usd,
+    }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -661,12 +808,15 @@ fn fail_plan_enforced(
                 node.status = NodeStatus::Failed;
                 node.completed_at = Some(now_secs());
                 node.error = Some(reason.to_string());
-                let _ = append_event_for(workspace.as_deref(), &AuditEvent::NodeFailed {
-                    plan_id: plan.id.clone(),
-                    node_id: node.id.clone(),
-                    reason: reason.to_string(),
-                    timestamp: now_secs(),
-                });
+                let _ = append_event_for(
+                    workspace.as_deref(),
+                    &AuditEvent::NodeFailed {
+                        plan_id: plan.id.clone(),
+                        node_id: node.id.clone(),
+                        reason: reason.to_string(),
+                        timestamp: now_secs(),
+                    },
+                );
             }
             NodeStatus::Pending | NodeStatus::AwaitingApproval => {
                 node.status = NodeStatus::Skipped;
@@ -679,19 +829,27 @@ fn fail_plan_enforced(
     plan.status = PlanStatus::Failed;
     plan.completed_at = Some(now_secs());
 
-    let _ = append_event_for(workspace.as_deref(), &AuditEvent::PolicyBlocked {
+    let _ = append_event_for(
+        workspace.as_deref(),
+        &AuditEvent::PolicyBlocked {
+            plan_id: plan.id.clone(),
+            node_id: "plan".to_string(),
+            reason: reason.to_string(),
+            timestamp: now_secs(),
+        },
+    );
+    let _ = append_event_for(
+        workspace.as_deref(),
+        &AuditEvent::PlanCompleted {
+            plan_id: plan.id.clone(),
+            outcome: "Failed".to_string(),
+            total_duration_secs: duration,
+            timestamp: now_secs(),
+        },
+    );
+    let _ = event_tx.send(PlanStreamEvent::PlanFailed {
         plan_id: plan.id.clone(),
-        node_id: "plan".to_string(),
-        reason: reason.to_string(),
-        timestamp: now_secs(),
     });
-    let _ = append_event_for(workspace.as_deref(), &AuditEvent::PlanCompleted {
-        plan_id: plan.id.clone(),
-        outcome: "Failed".to_string(),
-        total_duration_secs: duration,
-        timestamp: now_secs(),
-    });
-    let _ = event_tx.send(PlanStreamEvent::PlanFailed { plan_id: plan.id.clone() });
 
     fire_plan_notification(&plan.intent, &plan.id, &PlanStatus::Failed);
 
@@ -705,7 +863,11 @@ fn fire_plan_notification(intent: &str, plan_id: &str, outcome: &PlanStatus) {
     let is_failure = !matches!(outcome, PlanStatus::Completed);
     let short_id = &plan_id[plan_id.len().saturating_sub(8)..];
     let short_intent: String = intent.chars().take(72).collect();
-    let title = if is_failure { "orbit · Plan Failed" } else { "orbit · Plan Completed" };
+    let title = if is_failure {
+        "orbit · Plan Failed"
+    } else {
+        "orbit · Plan Completed"
+    };
     let body = format!("{short_intent}  [{short_id}]");
     let plan_id = plan_id.to_string();
     let intent = intent.to_string();

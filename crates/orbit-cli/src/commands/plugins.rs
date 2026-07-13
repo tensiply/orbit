@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::plugin::{self, InstallMethod, Plugin, PluginState};
+use std::collections::HashMap;
 use std::{
     io::{self, Write},
     process::Command,
@@ -58,6 +59,18 @@ pub enum PluginsCommand {
         #[arg(long)]
         engine: Option<String>,
     },
+    /// Run a plugin executor directly (without a plan). Use `shell` for ad-hoc commands.
+    ///
+    /// Examples:
+    ///   orbit plugins run cargo --param subcommand=check
+    ///   orbit plugins run shell --param command="echo hello world"
+    Run {
+        /// Plugin name, or `shell` for the built-in escape hatch
+        name: String,
+        /// Parameter values as key=value pairs (repeatable)
+        #[arg(long = "param", short = 'p', value_name = "KEY=VALUE")]
+        params: Vec<String>,
+    },
 }
 
 pub fn run(args: PluginsArgs) -> Result<()> {
@@ -69,6 +82,7 @@ pub fn run(args: PluginsArgs) -> Result<()> {
         PluginsCommand::Info { name } => info(&name),
         PluginsCommand::Wrap { name, engine } => wrap(&name, engine.as_deref()),
         PluginsCommand::Unwrap { name, engine } => unwrap_engine(&name, engine.as_deref()),
+        PluginsCommand::Run { name, params } => run_executor(&name, &params),
     }
 }
 
@@ -120,8 +134,14 @@ fn list() -> Result<()> {
             ""
         };
 
+        let exec_tag = if p.executor.is_some() {
+            "  \x1b[36m[⚙ executor]\x1b[0m"
+        } else {
+            ""
+        };
+
         println!(
-            "  {status}  {name:<name_w$}  \x1b[2m({cat:<cat_w$})\x1b[0m  {desc}{mcp_tag}",
+            "  {status}  {name:<name_w$}  \x1b[2m({cat:<cat_w$})\x1b[0m  {desc}{mcp_tag}{exec_tag}",
             name = p.name,
             cat = p.category,
             desc = p.description,
@@ -412,7 +432,80 @@ fn info(name: &str) -> Result<()> {
         println!("    engines: {}", wrap.engines.join(", "));
     }
 
+    if let Some(exec) = &plugin.executor {
+        println!();
+        println!("  executor");
+        println!("    command   {}", exec.command.join(" "));
+        if !exec.params.is_empty() {
+            println!();
+            let name_w = exec
+                .params
+                .iter()
+                .map(|p| p.name.len())
+                .max()
+                .unwrap_or(4)
+                .max(4);
+            println!(
+                "    {:<name_w$}  description                required  default",
+                "param",
+                name_w = name_w
+            );
+            println!("    {}", "-".repeat(name_w + 50));
+            for p in &exec.params {
+                let required = if p.required { "yes" } else { "no " };
+                let default = p.default.as_deref().unwrap_or("—");
+                println!(
+                    "    {:<name_w$}  {:<27}  {required}       {default}",
+                    p.name,
+                    p.description,
+                    name_w = name_w,
+                );
+            }
+        }
+        println!();
+        println!("    usage: orbit plugins run {name} --param key=value");
+    }
+
     println!();
+    Ok(())
+}
+
+// ── run executor ──────────────────────────────────────────────────────────────
+
+fn run_executor(name: &str, raw_params: &[String]) -> Result<()> {
+    let params: HashMap<String, String> = raw_params
+        .iter()
+        .map(|s| {
+            let (k, v) = s.split_once('=').unwrap_or((s, ""));
+            (k.to_string(), v.to_string())
+        })
+        .collect();
+
+    let rendered_cmd = if name == "shell" {
+        let command = params
+            .get("command")
+            .ok_or_else(|| anyhow::anyhow!("shell executor requires --param command=<cmd>"))?;
+        vec!["sh".to_string(), "-c".to_string(), command.clone()]
+    } else {
+        let plugin = plugin::find(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "plugin '{name}' not found — run `orbit plugins list` to see available plugins"
+            )
+        })?;
+        plugin.render_executor_command(&params)?
+    };
+
+    println!("  \x1b[2m$ {}\x1b[0m", rendered_cmd.join(" "));
+    println!();
+
+    let status = Command::new(&rendered_cmd[0])
+        .args(&rendered_cmd[1..])
+        .status()?;
+
+    if !status.success() {
+        bail!("command exited with status {}", status.code().unwrap_or(-1));
+    }
+
     Ok(())
 }
 

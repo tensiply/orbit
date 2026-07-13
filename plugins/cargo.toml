@@ -1,0 +1,24 @@
+name = "cargo"
+description = "Cargo — run Rust build tool subcommands (build, test, check, clippy…) as plan nodes"
+category = "build"
+
+[check]
+binary = "cargo"
+
+[[install]]
+method = "rustup"
+cmd = ["rustup", "toolchain", "install", "stable"]
+label = "rustup (recommended)"
+
+[executor]
+command = ["sh", "-c", "cargo {subcommand} {args}"]
+
+[[executor.params]]
+name = "subcommand"
+description = "Cargo subcommand (build, test, check, clippy, fmt, run…)"
+required = true
+
+[[executor.params]]
+name = "args"
+description = "Additional arguments (e.g. --release, --all-features)"
+default = ""

@@ -1,0 +1,29 @@
+name = "pytest"
+description = "pytest — run Python tests as plan nodes"
+category = "test"
+
+[check]
+binary = "pytest"
+
+[[install]]
+method = "pip"
+cmd = ["pip", "install", "pytest"]
+label = "pip"
+
+[[install]]
+method = "pip3"
+cmd = ["pip3", "install", "pytest"]
+label = "pip3"
+
+[executor]
+command = ["sh", "-c", "pytest {test_path} {args}"]
+
+[[executor.params]]
+name = "test_path"
+description = "Test file or directory to run"
+default = "."
+
+[[executor.params]]
+name = "args"
+description = "Additional pytest arguments (e.g. -v, -k test_name, --tb=short)"
+default = ""

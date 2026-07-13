@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 ///
 /// Tests that use this harness MUST carry `#[serial]` from the `serial_test`
 /// crate — the harness redirects `XDG_DATA_HOME` which is process-global.
+#[allow(dead_code)]
 pub struct TestHarness {
     pub dir: TempDir,
     pub sock: PathBuf,
@@ -59,7 +60,11 @@ impl TestHarness {
         }
         assert!(sock.exists(), "daemon socket did not appear within 2 s");
 
-        TestHarness { dir, sock, _server: server }
+        TestHarness {
+            dir,
+            sock,
+            _server: server,
+        }
     }
 
     pub async fn send(&self, req: &Request) -> Response {
@@ -73,11 +78,13 @@ impl TestHarness {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
+    #[allow(dead_code)]
     pub fn sock(&self) -> &Path {
         &self.sock
     }
 
     /// Write a `Plan` JSON directly to the test data dir, bypassing the planner.
+    #[allow(dead_code)]
     pub fn write_plan(&self, plan: &Plan) -> Result<()> {
         let plans_dir = self.dir.path().join("data/orbit/plans");
         std::fs::create_dir_all(&plans_dir)?;
@@ -89,12 +96,18 @@ impl TestHarness {
 
 // ── plan builders ─────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub fn make_plan(id: &str, intent: &str, status: PlanStatus) -> Plan {
     Plan {
         id: id.to_string(),
         schema_version: 1,
         intent: intent.to_string(),
-        scope: PlanScope { workspace: None, tenant: None, project: None, repository: None },
+        scope: PlanScope {
+            workspace: None,
+            tenant: None,
+            project: None,
+            repository: None,
+        },
         nodes: vec![PlanNode {
             id: "n1".to_string(),
             task_type: PlanNodeType::Code,
@@ -113,6 +126,8 @@ pub fn make_plan(id: &str, intent: &str, status: PlanStatus) -> Plan {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: Default::default(),
         }],
         edges: vec![],
         status,

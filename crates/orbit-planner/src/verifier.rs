@@ -55,13 +55,19 @@ fn run_strategy(
 
         VerifyStrategy::LlmJudge => {
             let Some(ref summary) = node.output_summary else {
-                warn!("LlmJudge: no output captured for node {} — skipping", node.id);
+                warn!(
+                    "LlmJudge: no output captured for node {} — skipping",
+                    node.id
+                );
                 return VerifyOutcome::Pass;
             };
             match llm_judge(summary, &node.intent, judge_backend) {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    warn!("LlmJudge error for node {}: {e} — treating as Pass", node.id);
+                    warn!(
+                        "LlmJudge error for node {}: {e} — treating as Pass",
+                        node.id
+                    );
                     VerifyOutcome::Pass
                 }
             }
@@ -161,6 +167,8 @@ mod tests {
             error: None,
             retry_count: 0,
             approved: false,
+            executor: None,
+            executor_params: Default::default(),
         }
     }
 
@@ -183,7 +191,9 @@ mod tests {
     #[test]
     fn output_contains_passes_when_present() {
         let node = make_node(
-            vec![VerifyStrategy::OutputContains { keywords: vec!["success".into()] }],
+            vec![VerifyStrategy::OutputContains {
+                keywords: vec!["success".into()],
+            }],
             Some("task completed with success".into()),
         );
         assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
@@ -192,7 +202,9 @@ mod tests {
     #[test]
     fn output_contains_case_insensitive() {
         let node = make_node(
-            vec![VerifyStrategy::OutputContains { keywords: vec!["SUCCESS".into()] }],
+            vec![VerifyStrategy::OutputContains {
+                keywords: vec!["SUCCESS".into()],
+            }],
             Some("task completed with success".into()),
         );
         assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
@@ -201,25 +213,37 @@ mod tests {
     #[test]
     fn output_contains_fails_when_missing() {
         let node = make_node(
-            vec![VerifyStrategy::OutputContains { keywords: vec!["success".into()] }],
+            vec![VerifyStrategy::OutputContains {
+                keywords: vec!["success".into()],
+            }],
             Some("something else entirely".into()),
         );
-        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
+        assert!(matches!(
+            verify_node(&node, &mock()),
+            VerifyOutcome::Fail(_)
+        ));
     }
 
     #[test]
     fn output_contains_fails_without_output() {
         let node = make_node(
-            vec![VerifyStrategy::OutputContains { keywords: vec!["ok".into()] }],
+            vec![VerifyStrategy::OutputContains {
+                keywords: vec!["ok".into()],
+            }],
             None,
         );
-        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
+        assert!(matches!(
+            verify_node(&node, &mock()),
+            VerifyOutcome::Fail(_)
+        ));
     }
 
     #[test]
     fn shell_check_passes_true() {
         let node = make_node(
-            vec![VerifyStrategy::ShellCheck { command: vec!["true".into()] }],
+            vec![VerifyStrategy::ShellCheck {
+                command: vec!["true".into()],
+            }],
             None,
         );
         assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
@@ -228,18 +252,20 @@ mod tests {
     #[test]
     fn shell_check_fails_false() {
         let node = make_node(
-            vec![VerifyStrategy::ShellCheck { command: vec!["false".into()] }],
+            vec![VerifyStrategy::ShellCheck {
+                command: vec!["false".into()],
+            }],
             None,
         );
-        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
+        assert!(matches!(
+            verify_node(&node, &mock()),
+            VerifyOutcome::Fail(_)
+        ));
     }
 
     #[test]
     fn empty_shell_check_passes() {
-        let node = make_node(
-            vec![VerifyStrategy::ShellCheck { command: vec![] }],
-            None,
-        );
+        let node = make_node(vec![VerifyStrategy::ShellCheck { command: vec![] }], None);
         assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Pass));
     }
 
@@ -247,12 +273,17 @@ mod tests {
     fn first_failure_short_circuits() {
         let node = make_node(
             vec![
-                VerifyStrategy::OutputContains { keywords: vec!["missing".into()] },
+                VerifyStrategy::OutputContains {
+                    keywords: vec!["missing".into()],
+                },
                 VerifyStrategy::ExitCode, // would pass, but never reached
             ],
             Some("no keyword here".into()),
         );
-        assert!(matches!(verify_node(&node, &mock()), VerifyOutcome::Fail(_)));
+        assert!(matches!(
+            verify_node(&node, &mock()),
+            VerifyOutcome::Fail(_)
+        ));
     }
 
     #[test]
@@ -272,7 +303,10 @@ mod tests {
             Some("something was done".into()),
         );
         let backend = MockBackend::new("FAIL: missing tests");
-        assert!(matches!(verify_node(&node, &backend), VerifyOutcome::Fail(_)));
+        assert!(matches!(
+            verify_node(&node, &backend),
+            VerifyOutcome::Fail(_)
+        ));
     }
 
     #[test]

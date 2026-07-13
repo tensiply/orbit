@@ -5,7 +5,7 @@ use orbit_core::{
 };
 
 use crate::backend::PlannerBackend;
-use crate::planner::{invoke_planner, PlannerConfig};
+use crate::planner::{PlannerConfig, invoke_planner};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -33,8 +33,14 @@ pub fn replan(
     backend: &dyn PlannerBackend,
 ) -> Result<Plan> {
     let enhanced_intent = build_replan_intent(&original.intent, failed_node, reason);
-    let (mut child, _trace) =
-        invoke_planner(&enhanced_intent, &original.scope, recent_runs, cfg, backend, &[])?;
+    let (mut child, _trace) = invoke_planner(
+        &enhanced_intent,
+        &original.scope,
+        recent_runs,
+        cfg,
+        backend,
+        &[],
+    )?;
     child.parent_plan_id = Some(original.id.clone());
     child.replan_count = original.replan_count + 1;
     child.status = PlanStatus::Running;
@@ -70,6 +76,8 @@ mod tests {
             error: Some("verification failed".into()),
             retry_count: 1,
             approved: false,
+            executor: None,
+            executor_params: Default::default(),
         }
     }
 
@@ -106,7 +114,12 @@ mod tests {
     #[test]
     fn replan_intent_empty_scope() {
         let node = make_failed_node();
-        let _scope = PlanScope { workspace: None, tenant: None, project: None, repository: None };
+        let _scope = PlanScope {
+            workspace: None,
+            tenant: None,
+            project: None,
+            repository: None,
+        };
         let intent = build_replan_intent("fix bug", &node, "test failed");
         assert!(intent.starts_with("fix bug"));
     }
