@@ -824,9 +824,12 @@ fn resume_running_plans() {
 // ── server entry point ────────────────────────────────────────────────────────
 
 pub async fn run() -> Result<()> {
-    let sock = socket_path();
-    let pid_file = pid_path();
+    run_on(socket_path(), pid_path()).await
+}
 
+/// Like `run()` but binds to a caller-supplied socket path and PID file.
+/// Used by integration tests to start an isolated daemon instance.
+pub async fn run_on(sock: std::path::PathBuf, pid_file: std::path::PathBuf) -> Result<()> {
     fs::create_dir_all(sock.parent().unwrap())?;
 
     // Remove stale socket file

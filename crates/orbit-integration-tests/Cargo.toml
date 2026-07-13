@@ -1,0 +1,23 @@
+[package]
+name = "orbit-integration-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+orbit-core.workspace = true
+orbit-client.workspace = true
+orbit-daemon.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true }
+tempfile.workspace = true
+serial_test = "3"
+
+[[test]]
+name = "daemon"
+path = "tests/daemon.rs"
+
+[[test]]
+name = "plan"
+path = "tests/plan.rs"

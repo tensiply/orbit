@@ -15,16 +15,24 @@ pub fn is_available() -> bool {
 }
 
 pub async fn send_raw(req: &Request) -> Result<Response> {
-    send(req).await
+    send_on(&socket_path(), req).await
+}
+
+/// Send a request to a daemon socket at an explicit path (used by integration tests).
+pub async fn send_raw_to(sock: &std::path::Path, req: &Request) -> Result<Response> {
+    send_on(sock, req).await
 }
 
 async fn send(req: &Request) -> Result<Response> {
-    let sock = socket_path();
+    send_on(&socket_path(), req).await
+}
+
+async fn send_on(sock: &std::path::Path, req: &Request) -> Result<Response> {
     if !sock.exists() {
-        bail!("Daemon is not running. Start it with `orbit daemon start`.");
+        bail!("Daemon is not running (socket not found at {}).", sock.display());
     }
 
-    let stream = UnixStream::connect(&sock).await?;
+    let stream = UnixStream::connect(sock).await?;
     let (reader, mut writer) = stream.into_split();
 
     let mut line = serde_json::to_string(req)?;

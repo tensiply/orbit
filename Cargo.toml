@@ -10,6 +10,7 @@ members = [
     "crates/orbit-engine",
     "crates/orbit-planner",
     "crates/orbit-eval",
+    "crates/orbit-integration-tests",
 ]
 resolver = "2"
 
