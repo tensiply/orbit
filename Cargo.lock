@@ -1329,6 +1329,7 @@ dependencies = [
  "orbit-core",
  "orbit-daemon",
  "orbit-engine",
+ "orbit-planner",
  "orbit-tui",
  "reqwest",
  "serde",
