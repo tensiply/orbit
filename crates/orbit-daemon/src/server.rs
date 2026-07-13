@@ -723,7 +723,8 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
             let current_terminal = orbit_core::plan::Plan::load(id).ok().and_then(|p| {
                 match p.status {
                     PlanStatus::Completed => Some(PlanStreamEvent::PlanCompleted { plan_id: id.clone() }),
-                    PlanStatus::Failed => Some(PlanStreamEvent::PlanFailed { plan_id: id.clone() }),
+                    // Cancelled is treated as Failed from the subscriber's perspective.
+                    PlanStatus::Failed | PlanStatus::Cancelled => Some(PlanStreamEvent::PlanFailed { plan_id: id.clone() }),
                     _ => None,
                 }
             });
@@ -823,13 +824,33 @@ fn resume_running_plans() {
 
 // ── server entry point ────────────────────────────────────────────────────────
 
-pub async fn run() -> Result<()> {
-    run_on(socket_path(), pid_path()).await
+/// Background loop intervals for the daemon. Exposed so integration tests can
+/// use fast intervals without waiting for production-grade timeouts.
+pub struct DaemonOptions {
+    pub supervisor_interval: Duration,
+    pub cleanup_interval: Duration,
+    pub scheduler_interval: Duration,
+    pub archival_interval: Duration,
 }
 
-/// Like `run()` but binds to a caller-supplied socket path and PID file.
-/// Used by integration tests to start an isolated daemon instance.
-pub async fn run_on(sock: std::path::PathBuf, pid_file: std::path::PathBuf) -> Result<()> {
+impl Default for DaemonOptions {
+    fn default() -> Self {
+        Self {
+            supervisor_interval: Duration::from_secs(5),
+            cleanup_interval: Duration::from_secs(60),
+            scheduler_interval: Duration::from_secs(60),
+            archival_interval: Duration::from_secs(86_400),
+        }
+    }
+}
+
+pub async fn run() -> Result<()> {
+    run_on(socket_path(), pid_path(), DaemonOptions::default()).await
+}
+
+/// Like `run()` but binds to a caller-supplied socket path and PID file,
+/// and accepts configurable loop intervals.  Used by integration tests.
+pub async fn run_on(sock: std::path::PathBuf, pid_file: std::path::PathBuf, opts: DaemonOptions) -> Result<()> {
     fs::create_dir_all(sock.parent().unwrap())?;
 
     // Remove stale socket file
@@ -849,28 +870,28 @@ pub async fn run_on(sock: std::path::PathBuf, pid_file: std::path::PathBuf) -> R
     let (event_tx, _) = broadcast::channel::<PlanStreamEvent>(4096);
     let state = ServerState::new(shutdown_tx.clone(), event_tx.clone());
 
-    // Background: auto-clean dead sessions every 60s
+    // Background: auto-clean dead sessions
     tokio::spawn(crate::session_monitor::run_cleanup_loop(
-        Duration::from_secs(60),
+        opts.cleanup_interval,
         shutdown_tx.subscribe(),
     ));
 
-    // Background: advance running plans every 5s
+    // Background: advance running plans
     tokio::spawn(crate::plan_supervisor::run_supervisor_loop(
-        Duration::from_secs(5),
+        opts.supervisor_interval,
         shutdown_tx.subscribe(),
         event_tx.clone(),
     ));
 
-    // Background: check scheduled plans every 60s
+    // Background: check scheduled plans
     tokio::spawn(crate::scheduler::run_scheduler_loop(
-        Duration::from_secs(60),
+        opts.scheduler_interval,
         shutdown_tx.subscribe(),
     ));
 
-    // Background: auto-prune old plans every 24h (if enabled in user config)
+    // Background: auto-prune old plans
     tokio::spawn(crate::archival::run_archival_loop(
-        Duration::from_secs(86_400),
+        opts.archival_interval,
         shutdown_tx.subscribe(),
     ));
 

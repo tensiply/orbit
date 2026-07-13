@@ -6,6 +6,7 @@ use orbit_core::{
         NodePolicy, NodeStatus, Plan, PlanNode, PlanNodeType, PlanPolicy, PlanScope, PlanStatus,
     },
 };
+use orbit_daemon::server::DaemonOptions;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -40,7 +41,13 @@ impl TestHarness {
         let sock_clone = sock.clone();
 
         let server = tokio::spawn(async move {
-            let _ = orbit_daemon::server::run_on(sock_clone, pid_file).await;
+            let opts = DaemonOptions {
+                supervisor_interval: Duration::from_millis(100),
+                cleanup_interval: Duration::from_secs(3600),
+                scheduler_interval: Duration::from_secs(3600),
+                archival_interval: Duration::from_secs(3600),
+            };
+            let _ = orbit_daemon::server::run_on(sock_clone, pid_file, opts).await;
         });
 
         // Wait up to 2 s for the socket to appear.

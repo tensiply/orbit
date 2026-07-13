@@ -21,3 +21,7 @@ path = "tests/daemon.rs"
 [[test]]
 name = "plan"
 path = "tests/plan.rs"
+
+[[test]]
+name = "streaming"
+path = "tests/streaming.rs"
