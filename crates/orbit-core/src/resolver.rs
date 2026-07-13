@@ -1,6 +1,6 @@
+use crate::{context::OrbitScope, user_config::UserConfig};
 use anyhow::{Result, bail};
 use directories::BaseDirs;
-use crate::{context::OrbitScope, user_config::UserConfig};
 use std::path::{Path, PathBuf};
 
 /// Arguments for scope resolution — direct mapping from CLI flags.
@@ -55,9 +55,8 @@ pub fn resolve_from_git_or_cwd() -> Result<OrbitScope> {
     let base_dirs =
         BaseDirs::new().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
     let home = base_dirs.home_dir();
-    let anchor = git_repo_root().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| home.to_path_buf())
-    });
+    let anchor = git_repo_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| home.to_path_buf()));
     let ai_root = UserConfig::load().ai_root_expanded();
     resolve_from_path_inner(&anchor, home, &ai_root)
 }
@@ -71,17 +70,33 @@ pub fn resolve_from_path(cwd: &Path, home: &Path, ai_root: &Path) -> Result<Orbi
 /// used by plan commands. Empty strings become `None`.
 pub fn scope_to_tuple(
     scope: &OrbitScope,
-) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let workspace = scope
         .workspace_root
         .file_name()
         .and_then(|n| n.to_str())
         .filter(|s| !s.is_empty())
         .map(String::from);
-    let tenant = if scope.tenant.is_empty() { None } else { Some(scope.tenant.clone()) };
-    let project = if scope.project.is_empty() { None } else { Some(scope.project.clone()) };
-    let repository =
-        if scope.repository.is_empty() { None } else { Some(scope.repository.clone()) };
+    let tenant = if scope.tenant.is_empty() {
+        None
+    } else {
+        Some(scope.tenant.clone())
+    };
+    let project = if scope.project.is_empty() {
+        None
+    } else {
+        Some(scope.project.clone())
+    };
+    let repository = if scope.repository.is_empty() {
+        None
+    } else {
+        Some(scope.repository.clone())
+    };
     (workspace, tenant, project, repository)
 }
 
@@ -277,8 +292,8 @@ fn resolve_inner(args: ResolveArgs, home: &Path, ai_root: &Path) -> Result<Orbit
     let tenant = resolve_name(&tenants_root, tenant_input);
 
     // Resolve code_root with icase so tenant names in SOT and on-disk don't need to match.
-    let code_root = find_dir_icase(&workspace_root, &tenant)
-        .unwrap_or_else(|| workspace_root.join(&tenant));
+    let code_root =
+        find_dir_icase(&workspace_root, &tenant).unwrap_or_else(|| workspace_root.join(&tenant));
 
     // ── resolve project ───────────────────────────────────────────────────────
     let project = match &args.project {
@@ -496,10 +511,11 @@ mod tests {
         let scope = resolve_with_home(args, home.path()).unwrap();
         assert_eq!(scope.project, "MULESOFT");
         assert_eq!(scope.work_dir, code_project);
-        assert!(home
-            .path()
-            .join("BeFra/AI/tenants/JAFRAUS/projects/MULESOFT")
-            .is_dir());
+        assert!(
+            home.path()
+                .join("BeFra/AI/tenants/JAFRAUS/projects/MULESOFT")
+                .is_dir()
+        );
     }
 
     #[test]

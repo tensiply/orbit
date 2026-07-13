@@ -29,7 +29,10 @@ async fn send(req: &Request) -> Result<Response> {
 
 async fn send_on(sock: &std::path::Path, req: &Request) -> Result<Response> {
     if !sock.exists() {
-        bail!("Daemon is not running (socket not found at {}).", sock.display());
+        bail!(
+            "Daemon is not running (socket not found at {}).",
+            sock.display()
+        );
     }
 
     let stream = UnixStream::connect(sock).await?;
@@ -140,8 +143,14 @@ pub async fn list_plans() -> Result<Vec<orbit_core::plan::Plan>> {
     list_plans_filtered(None).await
 }
 
-pub async fn list_plans_filtered(workspace_filter: Option<&str>) -> Result<Vec<orbit_core::plan::Plan>> {
-    match send(&Request::ListPlans { workspace_filter: workspace_filter.map(|s| s.to_string()) }).await? {
+pub async fn list_plans_filtered(
+    workspace_filter: Option<&str>,
+) -> Result<Vec<orbit_core::plan::Plan>> {
+    match send(&Request::ListPlans {
+        workspace_filter: workspace_filter.map(|s| s.to_string()),
+    })
+    .await?
+    {
         Response::Plans { plans } => Ok(plans),
         Response::Error { message } => bail!("{message}"),
         _ => bail!("unexpected response"),
@@ -176,7 +185,10 @@ pub async fn stream_plan(id: &str) -> Result<tokio::sync::mpsc::Receiver<PlanStr
 }
 
 /// Like `stream_plan` but connects to a specific socket path (e.g. a project socket).
-pub async fn stream_plan_on(id: &str, sock: PathBuf) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
+pub async fn stream_plan_on(
+    id: &str,
+    sock: PathBuf,
+) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
     if !sock.exists() {
         bail!("Daemon is not running. Start it with `orbit daemon start`.");
     }

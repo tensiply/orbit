@@ -1,8 +1,8 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
+use orbit_core::engine::Engine;
 use orbit_core::{context::OrbitScope, secrets};
 use orbit_engine::{config, resolver};
-use orbit_core::engine::Engine;
 use serde_json::Value;
 use std::{
     fs,
@@ -228,11 +228,12 @@ fn read_env_from_file(path: &Path) -> Vec<(String, String)> {
 // ── scope helpers ─────────────────────────────────────────────────────────────
 
 fn detect_scope() -> Result<OrbitScope> {
-    resolver::resolve_from_cwd()
-        .map_err(|_| anyhow::anyhow!(
+    resolver::resolve_from_cwd().map_err(|_| {
+        anyhow::anyhow!(
             "could not detect scope from current directory\n\
              cd into a workspace or use --scope to specify the target level"
-        ))
+        )
+    })
 }
 
 fn detect_scope_for_list(scope_override: Option<ScopeLevel>) -> Result<OrbitScope> {
@@ -243,11 +244,12 @@ fn detect_scope_for_list(scope_override: Option<ScopeLevel>) -> Result<OrbitScop
 fn resolve_write_scope(
     scope_override: Option<ScopeLevel>,
 ) -> Result<(Option<OrbitScope>, ScopeLevel)> {
-    let scope = resolver::resolve_from_cwd()
-        .map_err(|_| anyhow::anyhow!(
+    let scope = resolver::resolve_from_cwd().map_err(|_| {
+        anyhow::anyhow!(
             "could not detect scope from current directory\n\
              cd into a workspace or use --scope to specify the target level"
-        ))?;
+        )
+    })?;
     let level = scope_override.unwrap_or_else(|| default_level(&scope));
     validate_level(&scope, level)?;
     Ok((Some(scope), level))

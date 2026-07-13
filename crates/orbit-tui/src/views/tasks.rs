@@ -41,10 +41,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if app.tasks.loading {
         let text = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                "  Loading issues…",
-                Style::default().fg(dim),
-            )),
+            Line::from(Span::styled("  Loading issues…", Style::default().fg(dim))),
         ];
         f.render_widget(Paragraph::new(text), inner);
         return;
@@ -53,10 +50,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if let Some(err) = &app.tasks.error.clone() {
         let text = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                format!("  {err}"),
-                Style::default().fg(dim),
-            )),
+            Line::from(Span::styled(format!("  {err}"), Style::default().fg(dim))),
             Line::from(""),
             Line::from(vec![
                 Span::styled("  Press ", Style::default().fg(dim)),
@@ -109,10 +103,7 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         ));
 
         if orgs.len() > 1 {
-            spans.push(Span::styled(
-                "  [←→] org",
-                Style::default().fg(dim),
-            ));
+            spans.push(Span::styled("  [←→] org", Style::default().fg(dim)));
         }
     }
 
@@ -188,7 +179,10 @@ fn issue_row(issue: &JiraIssue, dim: Color) -> Row<'static> {
 fn priority_display(priority: &str, dim: Color) -> (&'static str, Style) {
     let p = priority.to_lowercase();
     if p.contains("highest") || p.contains("critical") || p.contains("blocker") {
-        ("↑↑", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        (
+            "↑↑",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )
     } else if p.contains("high") {
         ("↑ ", Style::default().fg(Color::Yellow))
     } else if p.contains("medium") || p.contains("normal") || p.contains("medio") {
@@ -202,10 +196,10 @@ fn priority_display(priority: &str, dim: Color) -> (&'static str, Style) {
 
 fn status_display(status: &str, color_name: &str, dim: Color) -> (String, Style) {
     let style = match color_name {
-        "yellow"           => Style::default().fg(Color::Yellow),
-        "green"            => Style::default().fg(Color::Green),
+        "yellow" => Style::default().fg(Color::Yellow),
+        "green" => Style::default().fg(Color::Green),
         "warm-red" | "red" => Style::default().fg(Color::Red),
-        _                  => Style::default().fg(dim),
+        _ => Style::default().fg(dim),
     };
     (status.to_string(), style)
 }

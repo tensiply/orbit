@@ -19,13 +19,16 @@ async fn wait_for_node_status(
 ) -> NodeStatus {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        let resp = h.send(&Request::GetPlan { id: plan_id.to_string() }).await;
-        if let Response::PlanInfo { plan } = resp {
-            if let Some(node) = plan.nodes.iter().find(|n| n.id == node_id) {
-                if node.status == want {
-                    return node.status.clone();
-                }
-            }
+        let resp = h
+            .send(&Request::GetPlan {
+                id: plan_id.to_string(),
+            })
+            .await;
+        if let Response::PlanInfo { plan } = resp
+            && let Some(node) = plan.nodes.iter().find(|n| n.id == node_id)
+            && node.status == want
+        {
+            return node.status.clone();
         }
         if tokio::time::Instant::now() >= deadline {
             break;
@@ -33,7 +36,11 @@ async fn wait_for_node_status(
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     // Return actual status on timeout
-    let resp = h.send(&Request::GetPlan { id: plan_id.to_string() }).await;
+    let resp = h
+        .send(&Request::GetPlan {
+            id: plan_id.to_string(),
+        })
+        .await;
     if let Response::PlanInfo { plan } = resp {
         plan.nodes
             .into_iter()
@@ -92,7 +99,11 @@ async fn approve_node_transitions_awaiting_to_pending() {
         "expected PlanApproved, got {resp:?}"
     );
 
-    let resp = h.send(&Request::GetPlan { id: plan.id.clone() }).await;
+    let resp = h
+        .send(&Request::GetPlan {
+            id: plan.id.clone(),
+        })
+        .await;
     let Response::PlanInfo { plan: fetched } = resp else {
         panic!("expected PlanInfo, got {resp:?}");
     };
@@ -136,7 +147,10 @@ async fn approve_nonexistent_plan_returns_error() {
             node_id: "n1".into(),
         })
         .await;
-    assert!(matches!(resp, Response::Error { .. }), "expected Error, got {resp:?}");
+    assert!(
+        matches!(resp, Response::Error { .. }),
+        "expected Error, got {resp:?}"
+    );
 
     h.shutdown().await;
 }
@@ -173,7 +187,11 @@ async fn supervisor_gates_high_risk_node_to_awaiting_approval() {
     // AwaitingApproval.
     let h = TestHarness::new().await;
 
-    let mut plan = make_plan("plan_gate_high_risk", "drop table users", PlanStatus::Running);
+    let mut plan = make_plan(
+        "plan_gate_high_risk",
+        "drop table users",
+        PlanStatus::Running,
+    );
     plan.policy.require_approval_for = vec![RiskLevel::High];
     plan.nodes[0].policy = NodePolicy {
         risk_level: RiskLevel::High,
@@ -189,7 +207,11 @@ async fn supervisor_gates_high_risk_node_to_awaiting_approval() {
         Duration::from_secs(2),
     )
     .await;
-    assert_eq!(status, NodeStatus::AwaitingApproval, "high-risk node should be gated");
+    assert_eq!(
+        status,
+        NodeStatus::AwaitingApproval,
+        "high-risk node should be gated"
+    );
 
     h.shutdown().await;
 }
@@ -201,8 +223,11 @@ async fn approved_node_not_re_gated_by_supervisor() {
     // an approved node on every tick, making approvals ineffective.
     let h = TestHarness::new().await;
 
-    let mut plan =
-        make_plan("plan_approve_no_regate", "run migration", PlanStatus::Running);
+    let mut plan = make_plan(
+        "plan_approve_no_regate",
+        "run migration",
+        PlanStatus::Running,
+    );
     plan.policy.require_approval_for = vec![RiskLevel::High];
     plan.nodes[0].policy = NodePolicy {
         risk_level: RiskLevel::High,
@@ -223,7 +248,11 @@ async fn approved_node_not_re_gated_by_supervisor() {
     // Give the supervisor 3 ticks (300 ms) to process.
     tokio::time::sleep(Duration::from_millis(350)).await;
 
-    let resp = h.send(&Request::GetPlan { id: plan.id.clone() }).await;
+    let resp = h
+        .send(&Request::GetPlan {
+            id: plan.id.clone(),
+        })
+        .await;
     let Response::PlanInfo { plan: fetched } = resp else {
         panic!("expected PlanInfo");
     };
@@ -260,7 +289,9 @@ async fn stream_plan_fails_on_token_budget_exhausted() {
     let events = collect_terminal(rx, Duration::from_secs(3)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed from token budget, got {events:?}"
     );
 
@@ -288,7 +319,9 @@ async fn stream_plan_fails_on_cost_budget_exhausted() {
     let events = collect_terminal(rx, Duration::from_secs(3)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed from cost budget, got {events:?}"
     );
 
@@ -319,7 +352,9 @@ async fn stream_plan_fails_on_node_budget_exhausted() {
     let events = collect_terminal(rx, Duration::from_secs(3)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed from node budget, got {events:?}"
     );
 

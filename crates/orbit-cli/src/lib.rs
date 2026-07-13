@@ -61,7 +61,7 @@ pub enum Commands {
     /// Manage env vars in orbit.json at any scope level
     Env(commands::env::EnvArgs),
     /// Create and manage autonomous execution plans
-    Plan(commands::plan::PlanArgs),
+    Plan(Box<commands::plan::PlanArgs>),
     /// Search and manage plan run memory
     Memory(commands::memory::MemoryArgs),
     /// Configure and test desktop notifications
@@ -133,7 +133,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Jira(args)) => commands::jira::run(args),
         Some(Commands::Secret(args)) => commands::secret::run(args),
         Some(Commands::Env(args)) => commands::env::run(args),
-        Some(Commands::Plan(args)) => commands::plan::run(args).await,
+        Some(Commands::Plan(args)) => commands::plan::run(*args).await,
         Some(Commands::Memory(args)) => commands::memory::run(args),
         Some(Commands::Notify(args)) => commands::notify::run(args),
         Some(Commands::Context(args)) => commands::context::run(args),

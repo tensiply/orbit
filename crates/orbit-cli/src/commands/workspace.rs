@@ -1,11 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
     data_paths::{all_plans_dirs, slugify},
     user_config::UserConfig,
     workspace_registry::WorkspaceRegistry,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Args)]
 pub struct WorkspaceArgs {
@@ -42,7 +42,11 @@ pub enum WorkspaceCommand {
 
 pub fn run(args: WorkspaceArgs) -> Result<()> {
     match args.command {
-        WorkspaceCommand::Add { path, name, default } => add(path, name, default),
+        WorkspaceCommand::Add {
+            path,
+            name,
+            default,
+        } => add(path, name, default),
         WorkspaceCommand::List => list(),
         WorkspaceCommand::Default { name } => set_default(name),
         WorkspaceCommand::Remove { name } => remove(name),
@@ -82,9 +86,7 @@ fn add(path: PathBuf, name: Option<String>, make_default: bool) -> Result<()> {
     println!("  Registered workspace: {ws_name}{default_marker}");
     println!("  Slug: {slug}");
     println!("  Path: {}", expanded.display());
-    println!(
-        "  Plans stored at: ~/.local/share/orbit/workspaces/{slug}/plans/"
-    );
+    println!("  Plans stored at: ~/.local/share/orbit/workspaces/{slug}/plans/");
     Ok(())
 }
 
@@ -97,18 +99,32 @@ fn list() -> Result<()> {
     if reg.workspaces.is_empty() {
         println!("  No workspaces registered.");
         println!();
-        println!("  The legacy workspace (ai_root: {}) is always active.", user_cfg.ai_root_expanded().display());
+        println!(
+            "  The legacy workspace (ai_root: {}) is always active.",
+            user_cfg.ai_root_expanded().display()
+        );
         println!("  Register additional workspaces with: orbit workspace add <path>");
         return Ok(());
     }
 
     println!();
-    let name_w = reg.workspaces.iter().map(|e| e.name.len()).max().unwrap_or(4);
-    let slug_w = reg.workspaces.iter().map(|e| e.slug.len()).max().unwrap_or(4);
+    let name_w = reg
+        .workspaces
+        .iter()
+        .map(|e| e.name.len())
+        .max()
+        .unwrap_or(4);
+    let slug_w = reg
+        .workspaces
+        .iter()
+        .map(|e| e.slug.len())
+        .max()
+        .unwrap_or(4);
 
     println!(
-        "  {:<name_w$}  {:<slug_w$}  {}",
-        "NAME", "SLUG", "PATH",
+        "  {:<name_w$}  {:<slug_w$}  PATH",
+        "NAME",
+        "SLUG",
         name_w = name_w,
         slug_w = slug_w
     );
@@ -178,20 +194,23 @@ fn remove(name: String) -> Result<()> {
     }
     reg.save()?;
     println!("  Removed workspace: {name}");
-    println!("  (Data in ~/.local/share/orbit/workspaces/{} was not deleted)", slugify(&name));
+    println!(
+        "  (Data in ~/.local/share/orbit/workspaces/{} was not deleted)",
+        slugify(&name)
+    );
     Ok(())
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn expand_tilde(path: &PathBuf) -> PathBuf {
+fn expand_tilde(path: &Path) -> PathBuf {
     let s = path.to_string_lossy();
-    if s.starts_with("~/") || s == "~" {
-        if let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) {
-            return home.join(s.trim_start_matches("~/"));
-        }
+    if (s.starts_with("~/") || s == "~")
+        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
+    {
+        return home.join(s.trim_start_matches("~/"));
     }
-    path.clone()
+    path.to_path_buf()
 }
 
 fn count_json_files(dir: &std::path::Path) -> usize {
@@ -214,7 +233,7 @@ fn workspace_label_for_dir(dir: &std::path::Path, reg: &WorkspaceRegistry) -> St
     if path_str.contains("/workspaces/") {
         // Extract slug from path
         if let Some(slug) = dir
-            .parent()        // /workspaces/{slug}
+            .parent() // /workspaces/{slug}
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
         {

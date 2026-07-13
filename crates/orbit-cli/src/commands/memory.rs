@@ -77,7 +77,11 @@ pub fn run(args: MemoryArgs) -> Result<()> {
             println!("{} recent plan run(s):", runs.len());
             println!();
             for r in runs.iter().rev() {
-                let outcome_icon = if r.outcome == "Completed" { "✓" } else { "✗" };
+                let outcome_icon = if r.outcome == "Completed" {
+                    "✓"
+                } else {
+                    "✗"
+                };
                 println!(
                     "  {} {} — {} node(s), {}s — {}",
                     outcome_icon, r.plan_id, r.node_count, r.duration_secs, r.outcome
@@ -86,26 +90,24 @@ pub fn run(args: MemoryArgs) -> Result<()> {
             }
         }
 
-        MemoryCommand::Show { plan_id } => {
-            match memory::find_run(&plan_id) {
-                None => {
-                    eprintln!("No memory record found for plan: {plan_id}");
-                    std::process::exit(1);
-                }
-                Some(r) => {
-                    println!("Plan:     {}", r.plan_id);
-                    println!("Intent:   {}", r.intent);
-                    println!("Outcome:  {}", r.outcome);
-                    println!("Nodes:    {}", r.node_count);
-                    println!("Replans:  {}", r.replan_count);
-                    println!("Duration: {}s", r.duration_secs);
-                    println!("Scope:    {}", r.scope_key);
-                    if !r.tags.is_empty() {
-                        println!("Tags:     {}", r.tags.join(", "));
-                    }
+        MemoryCommand::Show { plan_id } => match memory::find_run(&plan_id) {
+            None => {
+                eprintln!("No memory record found for plan: {plan_id}");
+                std::process::exit(1);
+            }
+            Some(r) => {
+                println!("Plan:     {}", r.plan_id);
+                println!("Intent:   {}", r.intent);
+                println!("Outcome:  {}", r.outcome);
+                println!("Nodes:    {}", r.node_count);
+                println!("Replans:  {}", r.replan_count);
+                println!("Duration: {}s", r.duration_secs);
+                println!("Scope:    {}", r.scope_key);
+                if !r.tags.is_empty() {
+                    println!("Tags:     {}", r.tags.join(", "));
                 }
             }
-        }
+        },
 
         MemoryCommand::Stats => {
             let s = memory::memory_stats();
@@ -158,7 +160,10 @@ pub fn run(args: MemoryArgs) -> Result<()> {
         MemoryCommand::Clear { dry_run } => {
             if dry_run {
                 let s = memory::memory_stats();
-                println!("(dry-run) Would delete {} plan run record(s).", s.total_runs);
+                println!(
+                    "(dry-run) Would delete {} plan run record(s).",
+                    s.total_runs
+                );
             } else {
                 match memory::clear_memory() {
                     Ok(0) => println!("Memory is already empty."),

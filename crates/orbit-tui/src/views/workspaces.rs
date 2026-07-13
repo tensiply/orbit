@@ -99,18 +99,34 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .collect();
 
     let total = ws_plans.len();
-    let completed = ws_plans.iter().filter(|p| p.status == CorePlanStatus::Completed).count();
-    let running = ws_plans.iter().filter(|p| p.status == CorePlanStatus::Running).count();
-    let failed = ws_plans.iter().filter(|p| p.status == CorePlanStatus::Failed).count();
+    let completed = ws_plans
+        .iter()
+        .filter(|p| p.status == CorePlanStatus::Completed)
+        .count();
+    let running = ws_plans
+        .iter()
+        .filter(|p| p.status == CorePlanStatus::Running)
+        .count();
+    let failed = ws_plans
+        .iter()
+        .filter(|p| p.status == CorePlanStatus::Failed)
+        .count();
     let pending = total - completed - running - failed;
 
     let data_dir = orbit_core::data_paths::plans_dir_for(Some(&entry.slug));
-    let data_parent = data_dir.parent().unwrap_or(&data_dir).to_string_lossy().to_string();
+    let data_parent = data_dir
+        .parent()
+        .unwrap_or(&data_dir)
+        .to_string_lossy()
+        .to_string();
 
     let mut lines: Vec<Line> = vec![
         Line::from(vec![
             Span::styled("  Name:   ", Style::default().fg(dim)),
-            Span::styled(entry.name.clone(), Style::default().fg(label).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                entry.name.clone(),
+                Style::default().fg(label).add_modifier(Modifier::BOLD),
+            ),
             if entry.is_default {
                 Span::styled("  (default)", Style::default().fg(accent))
             } else {
@@ -185,9 +201,11 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     }
 
     f.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title(format!(" {} ", entry.name))),
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {} ", entry.name)),
+        ),
         chunks[1],
     );
 }

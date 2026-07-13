@@ -73,7 +73,10 @@ fn render_engine_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     for (i, engine) in ENGINES.iter().enumerate() {
         let selected = i == app.launch.engine_idx;
         let (bullet, style) = if selected {
-            ("● ", Style::default().fg(accent).add_modifier(Modifier::BOLD))
+            (
+                "● ",
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            )
         } else {
             ("○ ", Style::default().fg(dim))
         };
@@ -123,10 +126,7 @@ fn render_workspace_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     ];
 
     if n > 1 {
-        spans.push(Span::styled(
-            format!("  ({n})"),
-            Style::default().fg(dim),
-        ));
+        spans.push(Span::styled(format!("  ({n})"), Style::default().fg(dim)));
     }
 
     if focused && n > 1 {
@@ -235,27 +235,17 @@ fn render_task_row(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 Style::default().fg(Color::Reset)
             };
             spans.push(Span::styled(
-                format!(
-                    "{}  {}",
-                    task.key,
-                    truncate_task(&task.summary, 40)
-                ),
+                format!("{}  {}", task.key, truncate_task(&task.summary, 40)),
                 task_style,
             ));
             if focused {
-                spans.push(Span::styled(
-                    "  [Esc] clear",
-                    Style::default().fg(dim),
-                ));
+                spans.push(Span::styled("  [Esc] clear", Style::default().fg(dim)));
             }
         }
         None => {
             spans.push(Span::styled("—", Style::default().fg(dim)));
             if focused && app.jira_enabled {
-                spans.push(Span::styled(
-                    "  [t] open Tasks",
-                    Style::default().fg(dim),
-                ));
+                spans.push(Span::styled("  [t] open Tasks", Style::default().fg(dim)));
             }
         }
     }
@@ -283,10 +273,7 @@ fn render_notmux(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Span::styled("  ", Style::default()),
         Span::styled(check, check_style),
         Span::styled(" No tmux ", label_style),
-        Span::styled(
-            "(launch in current terminal)",
-            Style::default().fg(dim),
-        ),
+        Span::styled("(launch in current terminal)", Style::default().fg(dim)),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
@@ -296,7 +283,10 @@ fn render_launch_button(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let dim = app.palette.dim;
     let focused = app.launch.focused == LaunchField::Launch;
     let (prefix, style) = if focused {
-        ("  ▶ ", Style::default().fg(accent).add_modifier(Modifier::BOLD))
+        (
+            "  ▶ ",
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        )
     } else {
         ("    ", Style::default().fg(dim))
     };

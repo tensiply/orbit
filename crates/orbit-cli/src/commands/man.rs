@@ -1,11 +1,7 @@
 use anyhow::Result;
 use clap::{Args, CommandFactory};
 use clap_mangen::Man;
-use std::{
-    fs,
-    io,
-    path::PathBuf,
-};
+use std::{fs, io, path::PathBuf};
 
 #[derive(Debug, Args)]
 pub struct ManArgs {
@@ -29,7 +25,9 @@ fn cmd_print(subcommand: Option<&str>) -> Result<()> {
 
     if let Some(sub) = subcommand {
         let sub_cmd = root.find_subcommand(sub).cloned().ok_or_else(|| {
-            anyhow::anyhow!("unknown subcommand: {sub}\n\nRun `orbit --help` to see available subcommands.")
+            anyhow::anyhow!(
+                "unknown subcommand: {sub}\n\nRun `orbit --help` to see available subcommands."
+            )
         })?;
         Man::new(sub_cmd).render(&mut io::stdout())?;
     } else {

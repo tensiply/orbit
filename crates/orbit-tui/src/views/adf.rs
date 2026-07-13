@@ -20,7 +20,12 @@ pub fn render(val: &Value, dim: Color) -> Vec<Line<'static>> {
 
 // ── block nodes ───────────────────────────────────────────────────────────────
 
-fn render_blocks(nodes: &[Value], list_depth: usize, list_idx: &mut usize, dim: Color) -> Vec<Line<'static>> {
+fn render_blocks(
+    nodes: &[Value],
+    list_depth: usize,
+    list_idx: &mut usize,
+    dim: Color,
+) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     for node in nodes {
         out.extend(render_block(node, list_depth, list_idx, dim));
@@ -28,7 +33,12 @@ fn render_blocks(nodes: &[Value], list_depth: usize, list_idx: &mut usize, dim: 
     out
 }
 
-fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Color) -> Vec<Line<'static>> {
+fn render_block(
+    node: &Value,
+    list_depth: usize,
+    list_idx: &mut usize,
+    dim: Color,
+) -> Vec<Line<'static>> {
     let node_type = node.get("type").and_then(|t| t.as_str()).unwrap_or("");
     let content = node.get("content").and_then(|c| c.as_array());
 
@@ -68,10 +78,12 @@ fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Colo
             for item in items {
                 let prefix = format!("{}• ", "  ".repeat(list_depth));
                 let item_content = item.get("content").and_then(|c| c.as_array());
-                let inner = render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
+                let inner =
+                    render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
                 for (i, line) in inner.into_iter().enumerate() {
                     if i == 0 {
-                        let mut spans = vec![Span::styled(prefix.clone(), Style::default().fg(dim))];
+                        let mut spans =
+                            vec![Span::styled(prefix.clone(), Style::default().fg(dim))];
                         spans.extend(line.spans);
                         out.push(Line::from(spans));
                     } else {
@@ -96,10 +108,12 @@ fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Colo
                 let n = start + i;
                 let prefix = format!("{}{}. ", "  ".repeat(list_depth), n);
                 let item_content = item.get("content").and_then(|c| c.as_array());
-                let inner = render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
+                let inner =
+                    render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
                 for (j, line) in inner.into_iter().enumerate() {
                     if j == 0 {
-                        let mut spans = vec![Span::styled(prefix.clone(), Style::default().fg(dim))];
+                        let mut spans =
+                            vec![Span::styled(prefix.clone(), Style::default().fg(dim))];
                         spans.extend(line.spans);
                         out.push(Line::from(spans));
                     } else {
@@ -124,18 +138,21 @@ fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Colo
                     Style::default().fg(dim),
                 )));
             } else {
-                out.push(Line::from(Span::styled("  ┌──────", Style::default().fg(dim))));
+                out.push(Line::from(Span::styled(
+                    "  ┌──────",
+                    Style::default().fg(dim),
+                )));
             }
             for span in collect_inline(content.map_or(&[], |v| v), dim) {
                 out.push(Line::from(vec![
                     Span::styled("  │ ", Style::default().fg(dim)),
-                    Span::styled(
-                        span.content.to_string(),
-                        Style::default().fg(Color::Cyan),
-                    ),
+                    Span::styled(span.content.to_string(), Style::default().fg(Color::Cyan)),
                 ]));
             }
-            out.push(Line::from(Span::styled("  └──────", Style::default().fg(dim))));
+            out.push(Line::from(Span::styled(
+                "  └──────",
+                Style::default().fg(dim),
+            )));
             out.push(Line::from(""));
             out
         }
@@ -146,9 +163,11 @@ fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Colo
             let mut out = Vec::new();
             for line in inner {
                 let mut spans = vec![Span::styled("  │ ", Style::default().fg(dim))];
-                spans.extend(line.spans.into_iter().map(|s| {
-                    Span::styled(s.content.to_string(), s.style.fg(dim))
-                }));
+                spans.extend(
+                    line.spans
+                        .into_iter()
+                        .map(|s| Span::styled(s.content.to_string(), s.style.fg(dim))),
+                );
                 out.push(Line::from(spans));
             }
             out.push(Line::from(""));
@@ -172,10 +191,7 @@ fn render_block(node: &Value, list_depth: usize, list_idx: &mut usize, dim: Colo
 
         "rule" => {
             vec![
-                Line::from(Span::styled(
-                    "─".repeat(60),
-                    Style::default().fg(dim),
-                )),
+                Line::from(Span::styled("─".repeat(60), Style::default().fg(dim))),
                 Line::from(""),
             ]
         }
@@ -238,7 +254,9 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
                 .to_string();
             vec![Span::styled(
                 format!("[🔗 {url}]"),
-                Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::UNDERLINED),
             )]
         }
 
@@ -268,11 +286,13 @@ fn marks_style(marks: Option<&Vec<Value>>) -> Style {
             Some("code") => style = style.fg(Color::Cyan),
             Some("strike") => style = style.add_modifier(Modifier::CROSSED_OUT),
             Some("underline") => style = style.add_modifier(Modifier::UNDERLINED),
-            Some("link") => {
-                style = style.fg(Color::Blue).add_modifier(Modifier::UNDERLINED)
-            }
+            Some("link") => style = style.fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
             Some("textColor") => {
-                if let Some(hex) = mark.get("attrs").and_then(|a| a.get("color")).and_then(|c| c.as_str()) {
+                if let Some(hex) = mark
+                    .get("attrs")
+                    .and_then(|a| a.get("color"))
+                    .and_then(|c| c.as_str())
+                {
                     style = style.fg(hex_to_color(hex));
                 }
             }
@@ -297,9 +317,15 @@ fn hex_to_color(hex: &str) -> Color {
 
 fn heading_style(level: u64) -> Style {
     match level {
-        1 => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        2 => Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
-        3 => Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
+        1 => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        2 => Style::default()
+            .fg(Color::Reset)
+            .add_modifier(Modifier::BOLD),
+        3 => Style::default()
+            .fg(Color::Reset)
+            .add_modifier(Modifier::BOLD),
         _ => Style::default().add_modifier(Modifier::BOLD),
     }
 }
@@ -308,12 +334,18 @@ fn heading_style(level: u64) -> Style {
 
 fn render_table(node: &Value, dim: Color) -> Vec<Line<'static>> {
     let empty = vec![];
-    let rows = node.get("content").and_then(|c| c.as_array()).unwrap_or(&empty);
+    let rows = node
+        .get("content")
+        .and_then(|c| c.as_array())
+        .unwrap_or(&empty);
 
     let table_data: Vec<Vec<String>> = rows
         .iter()
         .map(|row| {
-            let row_content = row.get("content").and_then(|c| c.as_array()).unwrap_or(&empty);
+            let row_content = row
+                .get("content")
+                .and_then(|c| c.as_array())
+                .unwrap_or(&empty);
             row_content.iter().map(extract_cell_text).collect()
         })
         .collect();
@@ -344,7 +376,10 @@ fn render_table(node: &Value, dim: Color) -> Vec<Line<'static>> {
         if row_idx == 0 {
             out.push(table_border_line(&col_widths, '┌', '┬', '┐', '─', dim));
         } else if row_idx == 1 {
-            let first_row = rows.first().and_then(|r| r.get("content")).and_then(|c| c.as_array());
+            let first_row = rows
+                .first()
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array());
             let first_is_header = first_row
                 .and_then(|cells| cells.first())
                 .and_then(|c| c.get("type"))
@@ -388,7 +423,14 @@ fn render_table(node: &Value, dim: Color) -> Vec<Line<'static>> {
     out
 }
 
-fn table_border_line(widths: &[usize], left: char, mid: char, right: char, fill: char, dim: Color) -> Line<'static> {
+fn table_border_line(
+    widths: &[usize],
+    left: char,
+    mid: char,
+    right: char,
+    fill: char,
+    dim: Color,
+) -> Line<'static> {
     let mut s = left.to_string();
     for (i, w) in widths.iter().enumerate() {
         s.push_str(&fill.to_string().repeat(w + 2));
@@ -402,12 +444,19 @@ fn table_border_line(widths: &[usize], left: char, mid: char, right: char, fill:
 
 fn extract_cell_text(cell: &Value) -> String {
     let empty = vec![];
-    let content = cell.get("content").and_then(|c| c.as_array()).unwrap_or(&empty);
+    let content = cell
+        .get("content")
+        .and_then(|c| c.as_array())
+        .unwrap_or(&empty);
     extract_nodes_text(content)
 }
 
 fn extract_nodes_text(nodes: &[Value]) -> String {
-    nodes.iter().map(extract_node_text).collect::<Vec<_>>().join("")
+    nodes
+        .iter()
+        .map(extract_node_text)
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn extract_node_text(node: &Value) -> String {

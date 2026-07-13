@@ -1,8 +1,6 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use orbit_core::{
-    jira::{self, JiraIssue, TaskContext, load_orgs},
-};
+use orbit_core::jira::{self, JiraIssue, TaskContext, load_orgs};
 use std::io::{self, Write};
 
 // ── clap types ────────────────────────────────────────────────────────────────
@@ -34,14 +32,12 @@ pub enum JiraCommand {
 pub fn run(args: JiraArgs) -> Result<()> {
     match args.command {
         Some(JiraCommand::Comment { key, body }) => {
-            jira::add_comment(&key, &body)
-                .map_err(|e| anyhow::anyhow!(e))?;
+            jira::add_comment(&key, &body).map_err(|e| anyhow::anyhow!(e))?;
             println!("  ✓ Comment added to {key}");
             Ok(())
         }
         Some(JiraCommand::Describe { key, body }) => {
-            jira::append_description(&key, &body)
-                .map_err(|e| anyhow::anyhow!(e))?;
+            jira::append_description(&key, &body).map_err(|e| anyhow::anyhow!(e))?;
             println!("  ✓ Description appended for {key}");
             Ok(())
         }
@@ -60,7 +56,9 @@ fn run_status() -> Result<()> {
         println!("    id  = \"myorg\"");
         println!("    url = \"https://myorg.atlassian.net\"");
         println!();
-        println!("  Authenticate: acli jira auth login --site myorg.atlassian.net --email you@example.com --token < api-token.txt");
+        println!(
+            "  Authenticate: acli jira auth login --site myorg.atlassian.net --email you@example.com --token < api-token.txt"
+        );
         return Ok(());
     }
     println!(
@@ -141,14 +139,22 @@ fn fetch_single_issue(key: &str, orgs: &[orbit_core::jira::JiraOrg]) -> Option<T
     let val: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
 
     // acli: key is top-level, everything else is under `fields`
-    let issue_key = val.get("key").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let issue_key = val
+        .get("key")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     if issue_key.is_empty() {
         return None;
     }
     let fields = val.get("fields").unwrap_or(&val);
 
     let str_field = |k: &str| {
-        fields.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string()
+        fields
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
     };
     let nested_name = |outer: &str| {
         fields

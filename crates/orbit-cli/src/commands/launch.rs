@@ -106,10 +106,7 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
     );
 
     // Resolve Jira task (if plugin enabled and not skipped)
-    let task_context = super::jira::resolve_task_for_launch(
-        args.task.as_deref(),
-        args.no_task,
-    );
+    let task_context = super::jira::resolve_task_for_launch(args.task.as_deref(), args.no_task);
 
     // Dry-run: print human-readable scope + context report
     if args.dry_run {
@@ -300,7 +297,11 @@ fn print_dry_run(
     println!();
 
     // ── agent overlays ────────────────────────────────────────────────────────
-    let loaded_overlays: Vec<_> = report.agent_overlay_dirs.iter().filter(|e| e.exists).collect();
+    let loaded_overlays: Vec<_> = report
+        .agent_overlay_dirs
+        .iter()
+        .filter(|e| e.exists)
+        .collect();
     if !loaded_overlays.is_empty() {
         println!("{}", bold("agent overlays"));
         for entry in &loaded_overlays {
@@ -356,9 +357,13 @@ fn print_dry_run(
             println!();
 
             // Show the actual include dirs Gemini will use (source dirs + runtime dir)
-            const GEMINI_FILENAMES: &[&str] = &["README.md", "GEMINI.md", "CONTEXT.md", "AGENTS.md"];
+            const GEMINI_FILENAMES: &[&str] =
+                &["README.md", "GEMINI.md", "CONTEXT.md", "AGENTS.md"];
             let include_dirs = gemini_include_dirs(
-                &loaded_instructions.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>(),
+                &loaded_instructions
+                    .iter()
+                    .map(|(p, _)| p.as_path())
+                    .collect::<Vec<_>>(),
             );
             // +1 for the runtime dir that gets GEMINI.md written into it
             let total_dirs = include_dirs.len() + 1;
@@ -370,9 +375,15 @@ fn print_dry_run(
             );
             // Runtime dir first — orbit writes merged GEMINI.md here
             if let Some(ctx) = &gemini_ctx
-                && let Some(parent) = ctx.parent() {
-                    println!("  {}  {}  {}", ok, tp(parent), dim("← orbit writes GEMINI.md here"));
-                }
+                && let Some(parent) = ctx.parent()
+            {
+                println!(
+                    "  {}  {}  {}",
+                    ok,
+                    tp(parent),
+                    dim("← orbit writes GEMINI.md here")
+                );
+            }
             for dir in &include_dirs {
                 let expanded = if let Ok(rest) = dir.strip_prefix("~") {
                     home.join(rest)
@@ -425,7 +436,10 @@ fn print_dry_run(
                 .map(|f| parse_claude_at_refs(f).len())
                 .sum();
             let header_suffix = if total_cleaned > 0 {
-                format!("  {} will clean {} overlapping @ref(s)", warn, total_cleaned)
+                format!(
+                    "  {} will clean {} overlapping @ref(s)",
+                    warn, total_cleaned
+                )
             } else {
                 String::new()
             };
@@ -446,7 +460,12 @@ fn print_dry_run(
                     println!("  {}  {}", ok, tp(f));
                     for r in parse_claude_at_refs(f) {
                         if overlap_paths.contains(&r) {
-                            println!("     {}  {}  {}", skip, tp(&r), dim("← will be removed (orbit already injects)"));
+                            println!(
+                                "     {}  {}  {}",
+                                skip,
+                                tp(&r),
+                                dim("← will be removed (orbit already injects)")
+                            );
                         } else {
                             let marker = if r.exists() { ok } else { warn };
                             println!("     {}  {}", marker, tp(&r));
@@ -487,7 +506,12 @@ fn print_dry_run(
             bold("env vars"),
             dim(&format!("({})", report.env_vars.len()))
         );
-        let key_w = report.env_vars.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+        let key_w = report
+            .env_vars
+            .iter()
+            .map(|(k, _)| k.len())
+            .max()
+            .unwrap_or(0);
         for (key, val) in &report.env_vars {
             let pad = " ".repeat(key_w.saturating_sub(key.len()));
             // Redact values that look like tokens or passwords.
@@ -559,9 +583,10 @@ fn gemini_include_dirs(paths: &[&std::path::Path]) -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
     for p in paths {
         if let Some(parent) = p.parent()
-            && seen.insert(parent.to_path_buf()) {
-                dirs.push(parent.to_path_buf());
-            }
+            && seen.insert(parent.to_path_buf())
+        {
+            dirs.push(parent.to_path_buf());
+        }
     }
     dirs
 }

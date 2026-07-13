@@ -22,8 +22,14 @@ pub struct RuntimePaths {
 pub fn config_file_path(scope: &OrbitScope, engine: Engine) -> PathBuf {
     let runtime_dir = runtime_root(scope, engine);
     match engine {
-        Engine::Opencode => runtime_dir.join("config").join("opencode").join("opencode.jsonc"),
-        Engine::Gemini => runtime_dir.join("config").join("gemini").join("settings.json"),
+        Engine::Opencode => runtime_dir
+            .join("config")
+            .join("opencode")
+            .join("opencode.jsonc"),
+        Engine::Gemini => runtime_dir
+            .join("config")
+            .join("gemini")
+            .join("settings.json"),
         Engine::Claude => runtime_dir.join("mcp-config.json"),
     }
 }

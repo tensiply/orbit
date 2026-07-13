@@ -35,12 +35,8 @@ pub enum ContextCommand {
 pub fn run(args: ContextArgs) -> Result<()> {
     match args.command {
         None => cmd_show(args.engine.as_deref()),
-        Some(ContextCommand::Show { engine }) => {
-            cmd_show(args.engine.or(engine).as_deref())
-        }
-        Some(ContextCommand::Which { engine }) => {
-            cmd_which(args.engine.or(engine).as_deref())
-        }
+        Some(ContextCommand::Show { engine }) => cmd_show(args.engine.or(engine).as_deref()),
+        Some(ContextCommand::Which { engine }) => cmd_which(args.engine.or(engine).as_deref()),
         Some(ContextCommand::Scope) => cmd_scope(),
     }
 }
@@ -65,13 +61,24 @@ fn cmd_show(engine_override: Option<&str>) -> Result<()> {
     // ── scope ─────────────────────────────────────────────────────────────────
     println!("  \x1b[2mscope\x1b[0m");
     let label = scope_label_str(&scope);
-    println!("    {}", if label.is_empty() { "global".to_string() } else { label });
+    println!(
+        "    {}",
+        if label.is_empty() {
+            "global".to_string()
+        } else {
+            label
+        }
+    );
     println!();
 
     // ── config layers ─────────────────────────────────────────────────────────
     println!("  \x1b[2mconfig layers\x1b[0m");
     for entry in &report.config_layers {
-        let icon = if entry.exists { "\x1b[32m✓\x1b[0m" } else { "\x1b[2m○\x1b[0m" };
+        let icon = if entry.exists {
+            "\x1b[32m✓\x1b[0m"
+        } else {
+            "\x1b[2m○\x1b[0m"
+        };
         let path = shorten(&home, &entry.path);
         println!(
             "    {icon}  {:<22}  \x1b[2m{}\x1b[0m",
@@ -94,7 +101,11 @@ fn cmd_show(engine_override: Option<&str>) -> Result<()> {
         },
     );
     for (path, ok) in &report.instructions {
-        let icon = if *ok { "\x1b[32m✓\x1b[0m" } else { "\x1b[33m!\x1b[0m" };
+        let icon = if *ok {
+            "\x1b[32m✓\x1b[0m"
+        } else {
+            "\x1b[33m!\x1b[0m"
+        };
         println!("    {icon}  {}", shorten(&home, path).display());
     }
     if report.instructions.is_empty() {
@@ -165,9 +176,30 @@ fn cmd_scope() -> Result<()> {
     println!();
     println!("  \x1b[1mresolved scope\x1b[0m");
     println!();
-    println!("    tenant     {}", if scope.tenant.is_empty() { "(none)".to_string() } else { scope.tenant.clone() });
-    println!("    project    {}", if scope.project.is_empty() { "(none)".to_string() } else { scope.project.clone() });
-    println!("    repository {}", if scope.repository.is_empty() { "(none)".to_string() } else { scope.repository.clone() });
+    println!(
+        "    tenant     {}",
+        if scope.tenant.is_empty() {
+            "(none)".to_string()
+        } else {
+            scope.tenant.clone()
+        }
+    );
+    println!(
+        "    project    {}",
+        if scope.project.is_empty() {
+            "(none)".to_string()
+        } else {
+            scope.project.clone()
+        }
+    );
+    println!(
+        "    repository {}",
+        if scope.repository.is_empty() {
+            "(none)".to_string()
+        } else {
+            scope.repository.clone()
+        }
+    );
     println!();
     println!("    global_ai_root  {}", scope.global_ai_root.display());
     println!("    workspace_root  {}", scope.workspace_root.display());
@@ -181,9 +213,7 @@ fn cmd_scope() -> Result<()> {
 
 fn resolve_engine(engine_override: Option<&str>) -> Result<Engine> {
     match engine_override {
-        Some(s) => s
-            .parse::<Engine>()
-            .map_err(|e| anyhow::anyhow!("{e}")),
+        Some(s) => s.parse::<Engine>().map_err(|e| anyhow::anyhow!("{e}")),
         None => Ok(UserConfig::load()
             .engine
             .default

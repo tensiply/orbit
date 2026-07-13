@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use orbit_client::ipc;
-use std::time::Duration;
 use serde_json;
+use std::time::Duration;
 
 #[derive(Debug, Args)]
 pub struct DaemonArgs {
@@ -162,7 +162,9 @@ async fn health(json: bool) -> Result<()> {
                     println!("  Auto-prune:       enabled ({} days)", h.auto_prune_days);
                 } else {
                     println!("  Auto-prune:       disabled");
-                    println!("  Enable with:      orbit config set plan_retention.auto_prune_enabled true");
+                    println!(
+                        "  Enable with:      orbit config set plan_retention.auto_prune_enabled true"
+                    );
                 }
             }
         }

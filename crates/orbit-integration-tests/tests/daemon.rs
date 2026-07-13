@@ -21,7 +21,13 @@ async fn daemon_responds_to_status() {
 
     let resp = h.send(&Request::Status).await;
     assert!(
-        matches!(resp, Response::Status { session_count: 0, .. }),
+        matches!(
+            resp,
+            Response::Status {
+                session_count: 0,
+                ..
+            }
+        ),
         "expected Status response, got {resp:?}"
     );
 
@@ -35,7 +41,13 @@ async fn daemon_responds_to_health() {
 
     let resp = h.send(&Request::Health).await;
     assert!(
-        matches!(resp, Response::Health { running_plans: 0, .. }),
+        matches!(
+            resp,
+            Response::Health {
+                running_plans: 0,
+                ..
+            }
+        ),
         "expected Health response, got {resp:?}"
     );
 

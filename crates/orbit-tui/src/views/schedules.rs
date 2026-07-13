@@ -108,7 +108,10 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .header(header)
         .block(block)
         .row_highlight_style(
-            Style::default().bg(sel_bg).fg(sel_fg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(sel_bg)
+                .fg(sel_fg)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
 

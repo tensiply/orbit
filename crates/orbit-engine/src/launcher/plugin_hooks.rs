@@ -47,11 +47,7 @@ pub fn inject_context(
 /// Run pre-launch commands for all enabled plugins that declare `[pre_launch]`.
 /// Returns extra instruction file paths generated from "context" output mode.
 /// Each command is soft-fail: timeout or non-zero exit is warned and skipped.
-pub fn run_pre_launch(
-    state: &PluginState,
-    plugins: &[Plugin],
-    runtime_dir: &Path,
-) -> Vec<PathBuf> {
+pub fn run_pre_launch(state: &PluginState, plugins: &[Plugin], runtime_dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     for p in plugins {
@@ -65,19 +61,17 @@ pub fn run_pre_launch(
             let cache = cache_path(&p.name);
             if let Some(cached) = read_if_fresh(&cache, ttl) {
                 if spec.output == "context"
-                    && let Some(out) = write_context_file(&cached, &p.name, runtime_dir) {
-                        paths.push(out);
-                    }
+                    && let Some(out) = write_context_file(&cached, &p.name, runtime_dir)
+                {
+                    paths.push(out);
+                }
                 continue;
             }
         }
 
         let timeout = Duration::from_secs(spec.timeout_secs.unwrap_or(5));
         match run_with_timeout(&spec.cmd, timeout) {
-            None => tracing::warn!(
-                "pre_launch '{}': timed out or failed — skipping",
-                p.name
-            ),
+            None => tracing::warn!("pre_launch '{}': timed out or failed — skipping", p.name),
             Some(stdout) => {
                 if spec.cache_ttl_secs.is_some() {
                     persist_cache(&p.name, &stdout);
@@ -132,7 +126,9 @@ fn write_context_file(content: &[u8], plugin_name: &str, runtime_dir: &Path) -> 
 }
 
 fn apply_env_lines(output: &[u8], plugin_name: &str) {
-    let Ok(text) = std::str::from_utf8(output) else { return };
+    let Ok(text) = std::str::from_utf8(output) else {
+        return;
+    };
     for line in text.lines() {
         if let Some((key, value)) = line.split_once('=') {
             let (key, value) = (key.trim(), value.trim());
@@ -173,8 +169,9 @@ fn persist_cache(plugin_name: &str, content: &[u8]) {
 
 fn expand_tilde(raw: &str) -> PathBuf {
     if let Some(stripped) = raw.strip_prefix("~/")
-        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) {
-            return home.join(stripped);
-        }
+        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
+    {
+        return home.join(stripped);
+    }
     PathBuf::from(raw)
 }

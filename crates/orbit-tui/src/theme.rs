@@ -81,9 +81,10 @@ impl Palette {
         // COLORFGBG: "fg;bg" — bg == 7 or >= 9 typically means a light background
         if let Ok(v) = std::env::var("COLORFGBG")
             && let Some(bg) = v.split(';').next_back().and_then(|s| s.parse::<u8>().ok())
-            && (bg == 7 || bg >= 9) {
-                return Self::light();
-            }
+            && (bg == 7 || bg >= 9)
+        {
+            return Self::light();
+        }
         Self::dark()
     }
 }

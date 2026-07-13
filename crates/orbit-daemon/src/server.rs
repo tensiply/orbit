@@ -67,7 +67,10 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn new(shutdown_tx: broadcast::Sender<()>, event_tx: broadcast::Sender<PlanStreamEvent>) -> Arc<Self> {
+    fn new(
+        shutdown_tx: broadcast::Sender<()>,
+        event_tx: broadcast::Sender<PlanStreamEvent>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             started_at: Instant::now(),
             shutdown_tx,
@@ -195,7 +198,6 @@ impl ServerState {
             }
 
             // ── Plan requests ─────────────────────────────────────────────────
-
             Request::CreatePlan {
                 intent,
                 workspace,
@@ -211,23 +213,42 @@ impl ServerState {
                 max_nodes,
             } => {
                 use orbit_core::{
-                    audit::{append_event_for, AuditEvent},
+                    audit::{AuditEvent, append_event_for},
                     memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
                     user_config::UserConfig,
                 };
                 use orbit_engine::resolver::{self, ResolveArgs};
-                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
+                use orbit_planner::{
+                    backend::CliBackend,
+                    planner::{PlannerConfig, invoke_planner},
+                };
 
-                let scope = PlanScope { workspace, tenant, project, repository };
+                let scope = PlanScope {
+                    workspace,
+                    tenant,
+                    project,
+                    repository,
+                };
                 // Prefer semantically relevant past runs over purely chronological ones.
                 let recent = {
                     let similar = find_similar(&intent, 5);
-                    if similar.is_empty() { load_recent_runs(3) } else { similar }
+                    if similar.is_empty() {
+                        load_recent_runs(3)
+                    } else {
+                        similar
+                    }
                 };
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &extra_repos) {
+                match invoke_planner(
+                    &intent,
+                    &scope,
+                    &recent,
+                    &cfg,
+                    &CliBackend::new(cfg.engine),
+                    &extra_repos,
+                ) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
@@ -235,23 +256,27 @@ impl ServerState {
                         // Apply budget policy: CLI overrides take precedence over user config defaults.
                         let user_cfg = UserConfig::load();
                         plan.policy.max_tokens = max_tokens.or(user_cfg.budget.max_tokens);
-                        plan.policy.max_duration_secs = max_duration_secs.or(user_cfg.budget.max_duration_secs);
+                        plan.policy.max_duration_secs =
+                            max_duration_secs.or(user_cfg.budget.max_duration_secs);
                         plan.policy.max_cost_usd = max_cost_usd.or(user_cfg.budget.max_cost_usd);
                         plan.policy.max_nodes = max_nodes.or(user_cfg.budget.max_nodes);
 
                         // Validate all scope_overrides resolve
                         for node in &plan.nodes {
-                            if let Some(ref s) = node.scope_override {
-                                if let Err(e) = resolver::resolve(ResolveArgs {
+                            if let Some(ref s) = node.scope_override
+                                && let Err(e) = resolver::resolve(ResolveArgs {
                                     workspace: s.workspace.clone(),
                                     tenant: s.tenant.clone(),
                                     project: s.project.clone(),
                                     repository: s.repository.clone(),
-                                }) {
-                                    return Response::Error {
-                                        message: format!("node {} scope_override invalid: {e}", node.id),
-                                    };
-                                }
+                                })
+                            {
+                                return Response::Error {
+                                    message: format!(
+                                        "node {} scope_override invalid: {e}",
+                                        node.id
+                                    ),
+                                };
                             }
                         }
 
@@ -266,12 +291,15 @@ impl ServerState {
                             }
                         } else {
                             plan.status = PlanStatus::Running;
-                            let _ = append_event_for(scope.workspace.as_deref(), &AuditEvent::PlanCreated {
-                                plan_id: plan.id.clone(),
-                                intent: intent.clone(),
-                                node_count,
-                                timestamp: now_secs(),
-                            });
+                            let _ = append_event_for(
+                                scope.workspace.as_deref(),
+                                &AuditEvent::PlanCreated {
+                                    plan_id: plan.id.clone(),
+                                    intent: intent.clone(),
+                                    node_count,
+                                    timestamp: now_secs(),
+                                },
+                            );
                             orbit_core::hooks::run_hooks(
                                 &orbit_core::hooks::HookEvent::PrePlan,
                                 &[("ORBIT_PLAN_ID", &plan.id), ("ORBIT_PLAN_INTENT", &intent)],
@@ -280,7 +308,10 @@ impl ServerState {
                                 Ok(_) => {
                                     orbit_core::hooks::run_hooks(
                                         &orbit_core::hooks::HookEvent::OnPlanCreated,
-                                        &[("ORBIT_PLAN_ID", &plan.id), ("ORBIT_PLAN_INTENT", &intent)],
+                                        &[
+                                            ("ORBIT_PLAN_ID", &plan.id),
+                                            ("ORBIT_PLAN_INTENT", &intent),
+                                        ],
                                     );
                                     Response::PlanCreated {
                                         id: plan.id,
@@ -328,34 +359,32 @@ impl ServerState {
                     Err(e) => Response::Error {
                         message: format!("plan not found: {e}"),
                     },
-                    Ok(mut plan) => {
-                        match plan.nodes.iter_mut().find(|n| n.id == node_id) {
-                            None => Response::Error {
-                                message: format!("node {node_id} not found in plan {plan_id}"),
-                            },
-                            Some(node) if node.status != NodeStatus::AwaitingApproval => {
-                                Response::Error {
-                                    message: format!(
-                                        "node {node_id} is not awaiting approval (status: {:?})",
-                                        node.status
-                                    ),
-                                }
-                            }
-                            Some(node) => {
-                                node.status = NodeStatus::Pending;
-                                node.approved = true;
-                                match plan.save() {
-                                    Ok(_) => {
-                                        info!("node {node_id} approved in plan {plan_id}");
-                                        Response::PlanApproved { plan_id, node_id }
-                                    }
-                                    Err(e) => Response::Error {
-                                        message: format!("save error: {e}"),
-                                    },
-                                }
+                    Ok(mut plan) => match plan.nodes.iter_mut().find(|n| n.id == node_id) {
+                        None => Response::Error {
+                            message: format!("node {node_id} not found in plan {plan_id}"),
+                        },
+                        Some(node) if node.status != NodeStatus::AwaitingApproval => {
+                            Response::Error {
+                                message: format!(
+                                    "node {node_id} is not awaiting approval (status: {:?})",
+                                    node.status
+                                ),
                             }
                         }
-                    }
+                        Some(node) => {
+                            node.status = NodeStatus::Pending;
+                            node.approved = true;
+                            match plan.save() {
+                                Ok(_) => {
+                                    info!("node {node_id} approved in plan {plan_id}");
+                                    Response::PlanApproved { plan_id, node_id }
+                                }
+                                Err(e) => Response::Error {
+                                    message: format!("save error: {e}"),
+                                },
+                            }
+                        }
+                    },
                 }
             }
 
@@ -399,7 +428,9 @@ impl ServerState {
                             plan.status = PlanStatus::Running;
                             match plan.save() {
                                 Ok(_) => {
-                                    info!("plan {id} retried: {reset_count} node(s) reset to Pending");
+                                    info!(
+                                        "plan {id} retried: {reset_count} node(s) reset to Pending"
+                                    );
                                     Response::PlanRetried { id, reset_count }
                                 }
                                 Err(e) => Response::Error {
@@ -412,11 +443,16 @@ impl ServerState {
             },
 
             Request::PausePlan { id } => match Plan::load(&id) {
-                Err(e) => Response::Error { message: format!("plan not found: {e}") },
+                Err(e) => Response::Error {
+                    message: format!("plan not found: {e}"),
+                },
                 Ok(mut plan) => {
                     if plan.status != PlanStatus::Running {
                         Response::Error {
-                            message: format!("plan {id} is not Running (status: {:?})", plan.status),
+                            message: format!(
+                                "plan {id} is not Running (status: {:?})",
+                                plan.status
+                            ),
                         }
                     } else {
                         plan.status = PlanStatus::Paused;
@@ -425,14 +461,18 @@ impl ServerState {
                                 info!("plan {id} paused");
                                 Response::PlanPaused { id }
                             }
-                            Err(e) => Response::Error { message: format!("save error: {e}") },
+                            Err(e) => Response::Error {
+                                message: format!("save error: {e}"),
+                            },
                         }
                     }
                 }
             },
 
             Request::ResumePlan { id } => match Plan::load(&id) {
-                Err(e) => Response::Error { message: format!("plan not found: {e}") },
+                Err(e) => Response::Error {
+                    message: format!("plan not found: {e}"),
+                },
                 Ok(mut plan) => {
                     if plan.status != PlanStatus::Paused {
                         Response::Error {
@@ -445,7 +485,9 @@ impl ServerState {
                                 info!("plan {id} resumed");
                                 Response::PlanResumed { id }
                             }
-                            Err(e) => Response::Error { message: format!("save error: {e}") },
+                            Err(e) => Response::Error {
+                                message: format!("save error: {e}"),
+                            },
                         }
                     }
                 }
@@ -514,13 +556,28 @@ impl ServerState {
                 constraints,
             } => {
                 use orbit_core::{memory::load_recent_runs, plan::PlanScope};
-                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
+                use orbit_planner::{
+                    backend::CliBackend,
+                    planner::{PlannerConfig, invoke_planner},
+                };
 
-                let scope = PlanScope { workspace, tenant, project, repository };
+                let scope = PlanScope {
+                    workspace,
+                    tenant,
+                    project,
+                    repository,
+                };
                 let recent = load_recent_runs(5);
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &[]) {
+                match invoke_planner(
+                    &intent,
+                    &scope,
+                    &recent,
+                    &cfg,
+                    &CliBackend::new(cfg.engine),
+                    &[],
+                ) {
                     Err(e) => Response::Error {
                         message: format!("planner error: {e}"),
                     },
@@ -531,29 +588,40 @@ impl ServerState {
                 }
             }
 
-            Request::CreateSchedule { intent, at, cron, repos, workspace, tenant, project, repository } => {
-                use orbit_core::{
-                    schedule::{ScheduleKind, ScheduledPlan, new_id, next_cron_after, now_secs, upsert},
+            Request::CreateSchedule {
+                intent,
+                at,
+                cron,
+                repos,
+                workspace,
+                tenant,
+                project,
+                repository,
+            } => {
+                use orbit_core::schedule::{
+                    ScheduleKind, ScheduledPlan, new_id, next_cron_after, now_secs, upsert,
                 };
 
                 let kind = match (at, cron) {
                     (Some(ts), _) => ScheduleKind::Once { at: ts },
                     (None, Some(expr)) => ScheduleKind::Cron { expr: expr.clone() },
                     (None, None) => return Response::Error {
-                        message: "CreateSchedule requires either `at` (timestamp) or `cron` (expression)".into(),
+                        message:
+                            "CreateSchedule requires either `at` (timestamp) or `cron` (expression)"
+                                .into(),
                     },
                 };
 
                 let next_run = match &kind {
                     ScheduleKind::Once { at } => Some(*at),
-                    ScheduleKind::Cron { expr } => {
-                        match next_cron_after(expr, now_secs()) {
-                            Ok(t) => t,
-                            Err(e) => return Response::Error {
+                    ScheduleKind::Cron { expr } => match next_cron_after(expr, now_secs()) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            return Response::Error {
                                 message: format!("invalid cron expression: {e}"),
-                            },
+                            };
                         }
-                    }
+                    },
                 };
 
                 let repos_paths = repos.iter().map(std::path::PathBuf::from).collect();
@@ -575,21 +643,25 @@ impl ServerState {
 
                 match upsert(sched) {
                     Ok(_) => Response::ScheduleCreated { id, next_run },
-                    Err(e) => Response::Error { message: format!("failed to save schedule: {e}") },
+                    Err(e) => Response::Error {
+                        message: format!("failed to save schedule: {e}"),
+                    },
                 }
             }
 
-            Request::ListSchedules => {
-                Response::Schedules { schedules: orbit_core::schedule::load_all() }
-            }
+            Request::ListSchedules => Response::Schedules {
+                schedules: orbit_core::schedule::load_all(),
+            },
 
-            Request::CancelSchedule { id } => {
-                match orbit_core::schedule::delete(&id) {
-                    Ok(true) => Response::ScheduleCancelled { id },
-                    Ok(false) => Response::Error { message: format!("schedule not found: {id}") },
-                    Err(e) => Response::Error { message: format!("failed to delete schedule: {e}") },
-                }
-            }
+            Request::CancelSchedule { id } => match orbit_core::schedule::delete(&id) {
+                Ok(true) => Response::ScheduleCancelled { id },
+                Ok(false) => Response::Error {
+                    message: format!("schedule not found: {id}"),
+                },
+                Err(e) => Response::Error {
+                    message: format!("failed to delete schedule: {e}"),
+                },
+            },
 
             Request::Health => {
                 use orbit_core::{memory::load_recent_runs, plan::Plan, user_config::UserConfig};
@@ -599,16 +671,25 @@ impl ServerState {
                 let now = now_secs();
                 let day_secs = 86_400u64;
 
-                let running_plans = plans.iter().filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Running)).count();
+                let running_plans = plans
+                    .iter()
+                    .filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Running))
+                    .count();
                 let completed_today = plans
                     .iter()
                     .filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Completed))
-                    .filter(|p| p.completed_at.is_some_and(|t| now.saturating_sub(t) < day_secs))
+                    .filter(|p| {
+                        p.completed_at
+                            .is_some_and(|t| now.saturating_sub(t) < day_secs)
+                    })
                     .count();
                 let failed_today = plans
                     .iter()
                     .filter(|p| matches!(p.status, orbit_core::plan::PlanStatus::Failed))
-                    .filter(|p| p.completed_at.is_some_and(|t| now.saturating_sub(t) < day_secs))
+                    .filter(|p| {
+                        p.completed_at
+                            .is_some_and(|t| now.saturating_sub(t) < day_secs)
+                    })
                     .count();
                 let plan_files = plans.len();
                 let archived_plans = Plan::load_archived().len();
@@ -630,16 +711,23 @@ impl ServerState {
 
             Request::RunScheduleNow { id } => {
                 use orbit_core::{
-                    audit::{append_event_for, AuditEvent},
+                    audit::{AuditEvent, append_event_for},
                     memory::{find_similar, load_recent_runs},
                     plan::{PlanScope, PlanStatus},
-                    schedule::{upsert, now_secs},
+                    schedule::{now_secs, upsert},
                 };
-                use orbit_planner::{backend::CliBackend, planner::{PlannerConfig, invoke_planner}};
+                use orbit_planner::{
+                    backend::CliBackend,
+                    planner::{PlannerConfig, invoke_planner},
+                };
 
                 let sched = match orbit_core::schedule::find(&id) {
                     Some(s) => s,
-                    None => return Response::Error { message: format!("schedule not found: {id}") },
+                    None => {
+                        return Response::Error {
+                            message: format!("schedule not found: {id}"),
+                        };
+                    }
                 };
 
                 let scope = PlanScope {
@@ -648,38 +736,67 @@ impl ServerState {
                     project: sched.project.clone(),
                     repository: sched.repository.clone(),
                 };
-                let extra_repos: Vec<_> = sched.repos.iter().map(|p| {
-                    orbit_core::plan::CrossRepoSpec {
-                        alias: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        workspace: None, tenant: None, project: None,
+                let extra_repos: Vec<_> = sched
+                    .repos
+                    .iter()
+                    .map(|p| orbit_core::plan::CrossRepoSpec {
+                        alias: p
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
+                        workspace: None,
+                        tenant: None,
+                        project: None,
                         repository: Some(p.to_string_lossy().to_string()),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 let recent = {
                     let similar = find_similar(&sched.intent, 5);
-                    if similar.is_empty() { load_recent_runs(3) } else { similar }
+                    if similar.is_empty() {
+                        load_recent_runs(3)
+                    } else {
+                        similar
+                    }
                 };
                 let cfg = PlannerConfig::default();
 
-                match invoke_planner(&sched.intent, &scope, &recent, &cfg, &CliBackend::new(cfg.engine), &extra_repos) {
-                    Err(e) => Response::Error { message: format!("planner error: {e}") },
+                match invoke_planner(
+                    &sched.intent,
+                    &scope,
+                    &recent,
+                    &cfg,
+                    &CliBackend::new(cfg.engine),
+                    &extra_repos,
+                ) {
+                    Err(e) => Response::Error {
+                        message: format!("planner error: {e}"),
+                    },
                     Ok((mut plan, _trace)) => {
                         plan.status = PlanStatus::Running;
                         let plan_id = plan.id.clone();
-                        let _ = append_event_for(scope.workspace.as_deref(), &AuditEvent::PlanCreated {
-                            plan_id: plan_id.clone(),
-                            intent: sched.intent.clone(),
-                            node_count: plan.nodes.len(),
-                            timestamp: now_secs(),
-                        });
+                        let _ = append_event_for(
+                            scope.workspace.as_deref(),
+                            &AuditEvent::PlanCreated {
+                                plan_id: plan_id.clone(),
+                                intent: sched.intent.clone(),
+                                node_count: plan.nodes.len(),
+                                timestamp: now_secs(),
+                            },
+                        );
                         if let Err(e) = plan.save() {
-                            return Response::Error { message: format!("failed to save plan: {e}") };
+                            return Response::Error {
+                                message: format!("failed to save plan: {e}"),
+                            };
                         }
                         let mut updated = sched;
                         updated.last_run = Some(now_secs());
                         updated.run_count += 1;
                         let _ = upsert(updated);
-                        Response::ScheduleFired { schedule_id: id, plan_id }
+                        Response::ScheduleFired {
+                            schedule_id: id,
+                            plan_id,
+                        }
                     }
                 }
             }
@@ -699,7 +816,9 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
         let req = match serde_json::from_str::<Request>(&line) {
             Ok(r) => r,
             Err(e) => {
-                let err = Response::Error { message: format!("parse error: {e}") };
+                let err = Response::Error {
+                    message: format!("parse error: {e}"),
+                };
                 let mut json = serde_json::to_string(&err).unwrap_or_default();
                 json.push('\n');
                 let _ = writer.write_all(json.as_bytes()).await;
@@ -710,7 +829,9 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
         // ── streaming path ────────────────────────────────────────────────────
         if let Request::StreamPlan { ref id } = req {
             if !role.allows(&req) {
-                let err = Response::Error { message: "operation not permitted on project socket".into() };
+                let err = Response::Error {
+                    message: "operation not permitted on project socket".into(),
+                };
                 let mut json = serde_json::to_string(&err).unwrap_or_default();
                 json.push('\n');
                 let _ = writer.write_all(json.as_bytes()).await;
@@ -723,9 +844,15 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
             // If already terminal, send the event immediately.
             let current_terminal = orbit_core::plan::Plan::load(id).ok().and_then(|p| {
                 match p.status {
-                    PlanStatus::Completed => Some(PlanStreamEvent::PlanCompleted { plan_id: id.clone() }),
+                    PlanStatus::Completed => Some(PlanStreamEvent::PlanCompleted {
+                        plan_id: id.clone(),
+                    }),
                     // Cancelled is treated as Failed from the subscriber's perspective.
-                    PlanStatus::Failed | PlanStatus::Cancelled => Some(PlanStreamEvent::PlanFailed { plan_id: id.clone() }),
+                    PlanStatus::Failed | PlanStatus::Cancelled => {
+                        Some(PlanStreamEvent::PlanFailed {
+                            plan_id: id.clone(),
+                        })
+                    }
                     _ => None,
                 }
             });
@@ -777,15 +904,25 @@ fn resume_running_plans() {
     use orbit_core::plan::Plan;
 
     let plans = Plan::load_all();
-    let running_plans: Vec<&Plan> = plans.iter().filter(|p| p.status == PlanStatus::Running).collect();
+    let running_plans: Vec<&Plan> = plans
+        .iter()
+        .filter(|p| p.status == PlanStatus::Running)
+        .collect();
     if running_plans.is_empty() {
         return;
     }
 
-    info!("auto-resume: {} running plan(s) found at startup", running_plans.len());
+    info!(
+        "auto-resume: {} running plan(s) found at startup",
+        running_plans.len()
+    );
 
     for plan in running_plans {
-        for node in plan.nodes.iter().filter(|n| n.status == NodeStatus::Running) {
+        for node in plan
+            .nodes
+            .iter()
+            .filter(|n| n.status == NodeStatus::Running)
+        {
             let plan_suffix = plan.id.trim_start_matches("plan_");
             let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
 
@@ -812,7 +949,10 @@ fn resume_running_plans() {
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status();
-                info!("auto-resume: re-attached output capture for node {} (plan {})", node.id, plan.id);
+                info!(
+                    "auto-resume: re-attached output capture for node {} (plan {})",
+                    node.id, plan.id
+                );
             } else {
                 info!(
                     "auto-resume: tmux session gone for node {} (plan {}) — supervisor will handle",
@@ -851,7 +991,11 @@ pub async fn run() -> Result<()> {
 
 /// Like `run()` but binds to a caller-supplied socket path and PID file,
 /// and accepts configurable loop intervals.  Used by integration tests.
-pub async fn run_on(sock: std::path::PathBuf, pid_file: std::path::PathBuf, opts: DaemonOptions) -> Result<()> {
+pub async fn run_on(
+    sock: std::path::PathBuf,
+    pid_file: std::path::PathBuf,
+    opts: DaemonOptions,
+) -> Result<()> {
     fs::create_dir_all(sock.parent().unwrap())?;
 
     // Remove stale socket file

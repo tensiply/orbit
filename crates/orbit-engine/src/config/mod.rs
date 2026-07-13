@@ -145,7 +145,6 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
                 });
             }
         }
-
     }
 
     {
@@ -198,8 +197,15 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
     if !scope.global_mode {
         // tenant/project/repo — workspace AI root only
         mcp_layers.push(LayerEntry {
-            exists: ws_mcp.join("tenants").join(&scope.tenant).join("mcp.json").is_file(),
-            path: shorten_path(&home, &ws_mcp.join("tenants").join(&scope.tenant).join("mcp.json")),
+            exists: ws_mcp
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("mcp.json")
+                .is_file(),
+            path: shorten_path(
+                &home,
+                &ws_mcp.join("tenants").join(&scope.tenant).join("mcp.json"),
+            ),
             label: "tenant".into(),
         });
 
@@ -476,7 +482,10 @@ fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) 
 
     if !scope.global_mode {
         // tenant and below — workspace AI root only
-        mcp::merge_file(target, &local.join("tenants").join(&scope.tenant).join("mcp.json"));
+        mcp::merge_file(
+            target,
+            &local.join("tenants").join(&scope.tenant).join("mcp.json"),
+        );
 
         if !scope.project.is_empty() {
             let proj_base = local
@@ -548,8 +557,6 @@ fn config_candidates(engine: Engine) -> &'static [&'static str] {
         ],
     }
 }
-
-
 
 fn dirs_global_config() -> PathBuf {
     // Respect XDG_CONFIG_HOME if set, otherwise ~/.config
@@ -661,11 +668,7 @@ mod tests {
             "a.json",
             r#"{ "env": { "FOO": "old", "BAR": "keep" } }"#,
         );
-        write(
-            tmp.path(),
-            "b.json",
-            r#"{ "env": { "FOO": "new" } }"#,
-        );
+        write(tmp.path(), "b.json", r#"{ "env": { "FOO": "new" } }"#);
         let mut cfg = MergedConfig::default();
         merge_file_into(&mut cfg, &tmp.path().join("a.json"), Engine::Opencode);
         merge_file_into(&mut cfg, &tmp.path().join("b.json"), Engine::Opencode);
@@ -689,5 +692,4 @@ mod tests {
         assert!(cfg.instructions[0].is_absolute());
         assert_eq!(cfg.instructions[0], tmp.path().join("README.md"));
     }
-
 }

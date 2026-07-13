@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, path::PathBuf};
 
@@ -84,7 +84,11 @@ impl PlanTemplate {
 pub fn load_template(name: &str) -> Result<PlanTemplate> {
     let path = template_path(name);
     if !path.exists() {
-        bail!("Template '{}' not found. Expected: {}", name, path.display());
+        bail!(
+            "Template '{}' not found. Expected: {}",
+            name,
+            path.display()
+        );
     }
     let text = fs::read_to_string(&path)?;
     let mut t: PlanTemplate = toml::from_str(&text)?;

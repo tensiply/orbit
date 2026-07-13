@@ -80,7 +80,11 @@ pub async fn run(args: SetupArgs) -> Result<()> {
                 &current.user.name
             };
             if args.yes {
-                if default == "(none)" { String::new() } else { default.to_string() }
+                if default == "(none)" {
+                    String::new()
+                } else {
+                    default.to_string()
+                }
             } else {
                 let val = ask("Your username (shown in tmux session names)", default)?;
                 if val == "(none)" { String::new() } else { val }

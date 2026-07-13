@@ -18,11 +18,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let sections = Layout::vertical([
-        Constraint::Length(6),
-        Constraint::Min(0),
-    ])
-    .split(inner);
+    let sections = Layout::vertical([Constraint::Length(6), Constraint::Min(0)]).split(inner);
 
     render_info(f, app, sections[0]);
     render_mcp(f, app, sections[1]);
@@ -38,9 +34,7 @@ fn render_info(f: &mut Frame, app: &App, area: Rect) {
         (
             "●",
             " dev  (orbit → orbit-dev)",
-            Style::default()
-                .fg(warning)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(warning).add_modifier(Modifier::BOLD),
         )
     } else {
         ("○", " stable", Style::default().fg(success))
@@ -111,19 +105,13 @@ fn render_mcp(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let sections = Layout::vertical([
-        Constraint::Length(2),
-        Constraint::Min(0),
-    ])
-    .split(area);
+    let sections = Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).split(area);
 
     let header_lines: Vec<Line> = vec![
         Line::from(vec![
             Span::styled(
                 "  MCP Servers",
-                Style::default()
-                    .fg(label)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(label).add_modifier(Modifier::BOLD),
             ),
             Span::raw("                                        "),
             Span::styled("[a]", Style::default().fg(accent)),
@@ -133,9 +121,7 @@ fn render_mcp(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(Span::styled(
             "  SCOPE               NAME              COMMAND",
-            Style::default()
-                .fg(dim)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(dim).add_modifier(Modifier::BOLD),
         )),
     ];
     f.render_widget(Paragraph::new(header_lines), sections[0]);
@@ -167,10 +153,7 @@ fn render_mcp(f: &mut Frame, app: &App, area: Rect) {
                     format!("{:<18}", truncate(&e.name, 18)),
                     Style::default().fg(Color::Reset),
                 ),
-                Span::styled(
-                    truncate(&e.command_display, 36),
-                    Style::default().fg(dim),
-                ),
+                Span::styled(truncate(&e.command_display, 36), Style::default().fg(dim)),
             ]))
         })
         .collect();

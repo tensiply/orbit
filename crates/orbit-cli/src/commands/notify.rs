@@ -56,7 +56,9 @@ fn cmd_set_enabled(enabled: bool) -> Result<()> {
     println!("  {icon}  Desktop notifications {label}.");
     if enabled && !notify::backend_available() {
         println!();
-        println!("  \x1b[33m!\x1b[0m  Backend not found — install libnotify-bin (Linux) or use macOS.");
+        println!(
+            "  \x1b[33m!\x1b[0m  Backend not found — install libnotify-bin (Linux) or use macOS."
+        );
         println!("     Run `orbit notify test` after installing.");
     }
     Ok(())
@@ -89,9 +91,7 @@ fn cmd_status() -> Result<()> {
 
     if nc.enabled {
         if !available {
-            println!(
-                "  \x1b[33m!\x1b[0m  Notifications enabled but backend not found."
-            );
+            println!("  \x1b[33m!\x1b[0m  Notifications enabled but backend not found.");
             println!("     Linux : sudo apt install libnotify-bin");
             println!("     macOS : built-in (osascript)");
         } else {

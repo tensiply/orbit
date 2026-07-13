@@ -15,7 +15,16 @@ pub struct IntentClassification {
 }
 
 const KNOWN_TAGS: &[&str] = &[
-    "test", "fix", "review", "pr", "deploy", "build", "refactor", "implement", "add", "remove",
+    "test",
+    "fix",
+    "review",
+    "pr",
+    "deploy",
+    "build",
+    "refactor",
+    "implement",
+    "add",
+    "remove",
 ];
 
 pub fn classify(intent: &str) -> IntentClassification {
@@ -31,7 +40,11 @@ pub fn classify(intent: &str) -> IntentClassification {
         .filter(|&&kw| normalized.contains(kw))
         .map(|&kw| kw.to_string())
         .collect();
-    IntentClassification { normalized, complexity, tags }
+    IntentClassification {
+        normalized,
+        complexity,
+        tags,
+    }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

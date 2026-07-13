@@ -167,7 +167,10 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .header(header)
         .block(block)
         .row_highlight_style(
-            Style::default().bg(sel_bg).fg(sel_fg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(sel_bg)
+                .fg(sel_fg)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
 
@@ -192,11 +195,14 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Span::styled("Plan  ", Style::default().fg(dim)),
                 Span::raw(plan.id.clone()),
                 Span::styled("   ", Style::default()),
-                Span::styled(format!("{:?}", plan.status), match plan.status {
-                    PlanStatus::Completed => Style::default().fg(success),
-                    PlanStatus::Failed => Style::default().fg(error_color),
-                    _ => Style::default().fg(accent),
-                }),
+                Span::styled(
+                    format!("{:?}", plan.status),
+                    match plan.status {
+                        PlanStatus::Completed => Style::default().fg(success),
+                        PlanStatus::Failed => Style::default().fg(error_color),
+                        _ => Style::default().fg(accent),
+                    },
+                ),
             ]));
 
             if plan.replan_count > 0 {
@@ -234,10 +240,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 let repo_span = if let Some(ref s) = node.scope_override {
                     if let Some(ref r) = s.repository {
-                        Span::styled(
-                            format!(" [→{r}]"),
-                            Style::default().fg(warning),
-                        )
+                        Span::styled(format!(" [→{r}]"), Style::default().fg(warning))
                     } else {
                         Span::raw("")
                     }
@@ -285,17 +288,11 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
                     Span::styled("  Est. cost  ", Style::default().fg(dim)),
-                    Span::styled(
-                        format!("~${total_cost:.4}"),
-                        Style::default().fg(label),
-                    ),
+                    Span::styled(format!("~${total_cost:.4}"), Style::default().fg(label)),
                 ]));
             }
 
-            f.render_widget(
-                Paragraph::new(lines).block(detail_block),
-                chunks[1],
-            );
+            f.render_widget(Paragraph::new(lines).block(detail_block), chunks[1]);
         }
     }
 }

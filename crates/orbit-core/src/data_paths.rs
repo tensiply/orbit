@@ -137,7 +137,9 @@ mod tests {
     #[test]
     fn plans_dir_none_is_legacy() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data"); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+        }
         assert_eq!(
             plans_dir_for(None),
             PathBuf::from("/tmp/orbit-test-data/orbit/plans")
@@ -147,7 +149,9 @@ mod tests {
     #[test]
     fn plans_dir_named_workspace() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data"); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+        }
         assert_eq!(
             plans_dir_for(Some("AI")),
             PathBuf::from("/tmp/orbit-test-data/orbit/workspaces/ai/plans")
@@ -161,7 +165,9 @@ mod tests {
     #[test]
     fn empty_workspace_name_is_legacy() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data"); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+        }
         assert_eq!(plans_dir_for(Some("")), plans_dir_for(None));
     }
 }

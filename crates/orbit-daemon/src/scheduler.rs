@@ -13,10 +13,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
-pub async fn run_scheduler_loop(
-    interval: Duration,
-    mut shutdown_rx: broadcast::Receiver<()>,
-) {
+pub async fn run_scheduler_loop(interval: Duration, mut shutdown_rx: broadcast::Receiver<()>) {
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => break,
@@ -39,7 +36,11 @@ fn tick_schedules() {
             continue;
         }
 
-        info!("schedule {} due — firing '{}'", sched.id, &sched.intent.chars().take(60).collect::<String>());
+        info!(
+            "schedule {} due — firing '{}'",
+            sched.id,
+            &sched.intent.chars().take(60).collect::<String>()
+        );
         fire_schedule(&sched, now);
     }
 }
@@ -56,7 +57,11 @@ fn fire_schedule(sched: &orbit_core::schedule::ScheduledPlan, now: u64) {
         .repos
         .iter()
         .map(|p| CrossRepoSpec {
-            alias: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+            alias: p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             workspace: None,
             tenant: None,
             project: None,
@@ -108,18 +113,22 @@ fn fire_schedule(sched: &orbit_core::schedule::ScheduledPlan, now: u64) {
             }
             run_hooks(
                 &HookEvent::OnPlanCreated,
-                &[("ORBIT_PLAN_ID", &plan_id), ("ORBIT_PLAN_INTENT", &sched.intent)],
+                &[
+                    ("ORBIT_PLAN_ID", &plan_id),
+                    ("ORBIT_PLAN_INTENT", &sched.intent),
+                ],
             );
-            info!("scheduler: created plan {plan_id} for schedule {}", sched.id);
+            info!(
+                "scheduler: created plan {plan_id} for schedule {}",
+                sched.id
+            );
 
             let mut updated = sched.clone();
             updated.last_run = Some(now);
             updated.run_count += 1;
             updated.next_run = match &sched.schedule {
                 ScheduleKind::Once { .. } => None, // exhausted
-                ScheduleKind::Cron { expr } => {
-                    next_cron_after(expr, now).unwrap_or(None)
-                }
+                ScheduleKind::Cron { expr } => next_cron_after(expr, now).unwrap_or(None),
             };
             if let Err(e) = upsert(updated) {
                 warn!("scheduler: failed to update schedule {}: {e}", sched.id);

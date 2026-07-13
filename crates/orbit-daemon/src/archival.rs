@@ -1,4 +1,7 @@
-use orbit_core::{plan::{Plan, PlanStatus}, user_config::UserConfig};
+use orbit_core::{
+    plan::{Plan, PlanStatus},
+    user_config::UserConfig,
+};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -59,7 +62,14 @@ fn tick() {
     }
 
     if pruned > 0 {
-        let action = if cfg.plan_retention.archive_on_prune { "archived" } else { "deleted" };
-        info!("auto-prune: {pruned} plan(s) {action} (older than {} days)", cfg.plan_retention.auto_prune_days);
+        let action = if cfg.plan_retention.archive_on_prune {
+            "archived"
+        } else {
+            "deleted"
+        };
+        info!(
+            "auto-prune: {pruned} plan(s) {action} (older than {} days)",
+            cfg.plan_retention.auto_prune_days
+        );
     }
 }

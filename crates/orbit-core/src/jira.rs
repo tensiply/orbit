@@ -109,9 +109,10 @@ pub fn discover_orgs() -> Vec<JiraOrg> {
             current_site = Some(rest.trim().to_string());
             current_email = String::new();
         } else if current_site.is_some()
-            && let Some(email) = trimmed.strip_prefix("email: ") {
-                current_email = email.trim().to_string();
-            }
+            && let Some(email) = trimmed.strip_prefix("email: ")
+        {
+            current_email = email.trim().to_string();
+        }
     }
     if let Some(site) = current_site {
         orgs.push(org_from_acli_profile(site, current_email));
@@ -126,7 +127,11 @@ fn org_from_acli_profile(site: String, email: String) -> JiraOrg {
         .unwrap_or(&site)
         .to_string();
     let url = format!("https://{site}");
-    JiraOrg { id, url, user: email }
+    JiraOrg {
+        id,
+        url,
+        user: email,
+    }
 }
 
 /// Load orgs: manual config (orgs.toml) takes precedence; falls back to
@@ -268,8 +273,8 @@ pub fn fetch_issues(orgs: &[JiraOrg]) -> Vec<JiraIssue> {
             // acli: issue data lives under `fields`; fall back to item itself
             let fields = item.get("fields").unwrap_or(item);
 
-            let status = nested_name(fields, "status")
-                .unwrap_or_else(|| str_field(fields, "status"));
+            let status =
+                nested_name(fields, "status").unwrap_or_else(|| str_field(fields, "status"));
 
             // statusCategory.colorName: "blue-gray" | "yellow" | "green" | "medium-gray"
             let status_color = fields
@@ -280,11 +285,10 @@ pub fn fetch_issues(orgs: &[JiraOrg]) -> Vec<JiraIssue> {
                 .unwrap_or("blue-gray")
                 .to_string();
 
-            let priority = nested_name(fields, "priority")
-                .unwrap_or_else(|| str_field(fields, "priority"));
+            let priority =
+                nested_name(fields, "priority").unwrap_or_else(|| str_field(fields, "priority"));
 
-            let issue_type = nested_name(fields, "issuetype")
-                .unwrap_or_default();
+            let issue_type = nested_name(fields, "issuetype").unwrap_or_default();
 
             let board_id = key.split('-').next().unwrap_or("").to_string();
 
@@ -303,10 +307,9 @@ pub fn fetch_issues(orgs: &[JiraOrg]) -> Vec<JiraIssue> {
     }
 
     // Restore original auth context
-    if multi
-        && let Some(site) = original_site {
-            auth_switch(&site);
-        }
+    if multi && let Some(site) = original_site {
+        auth_switch(&site);
+    }
 
     all
 }
@@ -331,17 +334,18 @@ pub fn render_task_instructions(task: &TaskContext) -> String {
 Available Jira commands (run from terminal):\n\
 - `orbit jira comment {key} \"your comment\"` — add a comment to this issue\n\
 - `orbit jira describe {key} \"new description\"` — update the issue description\n",
-        task.key, task.summary, task.status, task.priority, task.board_name,
+        task.key,
+        task.summary,
+        task.status,
+        task.priority,
+        task.board_name,
         key = task.key,
     )
 }
 
 /// Render full issue detail (description + comments) as Markdown for context injection.
 pub fn render_task_detail_instructions(detail: &JiraIssueDetail) -> String {
-    let mut md = format!(
-        "## Active Task: {} — {}\n\n",
-        detail.key, detail.summary
-    );
+    let mut md = format!("## Active Task: {} — {}\n\n", detail.key, detail.summary);
 
     md.push_str(&format!(
         "**Status:** {} · **Priority:** {} · **Type:** {}\n",
@@ -391,7 +395,9 @@ pub fn render_task_detail_instructions(detail: &JiraIssueDetail) -> String {
 
 pub fn add_comment(key: &str, body: &str) -> Result<(), String> {
     let out = Command::new("acli")
-        .args(["jira", "workitem", "comment", "create", "--key", key, "--body", body])
+        .args([
+            "jira", "workitem", "comment", "create", "--key", key, "--body", body,
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -399,14 +405,30 @@ pub fn add_comment(key: &str, body: &str) -> Result<(), String> {
     if out.status.success() {
         Ok(())
     } else {
-        let msg = std::str::from_utf8(&out.stderr).unwrap_or("").trim().to_string();
-        Err(if msg.is_empty() { format!("acli returned non-zero for comment on {key}") } else { msg })
+        let msg = std::str::from_utf8(&out.stderr)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        Err(if msg.is_empty() {
+            format!("acli returned non-zero for comment on {key}")
+        } else {
+            msg
+        })
     }
 }
 
 pub fn update_description(key: &str, body: &str) -> Result<(), String> {
     let out = Command::new("acli")
-        .args(["jira", "workitem", "edit", "--key", key, "--description", body, "--yes"])
+        .args([
+            "jira",
+            "workitem",
+            "edit",
+            "--key",
+            key,
+            "--description",
+            body,
+            "--yes",
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -414,8 +436,15 @@ pub fn update_description(key: &str, body: &str) -> Result<(), String> {
     if out.status.success() {
         Ok(())
     } else {
-        let msg = std::str::from_utf8(&out.stderr).unwrap_or("").trim().to_string();
-        Err(if msg.is_empty() { format!("acli returned non-zero for description on {key}") } else { msg })
+        let msg = std::str::from_utf8(&out.stderr)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        Err(if msg.is_empty() {
+            format!("acli returned non-zero for description on {key}")
+        } else {
+            msg
+        })
     }
 }
 
@@ -453,9 +482,7 @@ pub struct JiraIssueDetail {
 pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
     let out = Command::new("acli")
         .args([
-            "jira", "workitem", "view", key,
-            "--fields", "*all",
-            "--json",
+            "jira", "workitem", "view", key, "--fields", "*all", "--json",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -463,8 +490,15 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
         .map_err(|e| format!("acli error: {e}"))?;
 
     if !out.status.success() {
-        let msg = std::str::from_utf8(&out.stderr).unwrap_or("").trim().to_string();
-        return Err(if msg.is_empty() { format!("acli returned non-zero for {key}") } else { msg });
+        let msg = std::str::from_utf8(&out.stderr)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        return Err(if msg.is_empty() {
+            format!("acli returned non-zero for {key}")
+        } else {
+            msg
+        });
     }
 
     let text = std::str::from_utf8(&out.stdout).map_err(|e| e.to_string())?;
@@ -473,36 +507,56 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
 
     let status = nested_name(fields, "status").unwrap_or_else(|| str_field(fields, "status"));
     let status_color = fields
-        .get("status").and_then(|s| s.get("statusCategory"))
-        .and_then(|sc| sc.get("colorName")).and_then(|v| v.as_str())
-        .unwrap_or("blue-gray").to_string();
+        .get("status")
+        .and_then(|s| s.get("statusCategory"))
+        .and_then(|sc| sc.get("colorName"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("blue-gray")
+        .to_string();
 
     let sprint = fields
-        .get("customfield_10010").and_then(|v| v.as_array())
+        .get("customfield_10010")
+        .and_then(|v| v.as_array())
         .and_then(|arr| arr.last())
-        .and_then(|s| s.get("name")).and_then(|v| v.as_str())
-        .unwrap_or("").to_string();
+        .and_then(|s| s.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
-    let story_points = fields
-        .get("customfield_10014")
-        .and_then(|v| v.as_f64());
+    let story_points = fields.get("customfield_10014").and_then(|v| v.as_f64());
 
     let description_adf = fields.get("description").cloned();
-    let description = description_adf.as_ref()
+    let description = description_adf
+        .as_ref()
         .map(extract_adf_text)
         .unwrap_or_default();
 
     let comments = fields
-        .get("comment").and_then(|c| c.get("comments")).and_then(|v| v.as_array())
+        .get("comment")
+        .and_then(|c| c.get("comments"))
+        .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().map(|c| {
-                let author = c.get("author").and_then(|a| a.get("displayName"))
-                    .and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                let created = c.get("created").and_then(|v| v.as_str())
-                    .map(fmt_date).unwrap_or_default();
-                let body = c.get("body").map(extract_adf_text).unwrap_or_default();
-                JiraComment { author, created, body }
-            }).collect()
+            arr.iter()
+                .map(|c| {
+                    let author = c
+                        .get("author")
+                        .and_then(|a| a.get("displayName"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .to_string();
+                    let created = c
+                        .get("created")
+                        .and_then(|v| v.as_str())
+                        .map(fmt_date)
+                        .unwrap_or_default();
+                    let body = c.get("body").map(extract_adf_text).unwrap_or_default();
+                    JiraComment {
+                        author,
+                        created,
+                        body,
+                    }
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -513,13 +567,33 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
         status_color,
         priority: nested_name(fields, "priority").unwrap_or_default(),
         issue_type: nested_name(fields, "issuetype").unwrap_or_default(),
-        assignee: fields.get("assignee").and_then(|a| a.get("displayName"))
-            .and_then(|v| v.as_str()).unwrap_or("Unassigned").to_string(),
-        reporter: fields.get("reporter").and_then(|r| r.get("displayName"))
-            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        created: fields.get("created").and_then(|v| v.as_str()).map(fmt_date).unwrap_or_default(),
-        updated: fields.get("updated").and_then(|v| v.as_str()).map(fmt_date).unwrap_or_default(),
-        due_date: fields.get("duedate").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        assignee: fields
+            .get("assignee")
+            .and_then(|a| a.get("displayName"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unassigned")
+            .to_string(),
+        reporter: fields
+            .get("reporter")
+            .and_then(|r| r.get("displayName"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        created: fields
+            .get("created")
+            .and_then(|v| v.as_str())
+            .map(fmt_date)
+            .unwrap_or_default(),
+        updated: fields
+            .get("updated")
+            .and_then(|v| v.as_str())
+            .map(fmt_date)
+            .unwrap_or_default(),
+        due_date: fields
+            .get("duedate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         sprint,
         story_points,
         description,
@@ -533,15 +607,27 @@ pub fn fetch_issue_detail(key: &str) -> Result<JiraIssueDetail, String> {
 pub fn append_description(key: &str, text: &str) -> Result<(), String> {
     // Fetch current description ADF
     let out = Command::new("acli")
-        .args(["jira", "workitem", "view", key, "--fields", "description", "--json"])
-        .stdout(Stdio::piped()).stderr(Stdio::piped()).output()
+        .args([
+            "jira",
+            "workitem",
+            "view",
+            key,
+            "--fields",
+            "description",
+            "--json",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
         .map_err(|e| format!("acli error: {e}"))?;
 
     let raw = std::str::from_utf8(&out.stdout).map_err(|e| e.to_string())?;
     let val: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
     let fields = val.get("fields").unwrap_or(&val);
 
-    let mut doc = fields.get("description").cloned()
+    let mut doc = fields
+        .get("description")
+        .cloned()
         .unwrap_or_else(|| serde_json::json!({"type": "doc", "version": 1, "content": []}));
 
     // Ensure doc wrapper
@@ -552,7 +638,9 @@ pub fn append_description(key: &str, text: &str) -> Result<(), String> {
         doc["content"] = serde_json::json!([]);
     }
 
-    let content = doc["content"].as_array_mut().ok_or("invalid ADF structure")?;
+    let content = doc["content"]
+        .as_array_mut()
+        .ok_or("invalid ADF structure")?;
     // Separator only if there's existing content
     if !content.is_empty() {
         content.push(serde_json::json!({"type": "rule"}));
@@ -563,13 +651,26 @@ pub fn append_description(key: &str, text: &str) -> Result<(), String> {
     }));
 
     let tmp_path = std::env::temp_dir().join(format!("orbit-adf-{key}.json"));
-    fs::write(&tmp_path, serde_json::to_string(&doc).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    fs::write(
+        &tmp_path,
+        serde_json::to_string(&doc).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
 
     let result = Command::new("acli")
-        .args(["jira", "workitem", "edit", "--key", key,
-               "--description-file", tmp_path.to_str().unwrap_or(""), "--yes"])
-        .stdout(Stdio::null()).stderr(Stdio::piped()).output()
+        .args([
+            "jira",
+            "workitem",
+            "edit",
+            "--key",
+            key,
+            "--description-file",
+            tmp_path.to_str().unwrap_or(""),
+            "--yes",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
         .map_err(|e| format!("acli error: {e}"));
 
     let _ = fs::remove_file(&tmp_path);
@@ -578,8 +679,15 @@ pub fn append_description(key: &str, text: &str) -> Result<(), String> {
     if out.status.success() {
         Ok(())
     } else {
-        let msg = std::str::from_utf8(&out.stderr).unwrap_or("").trim().to_string();
-        Err(if msg.is_empty() { format!("acli returned non-zero for description on {key}") } else { msg })
+        let msg = std::str::from_utf8(&out.stderr)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        Err(if msg.is_empty() {
+            format!("acli returned non-zero for description on {key}")
+        } else {
+            msg
+        })
     }
 }
 
@@ -589,14 +697,21 @@ fn extract_adf_text(val: &serde_json::Value) -> String {
         return s.to_string();
     }
     if val.get("type").and_then(|t| t.as_str()) == Some("text") {
-        return val.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
+        return val
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
     }
     if let Some(content) = val.get("content").and_then(|c| c.as_array()) {
         let parts: Vec<String> = content.iter().map(extract_adf_text).collect();
         let joined = parts.join("");
         // Add newline after block-level nodes
         let node_type = val.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        if matches!(node_type, "paragraph" | "heading" | "listItem" | "bulletList" | "orderedList") {
+        if matches!(
+            node_type,
+            "paragraph" | "heading" | "listItem" | "bulletList" | "orderedList"
+        ) {
             return format!("{joined}\n");
         }
         return joined;

@@ -156,8 +156,7 @@ pub fn find_similar(intent: &str, n: usize) -> Vec<PlanRunRecord> {
         .collect();
 
     let total_docs = doc_tokens.len();
-    let avg_len = doc_tokens.iter().map(|d| d.len() as f64).sum::<f64>()
-        / total_docs as f64;
+    let avg_len = doc_tokens.iter().map(|d| d.len() as f64).sum::<f64>() / total_docs as f64;
 
     // Build document-frequency table for query terms only.
     let mut df: HashMap<&str, usize> = HashMap::new();
@@ -206,8 +205,12 @@ pub struct MemoryStats {
 
 pub fn memory_stats() -> MemoryStats {
     let empty = MemoryStats {
-        total_runs: 0, completed: 0, failed: 0,
-        avg_duration_secs: 0.0, avg_node_count: 0.0, avg_replan_count: 0.0,
+        total_runs: 0,
+        completed: 0,
+        failed: 0,
+        avg_duration_secs: 0.0,
+        avg_node_count: 0.0,
+        avg_replan_count: 0.0,
         top_scopes: vec![],
         total_cost_usd: 0.0,
         total_tokens: 0,
@@ -248,7 +251,7 @@ pub fn memory_stats() -> MemoryStats {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    top_scopes.sort_by(|a, b| b.1.cmp(&a.1));
+    top_scopes.sort_by_key(|b| std::cmp::Reverse(b.1));
     top_scopes.truncate(5);
 
     // Top scopes by cost
@@ -336,7 +339,9 @@ mod tests {
     fn append_and_load_recent() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        }
 
         for i in 0..5 {
             let mut r = make_record(&format!("intent {i}"));
@@ -353,7 +358,9 @@ mod tests {
     fn find_similar_returns_close_matches() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data2").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data2").to_str().unwrap());
+        }
 
         append_plan_run(&make_record("implement feature X with tests")).unwrap();
         append_plan_run(&make_record("fix bug in authentication")).unwrap();
@@ -367,23 +374,32 @@ mod tests {
     fn bm25_ranks_similar_higher() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data3").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data3").to_str().unwrap());
+        }
 
         append_plan_run(&make_record("implement authentication login flow")).unwrap();
         append_plan_run(&make_record("fix database connection timeout issue")).unwrap();
-        append_plan_run(&make_record("review the pull request for authentication changes")).unwrap();
+        append_plan_run(&make_record(
+            "review the pull request for authentication changes",
+        ))
+        .unwrap();
 
         let results = find_similar("implement user authentication", 3);
         assert!(!results.is_empty(), "should find similar records");
         // The most relevant result should contain "authentication"
-        assert!(results[0].intent.contains("authentication") || results[0].intent.contains("implement"));
+        assert!(
+            results[0].intent.contains("authentication") || results[0].intent.contains("implement")
+        );
     }
 
     #[test]
     fn find_similar_empty_memory() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data4").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data4").to_str().unwrap());
+        }
         let results = find_similar("anything", 5);
         assert!(results.is_empty());
     }
@@ -392,7 +408,9 @@ mod tests {
     fn memory_stats_basic() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data5").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data5").to_str().unwrap());
+        }
 
         let mut r = make_record("test intent");
         r.outcome = "Completed".into();

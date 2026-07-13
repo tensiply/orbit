@@ -63,7 +63,10 @@ fn cmd_install(shell_override: Option<Shell>, dry_run: bool) -> Result<()> {
 
     if let Some(hint) = source_hint {
         println!();
-        println!("  Add this to your shell config (~/.{}rc or similar):", label);
+        println!(
+            "  Add this to your shell config (~/.{}rc or similar):",
+            label
+        );
         println!("  {hint}");
     }
 
@@ -79,7 +82,7 @@ fn generate_to_string(shell: Shell) -> String {
 
 fn detect_shell() -> Result<Shell> {
     let shell_bin = std::env::var("SHELL").unwrap_or_default();
-    let name = shell_bin.split('/').last().unwrap_or("");
+    let name = shell_bin.split('/').next_back().unwrap_or("");
     match name {
         "bash" => Ok(Shell::Bash),
         "zsh" => Ok(Shell::Zsh),
@@ -100,16 +103,12 @@ fn install_path(shell: Shell) -> Result<(PathBuf, Option<String>)> {
     match shell {
         Shell::Bash => {
             let dest = home.join(".local/share/bash-completion/completions/orbit");
-            let hint = Some(
-                "source ~/.local/share/bash-completion/completions/orbit".to_string(),
-            );
+            let hint = Some("source ~/.local/share/bash-completion/completions/orbit".to_string());
             Ok((dest, hint))
         }
         Shell::Zsh => {
             let dest = home.join(".local/share/zsh/site-functions/_orbit");
-            let hint = Some(format!(
-                "fpath=(~/.local/share/zsh/site-functions $fpath)\nautoload -U compinit && compinit"
-            ));
+            let hint = Some("fpath=(~/.local/share/zsh/site-functions $fpath)\nautoload -U compinit && compinit".to_string());
             Ok((dest, hint))
         }
         Shell::Fish => {

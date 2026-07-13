@@ -82,27 +82,83 @@ impl AuditEvent {
     pub fn with_timestamp(self) -> Self {
         let ts = now_secs();
         match self {
-            AuditEvent::PlanCreated { plan_id, intent, node_count, .. } => {
-                AuditEvent::PlanCreated { plan_id, intent, node_count, timestamp: ts }
-            }
-            AuditEvent::NodeStarted { plan_id, node_id, engine, .. } => {
-                AuditEvent::NodeStarted { plan_id, node_id, engine, timestamp: ts }
-            }
-            AuditEvent::NodeCompleted { plan_id, node_id, duration_secs, .. } => {
-                AuditEvent::NodeCompleted { plan_id, node_id, duration_secs, timestamp: ts }
-            }
-            AuditEvent::NodeFailed { plan_id, node_id, reason, .. } => {
-                AuditEvent::NodeFailed { plan_id, node_id, reason, timestamp: ts }
-            }
-            AuditEvent::ReplanTriggered { plan_id, from_node, replan_count, .. } => {
-                AuditEvent::ReplanTriggered { plan_id, from_node, replan_count, timestamp: ts }
-            }
-            AuditEvent::PlanCompleted { plan_id, outcome, total_duration_secs, .. } => {
-                AuditEvent::PlanCompleted { plan_id, outcome, total_duration_secs, timestamp: ts }
-            }
-            AuditEvent::PolicyBlocked { plan_id, node_id, reason, .. } => {
-                AuditEvent::PolicyBlocked { plan_id, node_id, reason, timestamp: ts }
-            }
+            AuditEvent::PlanCreated {
+                plan_id,
+                intent,
+                node_count,
+                ..
+            } => AuditEvent::PlanCreated {
+                plan_id,
+                intent,
+                node_count,
+                timestamp: ts,
+            },
+            AuditEvent::NodeStarted {
+                plan_id,
+                node_id,
+                engine,
+                ..
+            } => AuditEvent::NodeStarted {
+                plan_id,
+                node_id,
+                engine,
+                timestamp: ts,
+            },
+            AuditEvent::NodeCompleted {
+                plan_id,
+                node_id,
+                duration_secs,
+                ..
+            } => AuditEvent::NodeCompleted {
+                plan_id,
+                node_id,
+                duration_secs,
+                timestamp: ts,
+            },
+            AuditEvent::NodeFailed {
+                plan_id,
+                node_id,
+                reason,
+                ..
+            } => AuditEvent::NodeFailed {
+                plan_id,
+                node_id,
+                reason,
+                timestamp: ts,
+            },
+            AuditEvent::ReplanTriggered {
+                plan_id,
+                from_node,
+                replan_count,
+                ..
+            } => AuditEvent::ReplanTriggered {
+                plan_id,
+                from_node,
+                replan_count,
+                timestamp: ts,
+            },
+            AuditEvent::PlanCompleted {
+                plan_id,
+                outcome,
+                total_duration_secs,
+                ..
+            } => AuditEvent::PlanCompleted {
+                plan_id,
+                outcome,
+                total_duration_secs,
+                timestamp: ts,
+            },
+            AuditEvent::PolicyBlocked {
+                plan_id,
+                node_id,
+                reason,
+                ..
+            } => AuditEvent::PolicyBlocked {
+                plan_id,
+                node_id,
+                reason,
+                timestamp: ts,
+            },
         }
     }
 }
@@ -145,7 +201,11 @@ pub fn audit_stats() -> AuditStats {
     for event in &events {
         match event {
             AuditEvent::PlanCreated { .. } => stats.total_plans += 1,
-            AuditEvent::PlanCompleted { outcome, total_duration_secs, .. } => {
+            AuditEvent::PlanCompleted {
+                outcome,
+                total_duration_secs,
+                ..
+            } => {
                 if outcome == "Completed" {
                     stats.completed_plans += 1;
                 } else {
@@ -218,7 +278,9 @@ mod tests {
     fn append_and_filter() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+        }
 
         let e = AuditEvent::PlanCreated {
             plan_id: "plan_abc123".into(),

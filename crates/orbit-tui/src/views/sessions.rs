@@ -113,10 +113,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Span::styled("[2]", Style::default().fg(accent)),
                 Span::styled(" or ", Style::default().fg(dim)),
                 Span::styled("[Tab]", Style::default().fg(accent)),
-                Span::styled(
-                    " to open the Launch tab.",
-                    Style::default().fg(dim),
-                ),
+                Span::styled(" to open the Launch tab.", Style::default().fg(dim)),
             ]),
         ];
 
@@ -148,31 +145,11 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     }
 
     let header = Row::new(vec![
-        Cell::from("ENGINE").style(
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("SCOPE").style(
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("STATUS").style(
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("TMUX").style(
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("STARTED").style(
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Cell::from("ENGINE").style(Style::default().fg(label).add_modifier(Modifier::BOLD)),
+        Cell::from("SCOPE").style(Style::default().fg(label).add_modifier(Modifier::BOLD)),
+        Cell::from("STATUS").style(Style::default().fg(label).add_modifier(Modifier::BOLD)),
+        Cell::from("TMUX").style(Style::default().fg(label).add_modifier(Modifier::BOLD)),
+        Cell::from("STARTED").style(Style::default().fg(label).add_modifier(Modifier::BOLD)),
     ])
     .bottom_margin(1);
 

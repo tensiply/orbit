@@ -98,7 +98,9 @@ mod tests {
     #[test]
     fn load_empty_returns_empty() {
         let tmp = TempDir::new().unwrap();
-        unsafe { std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap());
+        }
         let hooks = load_hooks();
         assert!(hooks.is_empty());
     }
@@ -109,8 +111,14 @@ mod tests {
         let dir = tmp.path().join("orbit");
         std::fs::create_dir_all(&dir).unwrap();
         let mut f = std::fs::File::create(dir.join("hooks.toml")).unwrap();
-        writeln!(f, "[[hooks]]\nevent = \"pre_plan\"\ncommand = [\"echo\", \"hello\"]").unwrap();
-        unsafe { std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap()); }
+        writeln!(
+            f,
+            "[[hooks]]\nevent = \"pre_plan\"\ncommand = [\"echo\", \"hello\"]"
+        )
+        .unwrap();
+        unsafe {
+            std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap());
+        }
         let hooks = load_hooks();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].event, HookEvent::PrePlan);

@@ -322,8 +322,7 @@ fn merge_preserve_base(base: &str, overlay: &str) -> String {
         Some(raw) if new_keys.is_empty() => raw,
         Some(raw) => {
             // Inject new keys into the raw FM block before the closing ---
-            let extras: Vec<String> =
-                new_keys.iter().map(|(k, v)| format!("{k}: {v}")).collect();
+            let extras: Vec<String> = new_keys.iter().map(|(k, v)| format!("{k}: {v}")).collect();
             let without_close = raw.strip_suffix("\n---").unwrap_or(&raw);
             format!("{without_close}\n{}\n---", extras.join("\n"))
         }
@@ -604,10 +603,14 @@ mod tests {
     #[test]
     fn merge_preserve_base_nested_yaml_roundtrips() {
         // permission has a nested YAML value — it must survive the merge intact
-        let base = "---\ndescription: Reviewer\nmode: all\npermission:\n  edit: deny\n---\n\nBase body.";
+        let base =
+            "---\ndescription: Reviewer\nmode: all\npermission:\n  edit: deny\n---\n\nBase body.";
         let overlay = "## Overlay body only.";
         let merged = merge_preserve_base(base, overlay);
-        assert!(merged.contains("permission:\n  edit: deny"), "nested YAML must be preserved");
+        assert!(
+            merged.contains("permission:\n  edit: deny"),
+            "nested YAML must be preserved"
+        );
         assert!(merged.contains("Base body."));
         assert!(merged.contains("Overlay body only."));
     }
@@ -619,14 +622,20 @@ mod tests {
         assert!(keys.contains("description"));
         assert!(keys.contains("permission"));
         assert!(keys.contains("mode"));
-        assert!(!keys.contains("edit"), "indented key must not appear as top-level");
+        assert!(
+            !keys.contains("edit"),
+            "indented key must not appear as top-level"
+        );
     }
 
     #[test]
     fn split_raw_frontmatter_preserves_block() {
         let text = "---\nfoo: bar\nbaz:\n  nested: val\n---\n\nBody here.";
         let (fm, body) = split_raw_frontmatter(text);
-        assert_eq!(fm.as_deref(), Some("---\nfoo: bar\nbaz:\n  nested: val\n---"));
+        assert_eq!(
+            fm.as_deref(),
+            Some("---\nfoo: bar\nbaz:\n  nested: val\n---")
+        );
         assert_eq!(body, "Body here.");
     }
 

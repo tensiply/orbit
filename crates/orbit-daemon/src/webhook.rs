@@ -23,7 +23,11 @@ pub fn maybe_fire(plan_id: &str, intent: &str, is_failure: bool) {
 
     let url = nc.webhook.url.clone();
     let secret = nc.webhook.secret.clone();
-    let event = if is_failure { "plan_failed" } else { "plan_completed" };
+    let event = if is_failure {
+        "plan_failed"
+    } else {
+        "plan_completed"
+    };
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

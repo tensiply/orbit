@@ -1,4 +1,6 @@
-use crate::app::{AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, WriteJiraState};
+use crate::app::{
+    AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, WriteJiraState,
+};
 use crate::mcp::McpEntry;
 use crate::theme::Palette;
 use crate::views::adf;
@@ -52,9 +54,7 @@ pub fn render_help(f: &mut Frame, area: Rect, palette: &Palette) {
     let section = move |s: &'static str| {
         Line::from(Span::styled(
             s,
-            Style::default()
-                .fg(label)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(label).add_modifier(Modifier::BOLD),
         ))
     };
 
@@ -103,7 +103,11 @@ pub fn render_confirm_kill(f: &mut Frame, area: Rect, session: Session, palette:
     let warning = palette.warning;
     let danger = palette.danger;
 
-    let alive = if session.is_running() { "alive" } else { "dead" };
+    let alive = if session.is_running() {
+        "alive"
+    } else {
+        "dead"
+    };
 
     let lines = vec![
         Line::from(""),
@@ -164,7 +168,11 @@ pub fn render_details(f: &mut Frame, area: Rect, session: Session, palette: &Pal
 
     let lines = vec![
         Line::from(""),
-        Line::from(vec![Span::raw("  "), k("ID:"), Span::raw(session.id.clone())]),
+        Line::from(vec![
+            Span::raw("  "),
+            k("ID:"),
+            Span::raw(session.id.clone()),
+        ]),
         Line::from(vec![
             Span::raw("  "),
             k("PID:"),
@@ -172,8 +180,16 @@ pub fn render_details(f: &mut Frame, area: Rect, session: Session, palette: &Pal
             Span::styled("   Status: ", Style::default().fg(dim)),
             status_span,
         ]),
-        Line::from(vec![Span::raw("  "), k("Engine:"), Span::raw(session.engine.clone())]),
-        Line::from(vec![Span::raw("  "), k("Scope:"), Span::raw(session.scope_label())]),
+        Line::from(vec![
+            Span::raw("  "),
+            k("Engine:"),
+            Span::raw(session.engine.clone()),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            k("Scope:"),
+            Span::raw(session.scope_label()),
+        ]),
         Line::from(vec![Span::raw("  "), k("Dir:"), Span::raw(work_dir)]),
         Line::from(vec![Span::raw("  "), k("Tmux:"), Span::raw(tmux)]),
         Line::from(vec![
@@ -199,7 +215,13 @@ pub fn render_details(f: &mut Frame, area: Rect, session: Session, palette: &Pal
 
 // ── add mcp popup ─────────────────────────────────────────────────────────────
 
-pub fn render_add_mcp(f: &mut Frame, area: Rect, state: &AddMcpState, _default_tenant: &str, palette: &Palette) {
+pub fn render_add_mcp(
+    f: &mut Frame,
+    area: Rect,
+    state: &AddMcpState,
+    _default_tenant: &str,
+    palette: &Palette,
+) {
     let popup_area = centered_rect(64, 19, area);
     let accent = palette.accent;
     let dim = palette.dim;
@@ -209,19 +231,45 @@ pub fn render_add_mcp(f: &mut Frame, area: Rect, state: &AddMcpState, _default_t
 
     let lines = vec![
         Line::from(""),
-        mcp_input_line("Name:", &state.name, state.focused == AddMcpField::Name, accent, dim),
-        mcp_input_line("Command:", &state.command, state.focused == AddMcpField::Command, accent, dim),
-        mcp_input_line("Args:", &state.args, state.focused == AddMcpField::Args, accent, dim),
-        mcp_input_line("Env:", &state.env, state.focused == AddMcpField::Env, accent, dim),
+        mcp_input_line(
+            "Name:",
+            &state.name,
+            state.focused == AddMcpField::Name,
+            accent,
+            dim,
+        ),
+        mcp_input_line(
+            "Command:",
+            &state.command,
+            state.focused == AddMcpField::Command,
+            accent,
+            dim,
+        ),
+        mcp_input_line(
+            "Args:",
+            &state.args,
+            state.focused == AddMcpField::Args,
+            accent,
+            dim,
+        ),
+        mcp_input_line(
+            "Env:",
+            &state.env,
+            state.focused == AddMcpField::Env,
+            accent,
+            dim,
+        ),
         Line::from(vec![
             Span::raw("            "),
-            Span::styled(
-                "(comma-sep: KEY=VALUE,KEY2=V2)",
-                Style::default().fg(dim),
-            ),
+            Span::styled("(comma-sep: KEY=VALUE,KEY2=V2)", Style::default().fg(dim)),
         ]),
         Line::from(""),
-        mcp_scope_line(state.focused == AddMcpField::Scope, state.scope, accent, dim),
+        mcp_scope_line(
+            state.focused == AddMcpField::Scope,
+            state.scope,
+            accent,
+            dim,
+        ),
         Line::from(""),
         mcp_input_line_opt(
             "Project:",
@@ -252,7 +300,13 @@ pub fn render_add_mcp(f: &mut Frame, area: Rect, state: &AddMcpState, _default_t
     render_popup(f, popup_area, "Add MCP Server", lines, accent);
 }
 
-fn mcp_input_line(label: &str, input: &TextInput, focused: bool, accent: Color, dim: Color) -> Line<'static> {
+fn mcp_input_line(
+    label: &str,
+    input: &TextInput,
+    focused: bool,
+    accent: Color,
+    dim: Color,
+) -> Line<'static> {
     let label_style = if focused {
         Style::default().fg(accent).add_modifier(Modifier::BOLD)
     } else {
@@ -279,7 +333,12 @@ fn mcp_scope_line(focused: bool, scope: McpScope, accent: Color, dim: Color) -> 
     } else {
         Style::default().fg(dim)
     };
-    let scopes = [McpScope::Global, McpScope::Tenant, McpScope::Project, McpScope::Repo];
+    let scopes = [
+        McpScope::Global,
+        McpScope::Tenant,
+        McpScope::Project,
+        McpScope::Repo,
+    ];
     let mut spans = vec![Span::styled("  Scope:   ".to_string(), label_style)];
     for (i, s) in scopes.iter().enumerate() {
         let active = *s == scope;
@@ -342,18 +401,12 @@ fn mcp_confirm_line(focused: bool, accent: Color, dim: Color) -> Line<'static> {
                 "[ Add Server ]".to_string(),
                 Style::default().fg(accent).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                "  ← press Enter".to_string(),
-                Style::default().fg(dim),
-            ),
+            Span::styled("  ← press Enter".to_string(), Style::default().fg(dim)),
         ])
     } else {
         Line::from(vec![
             Span::raw("    ".to_string()),
-            Span::styled(
-                "[ Add Server ]".to_string(),
-                Style::default().fg(dim),
-            ),
+            Span::styled("[ Add Server ]".to_string(), Style::default().fg(dim)),
         ])
     }
 }
@@ -393,7 +446,10 @@ pub fn render_field_select(f: &mut Frame, area: Rect, state: &FieldSelectState, 
     for (i, opt) in filtered.iter().enumerate() {
         let selected = i == state.cursor;
         let (bullet, style) = if selected {
-            ("▶ ", Style::default().fg(accent).add_modifier(Modifier::BOLD))
+            (
+                "▶ ",
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            )
         } else {
             ("  ", Style::default().fg(Color::Reset))
         };
@@ -444,14 +500,8 @@ pub fn render_confirm_remove_mcp(f: &mut Frame, area: Rect, entry: &McpEntry, pa
         Line::from(""),
         Line::from(vec![
             Span::raw("  Remove "),
-            Span::styled(
-                format!("\"{}\"", entry.name),
-                Style::default().fg(warning),
-            ),
-            Span::styled(
-                format!(" ({})?", entry.scope),
-                Style::default().fg(dim),
-            ),
+            Span::styled(format!("\"{}\"", entry.name), Style::default().fg(warning)),
+            Span::styled(format!(" ({})?", entry.scope), Style::default().fg(dim)),
         ]),
         Line::from(Span::styled(
             format!("  {}", entry.command_display),
@@ -465,10 +515,7 @@ pub fn render_confirm_remove_mcp(f: &mut Frame, area: Rect, entry: &McpEntry, pa
                 Style::default().fg(danger).add_modifier(Modifier::BOLD),
             ),
             Span::raw("        "),
-            Span::styled(
-                "[Esc/n] Cancel".to_string(),
-                Style::default().fg(dim),
-            ),
+            Span::styled("[Esc/n] Cancel".to_string(), Style::default().fg(dim)),
         ]),
         Line::from(""),
     ];
@@ -541,16 +588,13 @@ pub fn render_task_details(f: &mut Frame, area: Rect, detail: &JiraIssueDetail, 
 }
 
 fn render_detail_meta(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Color, dim: Color) {
-    let k = |s: &str| Span::styled(
-        format!("{:<12}", s),
-        Style::default().fg(accent),
-    );
+    let k = |s: &str| Span::styled(format!("{:<12}", s), Style::default().fg(accent));
 
     let status_style = match d.status_color.as_str() {
-        "yellow"           => Style::default().fg(Color::Yellow),
-        "green"            => Style::default().fg(Color::Green),
+        "yellow" => Style::default().fg(Color::Yellow),
+        "green" => Style::default().fg(Color::Green),
         "warm-red" | "red" => Style::default().fg(Color::Red),
-        _                  => Style::default().fg(dim),
+        _ => Style::default().fg(dim),
     };
 
     let sp_str = match d.story_points {
@@ -559,14 +603,27 @@ fn render_detail_meta(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Co
         None => "—".to_string(),
     };
 
-    let due_str = if d.due_date.is_empty() { "—".to_string() } else { d.due_date.clone() };
-    let sprint_str = if d.sprint.is_empty() { "—".to_string() } else { d.sprint.clone() };
+    let due_str = if d.due_date.is_empty() {
+        "—".to_string()
+    } else {
+        d.due_date.clone()
+    };
+    let sprint_str = if d.sprint.is_empty() {
+        "—".to_string()
+    } else {
+        d.sprint.clone()
+    };
 
     let lines = vec![
         Line::from(""),
-        Line::from(vec![Span::raw("  "), k("Summary:"), Span::raw(d.summary.clone())]),
         Line::from(vec![
-            Span::raw("  "), k("Status:"),
+            Span::raw("  "),
+            k("Summary:"),
+            Span::raw(d.summary.clone()),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            k("Status:"),
             Span::styled(d.status.clone(), status_style),
             Span::raw("   Priority: "),
             Span::raw(d.priority.clone()),
@@ -576,17 +633,23 @@ fn render_detail_meta(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Co
             Span::raw(sp_str),
         ]),
         Line::from(vec![
-            Span::raw("  "), k("Assignee:"), Span::raw(d.assignee.clone()),
+            Span::raw("  "),
+            k("Assignee:"),
+            Span::raw(d.assignee.clone()),
             Span::raw("   Reporter: "),
             Span::raw(d.reporter.clone()),
         ]),
         Line::from(vec![
-            Span::raw("  "), k("Sprint:"), Span::raw(sprint_str),
+            Span::raw("  "),
+            k("Sprint:"),
+            Span::raw(sprint_str),
             Span::raw("   Due: "),
             Span::raw(due_str),
         ]),
         Line::from(vec![
-            Span::raw("  "), k("Created:"), Span::raw(d.created.clone()),
+            Span::raw("  "),
+            k("Created:"),
+            Span::raw(d.created.clone()),
             Span::raw("   Updated: "),
             Span::raw(d.updated.clone()),
         ]),
@@ -646,7 +709,9 @@ fn render_detail_body(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Co
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{} ", comment.author),
-                    Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Reset)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(comment.created.clone(), Style::default().fg(dim)),
             ]));
@@ -667,16 +732,35 @@ fn render_detail_body(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Co
         Span::styled(" close", Style::default().fg(dim)),
     ]));
 
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), content_area);
+    f.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }),
+        content_area,
+    );
 }
 
 // ── write comment popup ───────────────────────────────────────────────────────
 
 pub fn render_add_comment(f: &mut Frame, area: Rect, state: &WriteJiraState, palette: &Palette) {
-    render_write_popup(f, area, state, "Add Comment", "Comment", palette.accent, palette.dim);
+    render_write_popup(
+        f,
+        area,
+        state,
+        "Add Comment",
+        "Comment",
+        palette.accent,
+        palette.dim,
+    );
 }
 
-fn render_write_popup(f: &mut Frame, area: Rect, state: &WriteJiraState, title: &str, field_label: &str, accent: Color, dim: Color) {
+fn render_write_popup(
+    f: &mut Frame,
+    area: Rect,
+    state: &WriteJiraState,
+    title: &str,
+    field_label: &str,
+    accent: Color,
+    dim: Color,
+) {
     let popup_area = centered_rect(70, 9, area);
     f.render_widget(Clear, popup_area);
 
@@ -698,7 +782,11 @@ fn render_write_popup(f: &mut Frame, area: Rect, state: &WriteJiraState, title: 
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(3), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
         .split(inner);
 
     f.render_widget(Paragraph::new(lines), input_chunks[0]);

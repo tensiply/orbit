@@ -60,14 +60,18 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 "(global)".to_string()
             } else {
                 // Show only the last component of the path for brevity
-                key.split('/').filter(|s| !s.is_empty()).last().unwrap_or(key).to_string()
+                key.split('/').rfind(|s| !s.is_empty()).unwrap_or(key).to_string()
             };
             let summary = format!(
                 " {} ─ {}/{} ok{}",
                 label,
                 completed,
                 total,
-                if running > 0 { format!(", {} ▶", running) } else { String::new() }
+                if running > 0 {
+                    format!(", {} ▶", running)
+                } else {
+                    String::new()
+                }
             );
             let style = if active {
                 Style::default().fg(accent).add_modifier(Modifier::BOLD)
@@ -90,7 +94,12 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     // ── Right panel: plans for selected scope ─────────────────────────────────
     let scope_key = selected_scope.unwrap_or_default();
-    let full_scope = app.scopes.scopes.get(app.scopes.selected).cloned().unwrap_or_default();
+    let full_scope = app
+        .scopes
+        .scopes
+        .get(app.scopes.selected)
+        .cloned()
+        .unwrap_or_default();
     let scope_plans: Vec<_> = app
         .plans
         .plans
@@ -99,7 +108,10 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .collect();
 
     let plan_lines: Vec<Line> = if scope_plans.is_empty() {
-        vec![Line::from(Span::styled("  No plans in this scope.", Style::default().fg(dim)))]
+        vec![Line::from(Span::styled(
+            "  No plans in this scope.",
+            Style::default().fg(dim),
+        ))]
     } else {
         scope_plans
             .iter()
@@ -128,12 +140,8 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     format!("{} ", p.id),
                     Style::default().add_modifier(Modifier::DIM),
                 );
-                let intent_span = Span::raw(format!(
-                    "[{}n]{} — {}",
-                    p.nodes.len(),
-                    cost_str,
-                    p.intent
-                ));
+                let intent_span =
+                    Span::raw(format!("[{}n]{} — {}", p.nodes.len(), cost_str, p.intent));
                 Line::from(vec![icon, id_span, intent_span])
             })
             .collect()

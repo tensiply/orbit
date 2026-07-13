@@ -1,10 +1,7 @@
 mod common;
 
 use common::{TestHarness, make_plan};
-use orbit_core::{
-    ipc::PlanStreamEvent,
-    plan::PlanStatus,
-};
+use orbit_core::{ipc::PlanStreamEvent, plan::PlanStatus};
 use serial_test::serial;
 use std::time::Duration;
 
@@ -49,7 +46,11 @@ fn has_terminal(events: &[PlanStreamEvent]) -> bool {
 async fn stream_completed_plan_returns_immediate_event() {
     let h = TestHarness::new().await;
 
-    let plan = make_plan("plan_stream_completed", "ship feature", PlanStatus::Completed);
+    let plan = make_plan(
+        "plan_stream_completed",
+        "ship feature",
+        PlanStatus::Completed,
+    );
     h.write_plan(&plan).unwrap();
 
     let rx = orbit_client::ipc::stream_plan_on(&plan.id, h.sock.clone())
@@ -59,7 +60,9 @@ async fn stream_completed_plan_returns_immediate_event() {
     let events = collect_events(rx, Duration::from_secs(2)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanCompleted { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanCompleted { .. })),
         "expected PlanCompleted in {events:?}"
     );
 
@@ -81,7 +84,9 @@ async fn stream_failed_plan_returns_immediate_event() {
     let events = collect_events(rx, Duration::from_secs(2)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed in {events:?}"
     );
 
@@ -95,7 +100,11 @@ async fn stream_cancelled_plan_returns_immediate_failed_event() {
     // block forever. Fixed: Cancelled now maps to PlanFailed immediately.
     let h = TestHarness::new().await;
 
-    let plan = make_plan("plan_stream_cancelled", "deploy infra", PlanStatus::Cancelled);
+    let plan = make_plan(
+        "plan_stream_cancelled",
+        "deploy infra",
+        PlanStatus::Cancelled,
+    );
     h.write_plan(&plan).unwrap();
 
     let rx = orbit_client::ipc::stream_plan_on(&plan.id, h.sock.clone())
@@ -105,7 +114,9 @@ async fn stream_cancelled_plan_returns_immediate_failed_event() {
     let events = collect_events(rx, Duration::from_secs(2)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed (from Cancelled) in {events:?}"
     );
 
@@ -134,7 +145,9 @@ async fn stream_running_plan_fails_on_timeout_enforcement() {
     let events = collect_events(rx, Duration::from_secs(3)).await;
 
     assert!(
-        events.iter().any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, PlanStreamEvent::PlanFailed { .. })),
         "expected PlanFailed from timeout enforcement, got {events:?}"
     );
 
@@ -148,12 +161,20 @@ async fn cancel_running_plan_then_stream_returns_terminal() {
     // immediately because status is now Cancelled.
     let h = TestHarness::new().await;
 
-    let plan = make_plan("plan_stream_cancel_then_stream", "audit logs", PlanStatus::Running);
+    let plan = make_plan(
+        "plan_stream_cancel_then_stream",
+        "audit logs",
+        PlanStatus::Running,
+    );
     h.write_plan(&plan).unwrap();
 
     // Cancel it via IPC before opening the stream.
     use orbit_core::ipc::{Request, Response};
-    let resp = h.send(&Request::CancelPlan { id: plan.id.clone() }).await;
+    let resp = h
+        .send(&Request::CancelPlan {
+            id: plan.id.clone(),
+        })
+        .await;
     assert!(matches!(resp, Response::PlanCancelled { .. }));
 
     let rx = orbit_client::ipc::stream_plan_on(&plan.id, h.sock.clone())
@@ -162,7 +183,10 @@ async fn cancel_running_plan_then_stream_returns_terminal() {
 
     let events = collect_events(rx, Duration::from_secs(2)).await;
 
-    assert!(has_terminal(&events), "expected terminal event after cancel, got {events:?}");
+    assert!(
+        has_terminal(&events),
+        "expected terminal event after cancel, got {events:?}"
+    );
 
     h.shutdown().await;
 }

@@ -7,8 +7,7 @@ use orbit_core::{
     ipc::{PlanStreamEvent, ProjectRole, Request, Response},
     memory::find_run,
     plan::{CrossRepoSpec, Plan, PlanNodeType},
-    schedule,
-    template,
+    schedule, template,
 };
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -368,7 +367,10 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                             String::new()
                         };
                         let repo_tag = if let Some(ref s) = node.scope_override {
-                            s.repository.as_deref().map(|r| format!(" [repo→{r}]")).unwrap_or_default()
+                            s.repository
+                                .as_deref()
+                                .map(|r| format!(" [repo→{r}]"))
+                                .unwrap_or_default()
                         } else {
                             String::new()
                         };
@@ -405,8 +407,16 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::List { scope, workspace, group }) => {
-            match send_raw(&Request::ListPlans { workspace_filter: workspace.clone() }).await? {
+        Some(PlanCommand::List {
+            scope,
+            workspace,
+            group,
+        }) => {
+            match send_raw(&Request::ListPlans {
+                workspace_filter: workspace.clone(),
+            })
+            .await?
+            {
                 Response::Plans { mut plans } => {
                     if let Some(ref pat) = scope {
                         plans.retain(|p| p.scope.scope_key().contains(pat.as_str()));
@@ -423,20 +433,22 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Import { file, force, with_memory }) => {
+        Some(PlanCommand::Import {
+            file,
+            force,
+            with_memory,
+        }) => {
             run_import(file.as_deref(), force, with_memory)?;
         }
 
-        Some(PlanCommand::Cancel { id }) => {
-            match send_raw(&Request::CancelPlan { id }).await? {
-                Response::PlanCancelled { id } => println!("Plan {id} cancelled."),
-                Response::Error { message } => {
-                    eprintln!("Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("Unexpected response"),
+        Some(PlanCommand::Cancel { id }) => match send_raw(&Request::CancelPlan { id }).await? {
+            Response::PlanCancelled { id } => println!("Plan {id} cancelled."),
+            Response::Error { message } => {
+                eprintln!("Error: {message}");
+                std::process::exit(1);
             }
-        }
+            _ => eprintln!("Unexpected response"),
+        },
 
         Some(PlanCommand::History { limit }) => {
             let runs = orbit_core::memory::load_recent_runs(limit);
@@ -465,19 +477,17 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Retry { id }) => {
-            match send_raw(&Request::RetryPlan { id }).await? {
-                Response::PlanRetried { id, reset_count } => {
-                    println!("Plan {id} retried: {reset_count} failed node(s) reset to Pending.");
-                    println!("Running. Check status with: orbit plan get {id}");
-                }
-                Response::Error { message } => {
-                    eprintln!("Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("Unexpected response"),
+        Some(PlanCommand::Retry { id }) => match send_raw(&Request::RetryPlan { id }).await? {
+            Response::PlanRetried { id, reset_count } => {
+                println!("Plan {id} retried: {reset_count} failed node(s) reset to Pending.");
+                println!("Running. Check status with: orbit plan get {id}");
             }
-        }
+            Response::Error { message } => {
+                eprintln!("Error: {message}");
+                std::process::exit(1);
+            }
+            _ => eprintln!("Unexpected response"),
+        },
 
         Some(PlanCommand::Watch { id, interval: _ }) => {
             println!("Streaming plan {id}… (Ctrl+C to detach)");
@@ -510,28 +520,38 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Stats) => {
-            match send_raw(&Request::GetPlanStats).await? {
-                Response::PlanStats { stats } => {
-                    println!("Plans:  {} total, {} completed, {} failed",
-                        stats.total_plans, stats.completed_plans, stats.failed_plans);
-                    println!("Nodes:  {} dispatched, {} completed, {} failed",
-                        stats.total_nodes_dispatched, stats.total_nodes_completed, stats.total_nodes_failed);
-                    println!("Avg duration: {}s", stats.avg_duration_secs);
-                    if stats.total_cost_usd > 0.0 || stats.total_tokens > 0 {
-                        println!("Cost:   ${:.4} total, {} tokens",
-                            stats.total_cost_usd, stats.total_tokens);
-                    }
+        Some(PlanCommand::Stats) => match send_raw(&Request::GetPlanStats).await? {
+            Response::PlanStats { stats } => {
+                println!(
+                    "Plans:  {} total, {} completed, {} failed",
+                    stats.total_plans, stats.completed_plans, stats.failed_plans
+                );
+                println!(
+                    "Nodes:  {} dispatched, {} completed, {} failed",
+                    stats.total_nodes_dispatched,
+                    stats.total_nodes_completed,
+                    stats.total_nodes_failed
+                );
+                println!("Avg duration: {}s", stats.avg_duration_secs);
+                if stats.total_cost_usd > 0.0 || stats.total_tokens > 0 {
+                    println!(
+                        "Cost:   ${:.4} total, {} tokens",
+                        stats.total_cost_usd, stats.total_tokens
+                    );
                 }
-                Response::Error { message } => {
-                    eprintln!("Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("Unexpected response"),
             }
-        }
+            Response::Error { message } => {
+                eprintln!("Error: {message}");
+                std::process::exit(1);
+            }
+            _ => eprintln!("Unexpected response"),
+        },
 
-        Some(PlanCommand::Export { id, stdout, markdown }) => {
+        Some(PlanCommand::Export {
+            id,
+            stdout,
+            markdown,
+        }) => {
             let plan = Plan::load(&id).map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
             let audit_trail = events_for_plan(&id);
             let memory_run = find_run(&id);
@@ -566,7 +586,11 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                         "  {} node(s), {} audit event(s){}",
                         node_count,
                         audit_count,
-                        if has_memory { ", memory record included" } else { "" }
+                        if has_memory {
+                            ", memory record included"
+                        } else {
+                            ""
+                        }
                     );
                 }
             }
@@ -610,8 +634,18 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 }
             }
 
-            let a_cost: f64 = a.nodes.iter().filter_map(|n| n.token_usage.as_ref()).map(|u| u.estimated_cost_usd).sum();
-            let b_cost: f64 = b.nodes.iter().filter_map(|n| n.token_usage.as_ref()).map(|u| u.estimated_cost_usd).sum();
+            let a_cost: f64 = a
+                .nodes
+                .iter()
+                .filter_map(|n| n.token_usage.as_ref())
+                .map(|u| u.estimated_cost_usd)
+                .sum();
+            let b_cost: f64 = b
+                .nodes
+                .iter()
+                .filter_map(|n| n.token_usage.as_ref())
+                .map(|u| u.estimated_cost_usd)
+                .sum();
             if a_cost > 0.0 || b_cost > 0.0 {
                 println!();
                 println!("  Cost: A ~${a_cost:.4}  →  B ~${b_cost:.4}");
@@ -642,8 +676,14 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 return Ok(());
             }
 
-            let archive_on_prune = orbit_core::user_config::UserConfig::load().plan_retention.archive_on_prune;
-            let action_label = if archive_on_prune { "archive" } else { "delete" };
+            let archive_on_prune = orbit_core::user_config::UserConfig::load()
+                .plan_retention
+                .archive_on_prune;
+            let action_label = if archive_on_prune {
+                "archive"
+            } else {
+                "delete"
+            };
 
             for plan in &prunable {
                 let age_days = now.saturating_sub(plan.created_at) / 86400;
@@ -661,43 +701,62 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
 
             if dry_run {
-                println!("\n(dry-run) {} plan(s) would be {}d.", prunable.len(), action_label);
+                println!(
+                    "\n(dry-run) {} plan(s) would be {}d.",
+                    prunable.len(),
+                    action_label
+                );
             } else {
-                println!("\n{}d {} plan(s).", action_label.chars().next().unwrap().to_uppercase().collect::<String>() + &action_label[1..], prunable.len());
+                println!(
+                    "\n{}d {} plan(s).",
+                    action_label
+                        .chars()
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .collect::<String>()
+                        + &action_label[1..],
+                    prunable.len()
+                );
             }
         }
 
-        Some(PlanCommand::Pause { id }) => {
-            match send_raw(&Request::PausePlan { id }).await? {
-                Response::PlanPaused { id } => {
-                    println!("Plan {id} paused. Running nodes will finish; no new nodes will start.");
-                    println!("Resume with: orbit plan resume {id}");
-                }
-                Response::Error { message } => {
-                    eprintln!("Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("Unexpected response"),
+        Some(PlanCommand::Pause { id }) => match send_raw(&Request::PausePlan { id }).await? {
+            Response::PlanPaused { id } => {
+                println!("Plan {id} paused. Running nodes will finish; no new nodes will start.");
+                println!("Resume with: orbit plan resume {id}");
             }
-        }
+            Response::Error { message } => {
+                eprintln!("Error: {message}");
+                std::process::exit(1);
+            }
+            _ => eprintln!("Unexpected response"),
+        },
 
-        Some(PlanCommand::Resume { id }) => {
-            match send_raw(&Request::ResumePlan { id }).await? {
-                Response::PlanResumed { id } => {
-                    println!("Plan {id} resumed.");
-                    println!("Stream live output with: orbit plan watch {id}");
-                }
-                Response::Error { message } => {
-                    eprintln!("Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("Unexpected response"),
+        Some(PlanCommand::Resume { id }) => match send_raw(&Request::ResumePlan { id }).await? {
+            Response::PlanResumed { id } => {
+                println!("Plan {id} resumed.");
+                println!("Stream live output with: orbit plan watch {id}");
             }
-        }
+            Response::Error { message } => {
+                eprintln!("Error: {message}");
+                std::process::exit(1);
+            }
+            _ => eprintln!("Unexpected response"),
+        },
 
         Some(PlanCommand::Socket { path, observer }) => {
-            let role = if observer { ProjectRole::Observer } else { ProjectRole::Contributor };
-            match send_raw(&Request::AddProjectSocket { path: path.clone(), role }).await? {
+            let role = if observer {
+                ProjectRole::Observer
+            } else {
+                ProjectRole::Contributor
+            };
+            match send_raw(&Request::AddProjectSocket {
+                path: path.clone(),
+                role,
+            })
+            .await?
+            {
                 Response::ProjectSocketAdded { path } => {
                     let role_name = if observer { "observer" } else { "contributor" };
                     println!("Socket created ({role_name}): {path}");
@@ -710,7 +769,12 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             }
         }
 
-        Some(PlanCommand::Logs { id, node_id, tail, follow }) => {
+        Some(PlanCommand::Logs {
+            id,
+            node_id,
+            tail,
+            follow,
+        }) => {
             let plan_suffix = id.trim_start_matches("plan_");
             let session_key = format!("orbit-plan-{plan_suffix}-{node_id}");
             let log_path = std::env::temp_dir()
@@ -843,16 +907,17 @@ pub async fn run(args: PlanArgs) -> Result<()> {
         Some(PlanCommand::Repos { id }) => {
             match send_raw(&Request::GetPlan { id }).await? {
                 Response::PlanInfo { plan } => {
-                    let mut repos: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    let mut repos: std::collections::BTreeSet<String> =
+                        std::collections::BTreeSet::new();
                     // Include the plan's own scope if it has a repository
                     if let Some(ref r) = plan.scope.repository {
                         repos.insert(r.clone());
                     }
                     for node in &plan.nodes {
-                        if let Some(ref s) = node.scope_override {
-                            if let Some(ref r) = s.repository {
-                                repos.insert(r.clone());
-                            }
+                        if let Some(ref s) = node.scope_override
+                            && let Some(ref r) = s.repository
+                        {
+                            repos.insert(r.clone());
                         }
                     }
                     if repos.is_empty() {
@@ -919,7 +984,8 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                 }
             }
 
-            let extra_repos: Vec<CrossRepoSpec> = args.extra_repos
+            let extra_repos: Vec<CrossRepoSpec> = args
+                .extra_repos
                 .iter()
                 .map(|p| {
                     let path = std::path::Path::new(p);
@@ -959,7 +1025,11 @@ pub async fn run(args: PlanArgs) -> Result<()> {
             })
             .await?
             {
-                Response::PlanCreated { id, node_count, trace } => {
+                Response::PlanCreated {
+                    id,
+                    node_count,
+                    trace,
+                } => {
                     if let Some(t) = trace {
                         println!("── system prompt ────────────────────────────────────");
                         println!("{}", t.system_prompt);
@@ -980,7 +1050,8 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                             let _ = send_raw(&Request::AddProjectSocket {
                                 path: sock_path.to_string_lossy().into_owned(),
                                 role: ProjectRole::Contributor,
-                            }).await;
+                            })
+                            .await;
                         }
 
                         if args.foreground {
@@ -1154,17 +1225,29 @@ fn render_plan_markdown(
         ));
     }
     if total_cost > 0.0 {
-        md.push_str(&format!("\n**Total estimated cost:** ~${total_cost:.4}\n\n"));
+        md.push_str(&format!(
+            "\n**Total estimated cost:** ~${total_cost:.4}\n\n"
+        ));
     }
 
     // Node output logs
     let has_logs = plan.nodes.iter().any(|n| {
-        matches!(n.status, orbit_core::plan::NodeStatus::Completed | orbit_core::plan::NodeStatus::Failed | orbit_core::plan::NodeStatus::Running)
+        matches!(
+            n.status,
+            orbit_core::plan::NodeStatus::Completed
+                | orbit_core::plan::NodeStatus::Failed
+                | orbit_core::plan::NodeStatus::Running
+        )
     });
     if has_logs {
         md.push_str("## Node Output\n\n");
         for node in &plan.nodes {
-            if !matches!(node.status, orbit_core::plan::NodeStatus::Completed | orbit_core::plan::NodeStatus::Failed | orbit_core::plan::NodeStatus::Running) {
+            if !matches!(
+                node.status,
+                orbit_core::plan::NodeStatus::Completed
+                    | orbit_core::plan::NodeStatus::Failed
+                    | orbit_core::plan::NodeStatus::Running
+            ) {
                 continue;
             }
             let session_key = format!("orbit-plan-{plan_suffix}-{}", node.id);
@@ -1213,7 +1296,12 @@ fn node_log_preview(session_key: &str, n: usize) -> Option<String> {
 }
 
 /// Infers scope from cwd (git root preferred). Returns None fields when unresolvable.
-fn infer_scope() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+fn infer_scope() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     match orbit_core::resolver::resolve_from_git_or_cwd() {
         Ok(scope) => orbit_core::resolver::scope_to_tuple(&scope),
         Err(_) => (None, None, None, None),
@@ -1224,7 +1312,12 @@ fn infer_scope() -> (Option<String>, Option<String>, Option<String>, Option<Stri
 /// detected from the filesystem. Prompts the user to confirm the suggestion.
 fn infer_scope_with_ai_fallback(
     intent: &str,
-) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let tuple = infer_scope();
     if tuple != (None, None, None, None) {
         return tuple;
@@ -1246,10 +1339,18 @@ fn infer_scope_with_ai_fallback(
         Some((ws, t, p, r)) => {
             eprintln!("done.");
             eprintln!("  Suggested scope:");
-            if let Some(ref v) = ws { eprintln!("    workspace:  {v}"); }
-            if let Some(ref v) = t { eprintln!("    tenant:     {v}"); }
-            if let Some(ref v) = p { eprintln!("    project:    {v}"); }
-            if let Some(ref v) = r { eprintln!("    repository: {v}"); }
+            if let Some(ref v) = ws {
+                eprintln!("    workspace:  {v}");
+            }
+            if let Some(ref v) = t {
+                eprintln!("    tenant:     {v}");
+            }
+            if let Some(ref v) = p {
+                eprintln!("    project:    {v}");
+            }
+            if let Some(ref v) = r {
+                eprintln!("    repository: {v}");
+            }
             eprint!("  Accept? [y/N] ");
             let _ = std::io::Write::flush(&mut std::io::stderr());
             let stdin = std::io::stdin();
@@ -1318,10 +1419,18 @@ async fn run_new() -> Result<()> {
     println!("  Scope (auto-detected from cwd):");
     let scope_set = ws.is_some() || tenant.is_some() || project.is_some() || repository.is_some();
     if scope_set {
-        if let Some(ref v) = ws { println!("    workspace: {v}"); }
-        if let Some(ref v) = tenant { println!("    tenant:    {v}"); }
-        if let Some(ref v) = project { println!("    project:   {v}"); }
-        if let Some(ref v) = repository { println!("    repo:      {v}"); }
+        if let Some(ref v) = ws {
+            println!("    workspace: {v}");
+        }
+        if let Some(ref v) = tenant {
+            println!("    tenant:    {v}");
+        }
+        if let Some(ref v) = project {
+            println!("    project:   {v}");
+        }
+        if let Some(ref v) = repository {
+            println!("    repo:      {v}");
+        }
     } else {
         println!("    (none — running without scope)");
     }
@@ -1356,8 +1465,8 @@ async fn run_new() -> Result<()> {
 
     // ── 2. Intent ─────────────────────────────────────────────────────────────
     println!();
-    let use_editor = std::env::var("EDITOR").is_ok()
-        && wizard_confirm("  Open $EDITOR for intent?", false);
+    let use_editor =
+        std::env::var("EDITOR").is_ok() && wizard_confirm("  Open $EDITOR for intent?", false);
 
     let intent = if use_editor {
         intent_from_editor("")?
@@ -1418,16 +1527,16 @@ async fn run_new() -> Result<()> {
                 println!();
                 println!("  Plan preview — {node_count} node(s):");
                 // Get the actual plan to show nodes
-                match send_raw(&Request::ListPlans { workspace_filter: None }).await? {
-                    Response::Plans { plans } => {
-                        if let Some(plan) = plans.last() {
-                            for (i, node) in plan.nodes.iter().enumerate() {
-                                let idx = i + 1;
-                                println!("    {idx}. [{:?}]  {}", node.task_type, node.label);
-                            }
-                        }
+                if let Response::Plans { plans } = send_raw(&Request::ListPlans {
+                    workspace_filter: None,
+                })
+                .await?
+                    && let Some(plan) = plans.last()
+                {
+                    for (i, node) in plan.nodes.iter().enumerate() {
+                        let idx = i + 1;
+                        println!("    {idx}. [{:?}]  {}", node.task_type, node.label);
                     }
-                    _ => {}
                 }
             }
             Response::Error { message } => {
@@ -1494,7 +1603,11 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
                 println!("Templates dir:   {}", dir.display());
                 return Ok(());
             }
-            println!("{} template(s) in {}:", templates.len(), template::templates_dir().display());
+            println!(
+                "{} template(s) in {}:",
+                templates.len(),
+                template::templates_dir().display()
+            );
             println!();
             for t in &templates {
                 let vars = t.variables();
@@ -1522,8 +1635,14 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
                 println!("Default repos: {}", t.repos.join(", "));
             }
             println!();
-            println!("Run with: orbit plan template run {} {}", t.name,
-                vars.iter().map(|v| format!("{v}=<value>")).collect::<Vec<_>>().join(" "));
+            println!(
+                "Run with: orbit plan template run {} {}",
+                t.name,
+                vars.iter()
+                    .map(|v| format!("{v}=<value>"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
             println!("File: {}", template::template_path(&name).display());
         }
 
@@ -1541,12 +1660,15 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
             let var_map = template::parse_vars(&vars)?;
             let intent = t.render(&var_map)?;
 
-            let (workspace, tenant, project, repository) =
-                if workspace.is_none() && tenant.is_none() && project.is_none() && repository.is_none() {
-                    infer_scope()
-                } else {
-                    (workspace, tenant, project, repository)
-                };
+            let (workspace, tenant, project, repository) = if workspace.is_none()
+                && tenant.is_none()
+                && project.is_none()
+                && repository.is_none()
+            {
+                infer_scope()
+            } else {
+                (workspace, tenant, project, repository)
+            };
 
             let extra_repos: Vec<CrossRepoSpec> = t
                 .repos
@@ -1590,7 +1712,11 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
             })
             .await?
             {
-                Response::PlanCreated { id, node_count, trace: _ } => {
+                Response::PlanCreated {
+                    id,
+                    node_count,
+                    trace: _,
+                } => {
                     println!("Plan created: {id} ({node_count} node(s))");
                     if !dry_run {
                         let cwd = std::env::current_dir().unwrap_or_default();
@@ -1630,20 +1756,24 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
             std::fs::write(&path, template::starter_toml(&name))?;
 
             let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-            let status = std::process::Command::new(&editor)
-                .arg(&path)
-                .status()?;
+            let status = std::process::Command::new(&editor).arg(&path).status()?;
             if status.success() {
                 println!("Template saved: {}", path.display());
                 println!("Run it with:    orbit plan template run {name}");
             } else {
-                eprintln!("Editor exited with non-zero status. Template file kept at: {}", path.display());
+                eprintln!(
+                    "Editor exited with non-zero status. Template file kept at: {}",
+                    path.display()
+                );
             }
         }
 
-        TemplateCommand::FromPlan { plan_id, name, description } => {
-            let plan = Plan::load(&plan_id)
-                .map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
+        TemplateCommand::FromPlan {
+            plan_id,
+            name,
+            description,
+        } => {
+            let plan = Plan::load(&plan_id).map_err(|e| anyhow::anyhow!("plan not found: {e}"))?;
             let desc = if description.is_empty() {
                 format!("Captured from plan {}", plan_id)
             } else {
@@ -1669,7 +1799,16 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
 
 async fn run_schedule(command: ScheduleCommand) -> Result<()> {
     match command {
-        ScheduleCommand::Create { intent, at, cron, repos, workspace, tenant, project, repository } => {
+        ScheduleCommand::Create {
+            intent,
+            at,
+            cron,
+            repos,
+            workspace,
+            tenant,
+            project,
+            repository,
+        } => {
             let at_ts = if let Some(ref s) = at {
                 Some(parse_at(s)?)
             } else {
@@ -1699,46 +1838,8 @@ async fn run_schedule(command: ScheduleCommand) -> Result<()> {
                     if let Some(ts) = next_run {
                         println!("  next run: {}", schedule::format_ts(ts));
                     } else {
-                        println!("  next run: (exhausted — run with `orbit plan schedule run {id}`)");
-                    }
-                }
-                Response::Error { message } => {
-                    eprintln!("  Error: {message}");
-                    std::process::exit(1);
-                }
-                _ => eprintln!("  Unexpected response"),
-            }
-        }
-
-        ScheduleCommand::List => {
-            match send_raw(&Request::ListSchedules).await? {
-                Response::Schedules { schedules } => {
-                    if schedules.is_empty() {
-                        println!("No scheduled plans.");
-                        println!("Create one with: orbit plan schedule create \"<intent>\" --cron \"0 9 * * 1-5\"");
-                        return Ok(());
-                    }
-
-                    let id_w = schedules.iter().map(|s| s.id.len()).max().unwrap_or(8).max(8);
-                    let intent_w = schedules.iter().map(|s| s.intent.len().min(40)).max().unwrap_or(20).max(20);
-
-                    println!(
-                        "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  NEXT RUN",
-                        "ID", "INTENT", "RUNS", "SCHEDULE",
-                        id_w = id_w, intent_w = intent_w,
-                    );
-                    println!("  {}", "-".repeat(id_w + intent_w + 55));
-
-                    for s in &schedules {
-                        let short_intent: String = s.intent.chars().take(40).collect();
-                        let sched_str = schedule::format_schedule(&s.schedule);
-                        let next = s.next_run
-                            .map(|ts| schedule::format_ts(ts))
-                            .unwrap_or_else(|| "exhausted".to_string());
                         println!(
-                            "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  {}",
-                            s.id, short_intent, s.run_count, sched_str, next,
-                            id_w = id_w, intent_w = intent_w,
+                            "  next run: (exhausted — run with `orbit plan schedule run {id}`)"
                         );
                     }
                 }
@@ -1749,6 +1850,66 @@ async fn run_schedule(command: ScheduleCommand) -> Result<()> {
                 _ => eprintln!("  Unexpected response"),
             }
         }
+
+        ScheduleCommand::List => match send_raw(&Request::ListSchedules).await? {
+            Response::Schedules { schedules } => {
+                if schedules.is_empty() {
+                    println!("No scheduled plans.");
+                    println!(
+                        "Create one with: orbit plan schedule create \"<intent>\" --cron \"0 9 * * 1-5\""
+                    );
+                    return Ok(());
+                }
+
+                let id_w = schedules
+                    .iter()
+                    .map(|s| s.id.len())
+                    .max()
+                    .unwrap_or(8)
+                    .max(8);
+                let intent_w = schedules
+                    .iter()
+                    .map(|s| s.intent.len().min(40))
+                    .max()
+                    .unwrap_or(20)
+                    .max(20);
+
+                println!(
+                    "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  NEXT RUN",
+                    "ID",
+                    "INTENT",
+                    "RUNS",
+                    "SCHEDULE",
+                    id_w = id_w,
+                    intent_w = intent_w,
+                );
+                println!("  {}", "-".repeat(id_w + intent_w + 55));
+
+                for s in &schedules {
+                    let short_intent: String = s.intent.chars().take(40).collect();
+                    let sched_str = schedule::format_schedule(&s.schedule);
+                    let next = s
+                        .next_run
+                        .map(schedule::format_ts)
+                        .unwrap_or_else(|| "exhausted".to_string());
+                    println!(
+                        "  {:<id_w$}  {:<intent_w$}  {:>5}  {:<25}  {}",
+                        s.id,
+                        short_intent,
+                        s.run_count,
+                        sched_str,
+                        next,
+                        id_w = id_w,
+                        intent_w = intent_w,
+                    );
+                }
+            }
+            Response::Error { message } => {
+                eprintln!("  Error: {message}");
+                std::process::exit(1);
+            }
+            _ => eprintln!("  Unexpected response"),
+        },
 
         ScheduleCommand::Cancel { id } => {
             match send_raw(&Request::CancelSchedule { id: id.clone() }).await? {
@@ -1765,7 +1926,10 @@ async fn run_schedule(command: ScheduleCommand) -> Result<()> {
 
         ScheduleCommand::Run { id } => {
             match send_raw(&Request::RunScheduleNow { id: id.clone() }).await? {
-                Response::ScheduleFired { schedule_id, plan_id } => {
+                Response::ScheduleFired {
+                    schedule_id,
+                    plan_id,
+                } => {
                     println!("  \x1b[32m✓\x1b[0m  Schedule {schedule_id} fired → plan {plan_id}");
                     println!("  Track:  orbit plan get {plan_id}");
                     println!("  Watch:  orbit plan watch {plan_id}");
@@ -1799,7 +1963,13 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
             .iter()
             .map(|e| serde_json::to_value(e).unwrap_or_default())
             .collect();
-        println!("{}", serde_json::to_string_pretty(&AuditBundle { plan: &plan, events: evs })?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&AuditBundle {
+                plan: &plan,
+                events: evs
+            })?
+        );
         return Ok(());
     }
 
@@ -1822,21 +1992,59 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
         let base = plan.created_at;
         for ev in &events {
             let (ts, label) = match ev {
-                AuditEvent::PlanCreated { timestamp, node_count, .. } =>
-                    (*timestamp, format!("PlanCreated     {node_count} node(s)")),
-                AuditEvent::NodeStarted { timestamp, node_id, engine, .. } =>
-                    (*timestamp, format!("NodeStarted     {node_id}  [{engine}]")),
-                AuditEvent::NodeCompleted { timestamp, node_id, duration_secs, .. } =>
-                    (*timestamp, format!("NodeCompleted   {node_id}  ({duration_secs}s)")),
-                AuditEvent::NodeFailed { timestamp, node_id, reason, .. } => {
+                AuditEvent::PlanCreated {
+                    timestamp,
+                    node_count,
+                    ..
+                } => (*timestamp, format!("PlanCreated     {node_count} node(s)")),
+                AuditEvent::NodeStarted {
+                    timestamp,
+                    node_id,
+                    engine,
+                    ..
+                } => (*timestamp, format!("NodeStarted     {node_id}  [{engine}]")),
+                AuditEvent::NodeCompleted {
+                    timestamp,
+                    node_id,
+                    duration_secs,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("NodeCompleted   {node_id}  ({duration_secs}s)"),
+                ),
+                AuditEvent::NodeFailed {
+                    timestamp,
+                    node_id,
+                    reason,
+                    ..
+                } => {
                     let short: String = reason.chars().take(55).collect();
                     (*timestamp, format!("NodeFailed      {node_id}  — {short}"))
                 }
-                AuditEvent::ReplanTriggered { timestamp, from_node, replan_count, .. } =>
-                    (*timestamp, format!("ReplanTriggered from {from_node}  (#{replan_count} replan)")),
-                AuditEvent::PlanCompleted { timestamp, outcome, total_duration_secs, .. } =>
-                    (*timestamp, format!("PlanCompleted   {outcome}  ({total_duration_secs}s)")),
-                AuditEvent::PolicyBlocked { timestamp, node_id, reason, .. } => {
+                AuditEvent::ReplanTriggered {
+                    timestamp,
+                    from_node,
+                    replan_count,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("ReplanTriggered from {from_node}  (#{replan_count} replan)"),
+                ),
+                AuditEvent::PlanCompleted {
+                    timestamp,
+                    outcome,
+                    total_duration_secs,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("PlanCompleted   {outcome}  ({total_duration_secs}s)"),
+                ),
+                AuditEvent::PolicyBlocked {
+                    timestamp,
+                    node_id,
+                    reason,
+                    ..
+                } => {
                     let short: String = reason.chars().take(55).collect();
                     (*timestamp, format!("PolicyBlocked   {node_id}  — {short}"))
                 }
@@ -1847,7 +2055,11 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
     }
 
     // ── Node costs ────────────────────────────────────────────────────────────
-    let nodes_with_cost: Vec<_> = plan.nodes.iter().filter(|n| n.token_usage.is_some()).collect();
+    let nodes_with_cost: Vec<_> = plan
+        .nodes
+        .iter()
+        .filter(|n| n.token_usage.is_some())
+        .collect();
     if !nodes_with_cost.is_empty() {
         println!("\nNode costs");
         let mut total_cost = 0.0f64;
@@ -1857,8 +2069,12 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
             let label: String = node.label.chars().take(38).collect();
             println!(
                 "  {:8}  [{:?}]  {:<38}  {}+{}tok  ~${:.4}",
-                node.id, node.task_type, label,
-                u.prompt_tokens, u.completion_tokens, u.estimated_cost_usd
+                node.id,
+                node.task_type,
+                label,
+                u.prompt_tokens,
+                u.completion_tokens,
+                u.estimated_cost_usd
             );
         }
         println!("  {}", "─".repeat(72));
@@ -1884,7 +2100,9 @@ async fn run_costs(by: &str, top: usize) -> Result<()> {
             // (total_cost, plan_count, node_count)
             let mut acc: HashMap<String, (f64, usize, usize)> = HashMap::new();
             for plan in &plans {
-                let cost: f64 = plan.nodes.iter()
+                let cost: f64 = plan
+                    .nodes
+                    .iter()
                     .filter_map(|n| n.token_usage.as_ref())
                     .map(|u| u.estimated_cost_usd)
                     .sum();
@@ -1893,10 +2111,8 @@ async fn run_costs(by: &str, top: usize) -> Result<()> {
                 e.1 += 1;
                 e.2 += plan.nodes.len();
             }
-            let mut rows: Vec<(String, f64, usize, usize)> = acc
-                .into_iter()
-                .map(|(k, (c, p, n))| (k, c, p, n))
-                .collect();
+            let mut rows: Vec<(String, f64, usize, usize)> =
+                acc.into_iter().map(|(k, (c, p, n))| (k, c, p, n)).collect();
             rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             rows.truncate(top);
 
@@ -1905,7 +2121,10 @@ async fn run_costs(by: &str, top: usize) -> Result<()> {
             println!();
             for (scope, cost, plans, nodes) in &rows {
                 let scope_trunc: String = scope.chars().take(44).collect();
-                println!("  {:<44}  ~${:.4}  ({plans} plan(s), {nodes} node(s))", scope_trunc, cost);
+                println!(
+                    "  {:<44}  ~${:.4}  ({plans} plan(s), {nodes} node(s))",
+                    scope_trunc, cost
+                );
             }
             println!();
             println!("  Total{:>39}~${:.4}", "", total);
@@ -1968,7 +2187,7 @@ fn ymd_hm_to_ts(y: u32, mo: u32, d: u32, h: u32, m: u32) -> u64 {
 }
 
 fn is_leap_year(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
 // ── P11-B: grouped list ───────────────────────────────────────────────────────
@@ -1977,10 +2196,17 @@ fn print_plans_grouped(plans: &[Plan]) {
     use std::collections::BTreeMap;
     let mut by_scope: BTreeMap<String, Vec<&Plan>> = BTreeMap::new();
     for plan in plans {
-        by_scope.entry(plan.scope.scope_key()).or_default().push(plan);
+        by_scope
+            .entry(plan.scope.scope_key())
+            .or_default()
+            .push(plan);
     }
     for (scope, group) in &by_scope {
-        let label = if scope.trim_matches('/').is_empty() { "(global)" } else { scope.as_str() };
+        let label = if scope.trim_matches('/').is_empty() {
+            "(global)"
+        } else {
+            scope.as_str()
+        };
         println!("▸ {} ({} plan(s))", label, group.len());
         for plan in group.iter() {
             let status_icon = match plan.status {
@@ -1990,7 +2216,10 @@ fn print_plans_grouped(plans: &[Plan]) {
                 orbit_core::plan::PlanStatus::Running => "▶",
                 _ => "·",
             };
-            println!("  {} {} [{:?}] — {}", status_icon, plan.id, plan.status, plan.intent);
+            println!(
+                "  {} {} [{:?}] — {}",
+                status_icon, plan.id, plan.status, plan.intent
+            );
         }
         println!();
     }
@@ -1999,7 +2228,10 @@ fn print_plans_grouped(plans: &[Plan]) {
 // ── P11-A: import ─────────────────────────────────────────────────────────────
 
 fn run_import(file: Option<&str>, force: bool, with_memory: bool) -> anyhow::Result<()> {
-    use orbit_core::{audit, memory, plan::{Plan, PlanExportBundle, PlanStatus}};
+    use orbit_core::{
+        audit, memory,
+        plan::{Plan, PlanExportBundle, PlanStatus},
+    };
     use std::io::Read;
 
     let json = match file {
@@ -2008,8 +2240,9 @@ fn run_import(file: Option<&str>, force: bool, with_memory: bool) -> anyhow::Res
             std::io::stdin().read_to_string(&mut buf)?;
             buf
         }
-        Some(path) => std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("cannot read {path}: {e}"))?,
+        Some(path) => {
+            std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read {path}: {e}"))?
+        }
     };
 
     // Try full bundle first, fall back to bare Plan.
@@ -2018,7 +2251,11 @@ fn run_import(file: Option<&str>, force: bool, with_memory: bool) -> anyhow::Res
     } else {
         let plan: Plan = serde_json::from_str(&json)
             .map_err(|e| anyhow::anyhow!("not a valid plan or export bundle: {e}"))?;
-        PlanExportBundle { plan, audit_trail: vec![], memory_run: None }
+        PlanExportBundle {
+            plan,
+            audit_trail: vec![],
+            memory_run: None,
+        }
     };
 
     let mut plan = bundle.plan;
@@ -2040,7 +2277,12 @@ fn run_import(file: Option<&str>, force: bool, with_memory: bool) -> anyhow::Res
     }
 
     plan.save()?;
-    println!("Imported plan {} ({} node(s), {:?})", plan.id, plan.nodes.len(), plan.status);
+    println!(
+        "Imported plan {} ({} node(s), {:?})",
+        plan.id,
+        plan.nodes.len(),
+        plan.status
+    );
     if original_id != plan.id {
         println!("  (ID reassigned: {} → {})", original_id, plan.id);
     }

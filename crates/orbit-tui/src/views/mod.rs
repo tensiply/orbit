@@ -20,7 +20,10 @@ use ratatui::{
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let full = f.area();
-    let area = full.inner(Margin { horizontal: 1, vertical: 0 });
+    let area = full.inner(Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
     let chunks = ratatui::layout::Layout::vertical([
         Constraint::Length(1), // top spacer
         Constraint::Length(1), // tab bar
@@ -75,7 +78,10 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let mut spans = vec![
         Span::raw(" "),
         tab_span("[1]", app.tab == Tab::Sessions, accent, dim),
-        Span::styled(" Sessions  ", tab_label_style(app.tab == Tab::Sessions, dim)),
+        Span::styled(
+            " Sessions  ",
+            tab_label_style(app.tab == Tab::Sessions, dim),
+        ),
         tab_span("[2]", app.tab == Tab::Launch, accent, dim),
         Span::styled(" Launch  ", tab_label_style(app.tab == Tab::Launch, dim)),
         tab_span("[3]", app.tab == Tab::Plans, accent, dim),
@@ -86,34 +92,56 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     if app.jira_enabled {
         spans.push(tab_span("[5]", app.tab == Tab::Tasks, accent, dim));
-        spans.push(Span::styled(" Tasks  ", tab_label_style(app.tab == Tab::Tasks, dim)));
+        spans.push(Span::styled(
+            " Tasks  ",
+            tab_label_style(app.tab == Tab::Tasks, dim),
+        ));
     }
 
     spans.push(tab_span("[6]", app.tab == Tab::Schedules, accent, dim));
-    spans.push(Span::styled(" Schedules  ", tab_label_style(app.tab == Tab::Schedules, dim)));
+    spans.push(Span::styled(
+        " Schedules  ",
+        tab_label_style(app.tab == Tab::Schedules, dim),
+    ));
     spans.push(tab_span("[7]", app.tab == Tab::Scopes, accent, dim));
-    spans.push(Span::styled(" Scopes  ", tab_label_style(app.tab == Tab::Scopes, dim)));
+    spans.push(Span::styled(
+        " Scopes  ",
+        tab_label_style(app.tab == Tab::Scopes, dim),
+    ));
     spans.push(tab_span("[8]", app.tab == Tab::Workspaces, accent, dim));
-    spans.push(Span::styled(" Workspaces  ", tab_label_style(app.tab == Tab::Workspaces, dim)));
+    spans.push(Span::styled(
+        " Workspaces  ",
+        tab_label_style(app.tab == Tab::Workspaces, dim),
+    ));
 
     let label = app.palette.label;
     spans.push(Span::styled("─  ", Style::default().fg(dim)));
     spans.push(ws_hint);
-    spans.push(Span::styled(format!(" {ws_name}"), Style::default().fg(label)));
+    spans.push(Span::styled(
+        format!(" {ws_name}"),
+        Style::default().fg(label),
+    ));
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn tab_span(label: &'static str, active: bool, accent: Color, dim: Color) -> Span<'static> {
     if active {
-        Span::styled(label, Style::default().fg(accent).add_modifier(Modifier::BOLD))
+        Span::styled(
+            label,
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::styled(label, Style::default().fg(dim))
     }
 }
 
 fn tab_label_style(active: bool, dim: Color) -> Style {
-    if active { Style::default() } else { Style::default().fg(dim) }
+    if active {
+        Style::default()
+    } else {
+        Style::default().fg(dim)
+    }
 }
 
 fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {

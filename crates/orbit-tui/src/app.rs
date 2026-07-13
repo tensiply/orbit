@@ -81,7 +81,11 @@ pub struct PlansState {
 
 impl PlansState {
     pub fn new() -> Self {
-        Self { plans: vec![], selected: 0, table_state: ratatui::widgets::TableState::default() }
+        Self {
+            plans: vec![],
+            selected: 0,
+            table_state: ratatui::widgets::TableState::default(),
+        }
     }
 
     pub fn selected_plan(&self) -> Option<&Plan> {
@@ -90,14 +94,22 @@ impl PlansState {
 
     pub fn move_up(&mut self) {
         let n = self.plans.len();
-        if n == 0 { return; }
-        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        if n == 0 {
+            return;
+        }
+        self.selected = if self.selected == 0 {
+            n - 1
+        } else {
+            self.selected - 1
+        };
         self.table_state.select(Some(self.selected));
     }
 
     pub fn move_down(&mut self) {
         let n = self.plans.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         self.selected = (self.selected + 1) % n;
         self.table_state.select(Some(self.selected));
     }
@@ -113,7 +125,10 @@ pub struct ScopesState {
 
 impl ScopesState {
     pub fn new() -> Self {
-        Self { scopes: vec![], selected: 0 }
+        Self {
+            scopes: vec![],
+            selected: 0,
+        }
     }
 
     pub fn selected_scope(&self) -> Option<&str> {
@@ -122,13 +137,21 @@ impl ScopesState {
 
     pub fn move_up(&mut self) {
         let n = self.scopes.len();
-        if n == 0 { return; }
-        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        if n == 0 {
+            return;
+        }
+        self.selected = if self.selected == 0 {
+            n - 1
+        } else {
+            self.selected - 1
+        };
     }
 
     pub fn move_down(&mut self) {
         let n = self.scopes.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         self.selected = (self.selected + 1) % n;
     }
 
@@ -153,31 +176,40 @@ pub struct WorkspacesRegState {
 impl WorkspacesRegState {
     pub fn new() -> Self {
         let entries = orbit_core::workspace_registry::WorkspaceRegistry::load().workspaces;
-        Self { entries, selected: 0 }
+        Self {
+            entries,
+            selected: 0,
+        }
     }
 
     pub fn refresh(&mut self) {
         let prev_name = self.entries.get(self.selected).map(|e| e.name.clone());
         self.entries = orbit_core::workspace_registry::WorkspaceRegistry::load().workspaces;
         // keep selection on same name if still present
-        if let Some(name) = prev_name {
-            if let Some(idx) = self.entries.iter().position(|e| e.name == name) {
-                self.selected = idx;
-                return;
-            }
+        if let Some(name) = prev_name.and_then(|n| self.entries.iter().position(|e| e.name == n)) {
+            self.selected = name;
+            return;
         }
         self.selected = self.selected.min(self.entries.len().saturating_sub(1));
     }
 
     pub fn move_up(&mut self) {
         let n = self.entries.len();
-        if n == 0 { return; }
-        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        if n == 0 {
+            return;
+        }
+        self.selected = if self.selected == 0 {
+            n - 1
+        } else {
+            self.selected - 1
+        };
     }
 
     pub fn move_down(&mut self) {
         let n = self.entries.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         self.selected = (self.selected + 1) % n;
     }
 }
@@ -192,7 +224,11 @@ pub struct SchedulesState {
 
 impl SchedulesState {
     pub fn new() -> Self {
-        Self { schedules: vec![], selected: 0, table_state: ratatui::widgets::TableState::default() }
+        Self {
+            schedules: vec![],
+            selected: 0,
+            table_state: ratatui::widgets::TableState::default(),
+        }
     }
 
     pub fn selected_schedule(&self) -> Option<&ScheduledPlan> {
@@ -201,14 +237,22 @@ impl SchedulesState {
 
     pub fn move_up(&mut self) {
         let n = self.schedules.len();
-        if n == 0 { return; }
-        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        if n == 0 {
+            return;
+        }
+        self.selected = if self.selected == 0 {
+            n - 1
+        } else {
+            self.selected - 1
+        };
         self.table_state.select(Some(self.selected));
     }
 
     pub fn move_down(&mut self) {
         let n = self.schedules.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         self.selected = (self.selected + 1) % n;
         self.table_state.select(Some(self.selected));
     }
@@ -307,7 +351,11 @@ impl TasksState {
         if n == 0 {
             return;
         }
-        self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        self.selected = if self.selected == 0 {
+            n - 1
+        } else {
+            self.selected - 1
+        };
         self.table_state.select(Some(self.selected));
     }
 
@@ -803,7 +851,10 @@ pub enum AsyncAction {
     DaemonStop,
     RefreshPlans,
     CancelPlan(String),
-    ApprovePlanNode { plan_id: String, node_id: String },
+    ApprovePlanNode {
+        plan_id: String,
+        node_id: String,
+    },
     RefreshSchedules,
     CancelSchedule(String),
     RunScheduleNow(String),
@@ -812,7 +863,10 @@ pub enum AsyncAction {
     /// Force a direct acli call, bypassing cache (triggered by [r]).
     ForceRefreshTasks,
     FetchTaskDetail(String),
-    AddComment { key: String, body: String },
+    AddComment {
+        key: String,
+        body: String,
+    },
 }
 
 // ── post-exit actions ─────────────────────────────────────────────────────────
@@ -1419,9 +1473,10 @@ impl App {
             KeyCode::Char('a') => {
                 // Approve the first AwaitingApproval node in the selected plan.
                 if let Some(plan) = self.plans.selected_plan() {
-                    let waiting = plan.nodes.iter().find(|n| {
-                        n.status == orbit_core::plan::NodeStatus::AwaitingApproval
-                    });
+                    let waiting = plan
+                        .nodes
+                        .iter()
+                        .find(|n| n.status == orbit_core::plan::NodeStatus::AwaitingApproval);
                     if let Some(node) = waiting {
                         self.pending_async = Some(AsyncAction::ApprovePlanNode {
                             plan_id: plan.id.clone(),
@@ -1522,8 +1577,7 @@ impl App {
             KeyCode::Right => self.tasks.cycle_org_right(),
             KeyCode::Enter => {
                 if let Some(issue) = self.tasks.selected_issue() {
-                    self.launch.task_context =
-                        Some(orbit_core::jira::TaskContext::from(issue));
+                    self.launch.task_context = Some(orbit_core::jira::TaskContext::from(issue));
                     self.tab = Tab::Launch;
                     self.launch.focused = LaunchField::Task;
                 }
@@ -1624,16 +1678,18 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
             }
         },
         AsyncAction::RefreshPlans => {
-            if let Ok(Ok(plans)) = tokio::time::timeout(
-                Duration::from_millis(500),
-                orbit_client::ipc::list_plans(),
-            )
-            .await
+            if let Ok(Ok(plans)) =
+                tokio::time::timeout(Duration::from_millis(500), orbit_client::ipc::list_plans())
+                    .await
             {
                 let n = plans.len();
                 app.plans.plans = plans;
                 app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
-                app.plans.table_state.select(if n > 0 { Some(app.plans.selected) } else { None });
+                app.plans.table_state.select(if n > 0 {
+                    Some(app.plans.selected)
+                } else {
+                    None
+                });
                 app.scopes.refresh(&app.plans.plans);
             }
         }
@@ -1671,7 +1727,9 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 app.tasks.error = None;
                 app.tasks.last_cache_mtime = jira::cache_mtime();
                 app.tasks.selected = 0;
-                app.tasks.table_state.select(if n > 0 { Some(0) } else { None });
+                app.tasks
+                    .table_state
+                    .select(if n > 0 { Some(0) } else { None });
                 return;
             }
 
@@ -1686,7 +1744,10 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                     .map(|p| p.is_installed())
                     .unwrap_or(false);
                 if !jira_installed {
-                    return (vec![], Some("acli not found — install Jira plugin first.".to_string()));
+                    return (
+                        vec![],
+                        Some("acli not found — install Jira plugin first.".to_string()),
+                    );
                 }
                 let orgs = jira::load_orgs();
                 if orgs.is_empty() {
@@ -1707,7 +1768,9 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                     app.tasks.last_cache_mtime = jira::cache_mtime();
                     app.tasks.issues = issues;
                     app.tasks.selected = 0;
-                    app.tasks.table_state.select(if has { Some(0) } else { None });
+                    app.tasks
+                        .table_state
+                        .select(if has { Some(0) } else { None });
                     app.tasks.error = err;
                 }
                 Err(e) => {
@@ -1728,7 +1791,10 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                     .map(|p| p.is_installed())
                     .unwrap_or(false);
                 if !jira_installed {
-                    return (vec![], Some("acli not found — install Jira plugin first.".to_string()));
+                    return (
+                        vec![],
+                        Some("acli not found — install Jira plugin first.".to_string()),
+                    );
                 }
                 let orgs = jira::load_orgs();
                 if orgs.is_empty() {
@@ -1748,7 +1814,9 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                     app.tasks.last_cache_mtime = orbit_core::jira::cache_mtime();
                     app.tasks.issues = issues;
                     app.tasks.selected = 0;
-                    app.tasks.table_state.select(if has { Some(0) } else { None });
+                    app.tasks
+                        .table_state
+                        .select(if has { Some(0) } else { None });
                     app.tasks.error = err;
                 }
                 Err(e) => {
@@ -1773,10 +1841,8 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
 
         AsyncAction::AddComment { key, body } => {
             let (k, b) = (key.clone(), body.clone());
-            let result = tokio::task::spawn_blocking(move || {
-                orbit_core::jira::add_comment(&k, &b)
-            })
-            .await;
+            let result =
+                tokio::task::spawn_blocking(move || orbit_core::jira::add_comment(&k, &b)).await;
             app.status_msg = Some(match result {
                 Ok(Ok(())) => format!("Comment added to {key}"),
                 Ok(Err(e)) => format!("Error: {e}"),
@@ -1814,7 +1880,11 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 let n = scheds.len();
                 app.schedules.schedules = scheds;
                 app.schedules.selected = app.schedules.selected.min(n.saturating_sub(1));
-                app.schedules.table_state.select(if n > 0 { Some(app.schedules.selected) } else { None });
+                app.schedules.table_state.select(if n > 0 {
+                    Some(app.schedules.selected)
+                } else {
+                    None
+                });
             }
         }
 
@@ -1841,7 +1911,9 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
         AsyncAction::RunScheduleNow(id) => {
             match tokio::time::timeout(
                 Duration::from_millis(500),
-                orbit_client::ipc::send_raw(&orbit_core::ipc::Request::RunScheduleNow { id: id.clone() }),
+                orbit_client::ipc::send_raw(&orbit_core::ipc::Request::RunScheduleNow {
+                    id: id.clone(),
+                }),
             )
             .await
             {
@@ -1915,8 +1987,11 @@ where
                     let n = plans.len();
                     app.plans.plans = plans;
                     app.plans.selected = app.plans.selected.min(n.saturating_sub(1));
-                    app.plans.table_state
-                        .select(if n > 0 { Some(app.plans.selected) } else { None });
+                    app.plans.table_state.select(if n > 0 {
+                        Some(app.plans.selected)
+                    } else {
+                        None
+                    });
                     app.scopes.refresh(&app.plans.plans);
                 }
 
@@ -1930,8 +2005,11 @@ where
                     let n = scheds.len();
                     app.schedules.schedules = scheds;
                     app.schedules.selected = app.schedules.selected.min(n.saturating_sub(1));
-                    app.schedules.table_state
-                        .select(if n > 0 { Some(app.schedules.selected) } else { None });
+                    app.schedules.table_state.select(if n > 0 {
+                        Some(app.schedules.selected)
+                    } else {
+                        None
+                    });
                 }
             } else {
                 app.refresh_sessions();
@@ -1950,7 +2028,9 @@ where
                         app.tasks.loaded = true;
                         app.tasks.loading = false;
                         app.tasks.selected = sel;
-                        app.tasks.table_state.select(if n > 0 { Some(sel) } else { None });
+                        app.tasks
+                            .table_state
+                            .select(if n > 0 { Some(sel) } else { None });
                     }
                 }
             }

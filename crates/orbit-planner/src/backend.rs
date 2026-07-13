@@ -55,7 +55,9 @@ pub struct MockBackend {
 
 impl MockBackend {
     pub fn new(response: impl Into<String>) -> Self {
-        Self { response: response.into() }
+        Self {
+            response: response.into(),
+        }
     }
 }
 
@@ -74,7 +76,9 @@ pub struct FailingBackend {
 
 impl FailingBackend {
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 

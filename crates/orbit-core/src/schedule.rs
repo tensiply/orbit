@@ -1,9 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -118,11 +115,21 @@ pub fn next_cron_after(expr: &str, after_secs: u64) -> Result<Option<u64>> {
         let ts = start_min + offset * 60;
         let (y, mo, d, h, m, wd) = ts_to_ymdhm(ts);
         let _ = y;
-        if !months.contains(&(mo as u8)) { continue; }
-        if !doms.contains(&(d as u8)) { continue; }
-        if !dows.contains(&(wd as u8)) { continue; }
-        if !hours.contains(&(h as u8)) { continue; }
-        if !mins.contains(&(m as u8)) { continue; }
+        if !months.contains(&(mo as u8)) {
+            continue;
+        }
+        if !doms.contains(&(d as u8)) {
+            continue;
+        }
+        if !dows.contains(&(wd as u8)) {
+            continue;
+        }
+        if !hours.contains(&(h as u8)) {
+            continue;
+        }
+        if !mins.contains(&(m as u8)) {
+            continue;
+        }
         return Ok(Some(ts));
     }
 
@@ -143,7 +150,10 @@ fn parse_field(s: &str, min: u8, max: u8) -> Result<Vec<u8>> {
     // Single value or comma list
     let mut values = Vec::new();
     for part in s.split(',') {
-        let v: u8 = part.trim().parse().context("field value must be an integer")?;
+        let v: u8 = part
+            .trim()
+            .parse()
+            .context("field value must be an integer")?;
         if v < min || v > max {
             anyhow::bail!("value {v} out of range {min}..={max}");
         }
@@ -190,14 +200,20 @@ fn ts_to_ymdhm(ts: u64) -> (u32, u32, u32, u32, u32, u32) {
 }
 
 fn is_leap(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
 fn days_in_month(y: u32, m: u32) -> u32 {
     match m {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if is_leap(y) { 29 } else { 28 },
+        2 => {
+            if is_leap(y) {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }
