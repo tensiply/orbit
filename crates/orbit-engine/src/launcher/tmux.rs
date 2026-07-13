@@ -189,8 +189,13 @@ mod tests {
 
     #[test]
     fn already_inside_reflects_env() {
-        // Not inside tmux in test environment
+        // Temporarily clear TMUX so this test is not affected by the calling environment
+        let original = std::env::var("TMUX").ok();
+        unsafe { std::env::remove_var("TMUX") };
         assert!(!already_inside());
+        if let Some(val) = original {
+            unsafe { std::env::set_var("TMUX", val) };
+        }
     }
 
     #[test]
