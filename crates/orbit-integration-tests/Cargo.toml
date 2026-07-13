@@ -29,3 +29,7 @@ path = "tests/streaming.rs"
 [[test]]
 name = "supervisor"
 path = "tests/supervisor.rs"
+
+[[test]]
+name = "schedule_retry"
+path = "tests/schedule_retry.rs"
