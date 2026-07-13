@@ -240,6 +240,11 @@ pub fn create_plan_prompt(
         }
     }
 
+    let history = build_executor_history(recent_runs);
+    if !history.is_empty() {
+        prompt.push_str(&history);
+    }
+
     let catalog = build_executor_catalog();
     if !catalog.is_empty() {
         prompt.push_str(&catalog);
@@ -455,6 +460,59 @@ Use null for any field you cannot determine from the path alone."#,
     ))
 }
 
+/// Build a markdown table summarising executor node outcomes from past similar runs.
+/// Aggregates success/failure counts per executor and surfaces the most recent error hint.
+/// Returns an empty string when no executor node history exists (new install, no runs yet).
+fn build_executor_history(recent_runs: &[PlanRunRecord]) -> String {
+    struct ExecStats {
+        total: usize,
+        successes: usize,
+        last_error: Option<String>,
+    }
+
+    let mut stats: std::collections::HashMap<String, ExecStats> = std::collections::HashMap::new();
+
+    for record in recent_runs {
+        for outcome in &record.node_outcomes {
+            let Some(ref exec) = outcome.executor else {
+                continue; // AI engine node — skip
+            };
+            let entry = stats.entry(exec.clone()).or_insert(ExecStats {
+                total: 0,
+                successes: 0,
+                last_error: None,
+            });
+            entry.total += 1;
+            if outcome.status == "Completed" {
+                entry.successes += 1;
+            } else if let Some(ref hint) = outcome.error_hint {
+                entry.last_error = Some(hint.clone());
+            }
+        }
+    }
+
+    if stats.is_empty() {
+        return String::new();
+    }
+
+    // Sort by total run count descending, cap at 8 rows.
+    let mut rows: Vec<(&String, &ExecStats)> = stats.iter().collect();
+    rows.sort_by(|a, b| b.1.total.cmp(&a.1.total));
+    rows.truncate(8);
+
+    let mut s = "\n## Executor History (from similar past runs)\n".to_string();
+    s.push_str("When choosing executors, prefer those with high success rates.\n");
+    s.push_str("Avoid executor configurations that have recently failed with the same error.\n\n");
+    s.push_str("| Executor | Success rate | Last failure hint |\n");
+    s.push_str("|----------|-------------|-------------------|\n");
+    for (exec, stat) in rows {
+        let rate = format!("{}/{} ({:.0}%)", stat.successes, stat.total, stat.successes as f64 / stat.total as f64 * 100.0);
+        let hint = stat.last_error.as_deref().unwrap_or("—");
+        s.push_str(&format!("| {exec} | {rate} | {hint} |\n"));
+    }
+    s
+}
+
 /// Build a markdown section listing executor plugins available on this machine.
 /// Returns an empty string if no executor plugins are found.
 fn build_executor_catalog() -> String {
@@ -541,6 +599,7 @@ pub fn invoke_planner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orbit_core::memory::NodeOutcomeSummary;
 
     fn test_scope() -> PlanScope {
         PlanScope {
@@ -673,6 +732,80 @@ mod tests {
             catalog.contains("shell"),
             "catalog should document shell executor"
         );
+    }
+
+    fn make_run_record(intent: &str, outcomes: Vec<NodeOutcomeSummary>) -> PlanRunRecord {
+        PlanRunRecord {
+            plan_id: "plan_test".into(),
+            intent: intent.into(),
+            outcome: "Completed".into(),
+            node_count: outcomes.len(),
+            replan_count: 0,
+            duration_secs: 10,
+            created_at: 0,
+            scope_key: "AI/AIDEV".into(),
+            tags: vec![],
+            cost_usd: 0.0,
+            total_tokens: 0,
+            template_name: None,
+            node_outcomes: outcomes,
+        }
+    }
+
+    fn outcome(executor: Option<&str>, status: &str, error_hint: Option<&str>) -> NodeOutcomeSummary {
+        NodeOutcomeSummary {
+            label: "node".into(),
+            executor: executor.map(|s| s.into()),
+            task_type: "Command".into(),
+            status: status.into(),
+            error_hint: error_hint.map(|s| s.into()),
+        }
+    }
+
+    #[test]
+    fn executor_history_aggregates_correctly() {
+        let records = vec![
+            make_run_record("build and test", vec![
+                outcome(Some("cargo"), "Completed", None),
+                outcome(Some("cargo"), "Completed", None),
+                outcome(Some("pytest"), "Failed", Some("ModuleNotFoundError")),
+            ]),
+            make_run_record("run tests again", vec![
+                outcome(Some("cargo"), "Completed", None),
+                outcome(Some("pytest"), "Completed", None),
+            ]),
+        ];
+        let history = build_executor_history(&records);
+        assert!(!history.is_empty(), "should produce history section");
+        assert!(history.contains("cargo"), "should mention cargo");
+        assert!(history.contains("pytest"), "should mention pytest");
+        // cargo: 3/3 success
+        assert!(history.contains("3/3"), "should show cargo 3/3");
+        // pytest had a failure with this hint
+        assert!(history.contains("ModuleNotFoundError"), "should show error hint");
+    }
+
+    #[test]
+    fn executor_history_empty_when_no_executor_nodes() {
+        let records = vec![
+            make_run_record("write some code", vec![
+                outcome(None, "Completed", None), // AI engine node
+            ]),
+        ];
+        let history = build_executor_history(&records);
+        assert!(history.is_empty(), "should be empty when no executor nodes");
+    }
+
+    #[test]
+    fn executor_history_capped_at_eight_rows() {
+        let outcomes: Vec<NodeOutcomeSummary> = (0..10)
+            .map(|i| outcome(Some(&format!("plugin_{i}")), "Completed", None))
+            .collect();
+        let records = vec![make_run_record("large plan", outcomes)];
+        let history = build_executor_history(&records);
+        // Count table data rows (lines starting with "| plugin_")
+        let data_rows = history.lines().filter(|l| l.starts_with("| plugin_")).count();
+        assert!(data_rows <= 8, "should cap at 8 rows, got {data_rows}");
     }
 
     #[test]

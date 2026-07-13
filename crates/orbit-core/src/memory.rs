@@ -45,6 +45,20 @@ fn bm25_score(
     score
 }
 
+// ── NodeOutcomeSummary ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeOutcomeSummary {
+    pub label: String,
+    /// None = AI engine node. Some = executor plugin name (e.g. "cargo", "shell").
+    pub executor: Option<String>,
+    pub task_type: String,
+    /// "Completed" or "Failed" (Debug fmt of NodeStatus).
+    pub status: String,
+    /// First 120 chars of the node's error field, if any.
+    pub error_hint: Option<String>,
+}
+
 // ── PlanRunRecord ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +81,10 @@ pub struct PlanRunRecord {
     /// Template name if this plan was created via `orbit plan template run`.
     #[serde(default)]
     pub template_name: Option<String>,
+    /// Per-node outcome summaries, populated at plan completion.
+    /// Empty on legacy records (pre-P18) — `#[serde(default)]` handles backward compat.
+    #[serde(default)]
+    pub node_outcomes: Vec<NodeOutcomeSummary>,
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -332,6 +350,21 @@ mod tests {
             cost_usd: 0.0,
             total_tokens: 0,
             template_name: None,
+            node_outcomes: vec![],
+        }
+    }
+
+    fn make_outcome(
+        executor: Option<&str>,
+        status: &str,
+        error_hint: Option<&str>,
+    ) -> NodeOutcomeSummary {
+        NodeOutcomeSummary {
+            label: "test node".into(),
+            executor: executor.map(|s| s.into()),
+            task_type: "Command".into(),
+            status: status.into(),
+            error_hint: error_hint.map(|s| s.into()),
         }
     }
 
@@ -402,6 +435,42 @@ mod tests {
         }
         let results = find_similar("anything", 5);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn node_outcomes_roundtrip() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data6").to_str().unwrap());
+        }
+
+        let mut r = make_record("build and test the service");
+        r.node_outcomes = vec![
+            make_outcome(Some("cargo"), "Completed", None),
+            make_outcome(Some("pytest"), "Failed", Some("ModuleNotFoundError: No module named 'app'")),
+        ];
+        append_plan_run(&r).unwrap();
+
+        let loaded = load_recent_runs(1);
+        assert_eq!(loaded.len(), 1);
+        let outcomes = &loaded[0].node_outcomes;
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0].executor.as_deref(), Some("cargo"));
+        assert_eq!(outcomes[0].status, "Completed");
+        assert!(outcomes[0].error_hint.is_none());
+        assert_eq!(outcomes[1].executor.as_deref(), Some("pytest"));
+        assert_eq!(outcomes[1].status, "Failed");
+        assert!(outcomes[1].error_hint.as_deref().unwrap().contains("ModuleNotFoundError"));
+    }
+
+    #[test]
+    fn legacy_record_without_node_outcomes_deserializes() {
+        // Records written before P18 have no node_outcomes field.
+        // #[serde(default)] must produce an empty vec without error.
+        let legacy_json = r#"{"plan_id":"plan_legacy","intent":"old intent","outcome":"Completed","node_count":1,"replan_count":0,"duration_secs":5,"created_at":0,"scope_key":"AI/AIDEV","tags":[],"cost_usd":0.0,"total_tokens":0}"#;
+        let record: PlanRunRecord = serde_json::from_str(legacy_json).unwrap();
+        assert!(record.node_outcomes.is_empty());
     }
 
     #[test]

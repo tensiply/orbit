@@ -3,7 +3,7 @@ use orbit_core::{
     engine::Engine,
     hooks::{HookEvent, run_hooks},
     ipc::PlanStreamEvent,
-    memory::{PlanRunRecord, append_plan_run_for, load_recent_runs},
+    memory::{NodeOutcomeSummary, PlanRunRecord, append_plan_run_for, load_recent_runs},
     plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
     session::Session,
 };
@@ -355,7 +355,11 @@ fn advance_plan(
         let node_task_type = plan.nodes[idx].task_type.clone();
         match dispatch_node(
             &plan.id,
-            NodeInfo { id: &node_id, label: &node_label, intent: &node_intent },
+            NodeInfo {
+                id: &node_id,
+                label: &node_label,
+                intent: &node_intent,
+            },
             &node_task_type,
             &dispatch_scope,
             engine,
@@ -491,6 +495,17 @@ fn advance_plan(
             .filter_map(|n| n.token_usage.as_ref())
             .map(|u| u.prompt_tokens + u.completion_tokens)
             .sum();
+        let node_outcomes: Vec<NodeOutcomeSummary> = plan
+            .nodes
+            .iter()
+            .map(|n| NodeOutcomeSummary {
+                label: n.label.clone(),
+                executor: n.executor.clone(),
+                task_type: format!("{:?}", n.task_type),
+                status: format!("{:?}", n.status),
+                error_hint: n.error.as_ref().map(|e| e.chars().take(120).collect()),
+            })
+            .collect();
         let _ = append_plan_run_for(
             workspace.as_deref(),
             &PlanRunRecord {
@@ -506,6 +521,7 @@ fn advance_plan(
                 cost_usd: total_cost,
                 total_tokens,
                 template_name: None,
+                node_outcomes,
             },
         );
 
