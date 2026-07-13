@@ -17,7 +17,7 @@ use orbit_core::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::backend::PlannerBackend;
 
@@ -29,7 +29,7 @@ The Plan IR must follow this schema:
     {
       "id": "n0",
       "task_type": "Code",
-      "label": "short description",
+      "label": "implement the feature",
       "intent": "specific task for this node",
       "engine": "Claude",
       "depends_on": [],
@@ -40,15 +40,31 @@ The Plan IR must follow this schema:
         "risk_level": "Low",
         "verify": ["ExitCode"]
       }
+    },
+    {
+      "id": "n1",
+      "task_type": "Command",
+      "label": "run tests",
+      "intent": "run the test suite",
+      "engine": "Claude",
+      "executor": "cargo",
+      "executor_params": { "subcommand": "test", "args": "--all" },
+      "depends_on": ["n0"],
+      "policy": { "retry_max": 0, "risk_level": "Low", "verify": ["ExitCode"] }
     }
   ],
   "edges": []
 }
 
-task_type values: Code | Test | Review | Verify | Pr
+task_type values: Code | Test | Review | Verify | Pr | Command
 engine values: Claude | Opencode | Gemini
 risk_level values: Low | Medium | High
 verify values: ExitCode | LlmJudge
+
+executor: optional — when set, the node runs an external command instead of an AI engine.
+  The engine field is still required but ignored when executor is present.
+  Available executor plugins and their params are listed in the context below (if any).
+  Use executor = "shell" with executor_params = { "command": "..." } for arbitrary commands.
 
 scope_override: null means the node uses the plan's default scope. To target a different repo, set:
   "scope_override": { "workspace": "AI", "tenant": "AIDEV", "project": "AI-ECOSYSTEM", "repository": "orbit" }
@@ -57,6 +73,7 @@ If extra repos are listed in the context, use their exact field values.
 Rules:
 - For Phase 1, generate 1-3 nodes maximum.
 - Use ExitCode as the default verify strategy.
+- Prefer executor nodes over AI nodes for build/test/run steps when a matching plugin exists.
 - Respond ONLY with a JSON code block. No explanation.
 "#;
 
@@ -110,6 +127,10 @@ struct NodeDraft {
     scope_override: Option<ScopeDraft>,
     #[serde(default)]
     policy: NodePolicyDraft,
+    #[serde(default)]
+    executor: Option<String>,
+    #[serde(default)]
+    executor_params: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -219,6 +240,11 @@ pub fn create_plan_prompt(
         }
     }
 
+    let catalog = build_executor_catalog();
+    if !catalog.is_empty() {
+        prompt.push_str(&catalog);
+    }
+
     prompt.push_str("\nGenerate the Plan IR JSON:\n");
     prompt
 }
@@ -300,8 +326,8 @@ fn draft_to_node(d: NodeDraft) -> PlanNode {
         error: None,
         retry_count: 0,
         approved: false,
-        executor: None,
-        executor_params: Default::default(),
+        executor: d.executor,
+        executor_params: d.executor_params,
     }
 }
 
@@ -329,6 +355,20 @@ fn fallback_single_node(intent: &str, engine: Engine) -> PlanNode {
     }
 }
 
+fn warn_unknown_executors(nodes: &[PlanNode]) {
+    for node in nodes {
+        if let Some(ref exec) = node.executor
+            && exec != "shell"
+            && orbit_core::plugin::find(exec).is_none()
+        {
+            tracing::warn!(
+                "planner generated executor node '{}' with unknown plugin: '{exec}'",
+                node.id
+            );
+        }
+    }
+}
+
 fn parse_llm_response(
     raw: &str,
     intent: &str,
@@ -353,12 +393,14 @@ fn parse_llm_response(
                 to: e.to,
             })
             .collect();
+        warn_unknown_executors(&plan.nodes);
         return Ok(plan);
     }
 
     // Try bare array of NodeDraft
     if let Ok(nodes) = serde_json::from_str::<Vec<NodeDraft>>(json_str) {
         plan.nodes = nodes.into_iter().map(draft_to_node).collect();
+        warn_unknown_executors(&plan.nodes);
         return Ok(plan);
     }
 
@@ -411,6 +453,49 @@ Use null for any field you cannot determine from the path alone."#,
         suggestion.project,
         suggestion.repository,
     ))
+}
+
+/// Build a markdown section listing executor plugins available on this machine.
+/// Returns an empty string if no executor plugins are found.
+fn build_executor_catalog() -> String {
+    let plugins = orbit_core::plugin::load_all();
+    let executor_plugins: Vec<_> = plugins.iter().filter(|p| p.executor.is_some()).collect();
+
+    if executor_plugins.is_empty() {
+        return String::new();
+    }
+
+    let mut s = "\n## Available Executor Plugins\n\n".to_string();
+    s.push_str("Use `executor` + `executor_params` in a node when the task is a known build/test/run command.\n");
+    s.push_str("The `engine` field is ignored for executor nodes.\n\n");
+    s.push_str("| Plugin | Parameters |\n|--------|------------|\n");
+
+    for plugin in &executor_plugins {
+        let spec = plugin.executor.as_ref().unwrap();
+        let params_str = spec
+            .params
+            .iter()
+            .map(|p| {
+                if p.required {
+                    format!("{} (required)", p.name)
+                } else if let Some(ref d) = p.default {
+                    format!("{} (default: {:?})", p.name, d)
+                } else {
+                    p.name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        s.push_str(&format!("| {} | {} |\n", plugin.name, params_str));
+    }
+
+    s.push_str("\nShell executor (for any arbitrary command, no plugin registration needed):\n");
+    s.push_str(
+        "  executor = \"shell\", executor_params = { \"command\": \"my-tool --flag value\" }\n",
+    );
+    s.push_str("\nPrefer executor nodes for: build steps, test runs, linting, CI scripts.\n");
+    s.push_str("Use AI engine nodes for: code generation, analysis, refactoring, writing.\n");
+    s
 }
 
 fn extract_json_str(raw: &str) -> &str {
@@ -516,5 +601,101 @@ mod tests {
         assert_eq!(engine_cli_command(&Engine::Claude).0, "claude");
         assert_eq!(engine_cli_command(&Engine::Opencode).0, "opencode");
         assert_eq!(engine_cli_command(&Engine::Gemini).0, "gemini");
+    }
+
+    #[test]
+    fn node_draft_deserializes_executor_fields() {
+        let raw = r#"```json
+{
+  "nodes": [
+    {
+      "id": "n0",
+      "task_type": "Command",
+      "label": "run tests",
+      "intent": "run cargo test",
+      "engine": "Claude",
+      "depends_on": [],
+      "executor": "cargo",
+      "executor_params": { "subcommand": "test", "args": "--all" },
+      "policy": { "retry_max": 0, "risk_level": "Low", "verify": ["ExitCode"] }
+    }
+  ],
+  "edges": []
+}
+```"#;
+        let cfg = PlannerConfig::default();
+        let scope = test_scope();
+        let plan = parse_llm_response(raw, "run tests", &scope, &cfg, "sys").unwrap();
+        assert_eq!(plan.nodes.len(), 1);
+        let node = &plan.nodes[0];
+        assert_eq!(node.executor.as_deref(), Some("cargo"));
+        assert_eq!(
+            node.executor_params.get("subcommand").map(|s| s.as_str()),
+            Some("test")
+        );
+        assert_eq!(
+            node.executor_params.get("args").map(|s| s.as_str()),
+            Some("--all")
+        );
+    }
+
+    #[test]
+    fn draft_to_node_passes_executor_through() {
+        let draft = NodeDraft {
+            id: "n0".into(),
+            task_type: "Command".into(),
+            label: "run make".into(),
+            intent: "build the project".into(),
+            engine: "Claude".into(),
+            depends_on: vec![],
+            scope_override: None,
+            policy: NodePolicyDraft::default(),
+            executor: Some("make".into()),
+            executor_params: [("target".to_string(), "build".to_string())]
+                .into_iter()
+                .collect(),
+        };
+        let node = draft_to_node(draft);
+        assert_eq!(node.executor.as_deref(), Some("make"));
+        assert_eq!(
+            node.executor_params.get("target").map(|s| s.as_str()),
+            Some("build")
+        );
+    }
+
+    #[test]
+    fn executor_catalog_contains_builtin_plugins() {
+        let catalog = build_executor_catalog();
+        // Built-in executor plugins (cargo, pytest, make, npm) should appear
+        assert!(catalog.contains("cargo"), "catalog should mention cargo");
+        assert!(catalog.contains("pytest"), "catalog should mention pytest");
+        assert!(
+            catalog.contains("shell"),
+            "catalog should document shell executor"
+        );
+    }
+
+    #[test]
+    fn shell_executor_node_passes_through_without_warning() {
+        let raw = r#"{
+  "nodes": [{
+    "id": "n0", "task_type": "Command", "label": "run script",
+    "intent": "run a custom script", "engine": "Claude", "depends_on": [],
+    "executor": "shell",
+    "executor_params": { "command": "echo hello" }
+  }],
+  "edges": []
+}"#;
+        let cfg = PlannerConfig::default();
+        let scope = test_scope();
+        let plan = parse_llm_response(raw, "run script", &scope, &cfg, "sys").unwrap();
+        assert_eq!(plan.nodes[0].executor.as_deref(), Some("shell"));
+        assert_eq!(
+            plan.nodes[0]
+                .executor_params
+                .get("command")
+                .map(|s| s.as_str()),
+            Some("echo hello")
+        );
     }
 }
