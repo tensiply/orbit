@@ -259,6 +259,7 @@ pub async fn launch_session(
     repository: Option<String>,
     engine: &str,
     no_tmux: bool,
+    new_session: bool,
 ) -> Result<LaunchedInfo> {
     match send(&Request::LaunchSession {
         workspace,
@@ -267,6 +268,7 @@ pub async fn launch_session(
         repository,
         engine: engine.to_string(),
         no_tmux,
+        new_session,
     })
     .await?
     {

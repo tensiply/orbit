@@ -125,6 +125,8 @@ pub enum Request {
         repository: Option<String>,
         engine: String,
         no_tmux: bool,
+        #[serde(default)]
+        new_session: bool,
     },
     CreatePlan {
         intent: String,

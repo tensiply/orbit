@@ -16,6 +16,8 @@ use crate::config::MergedConfig;
 pub struct LaunchOptions {
     /// Skip tmux wrapping even if tmux is available.
     pub no_tmux: bool,
+    /// Force a brand-new tmux session even if one for this scope already exists.
+    pub new_session: bool,
 }
 
 /// Full launch sequence:
@@ -124,6 +126,7 @@ pub fn launch(
             context_file.as_deref(),
             &tmux_name,
             &title,
+            opts.new_session,
         )
     } else {
         exec_engine(engine, &paths.config_file, context_file.as_deref())
@@ -162,8 +165,17 @@ fn exec_with_tmux(
     context_file: Option<&Path>,
     session_name: &str,
     window_name: &str,
+    force_new: bool,
 ) -> Result<()> {
-    if tmux::session_exists(session_name) {
+    // Resolve the final session name — unique suffix when forcing a new session.
+    let session_name = if force_new {
+        tmux::unique_session_name(session_name)
+    } else {
+        session_name.to_string()
+    };
+    let session_name = session_name.as_str();
+
+    if !force_new && tmux::session_exists(session_name) {
         // Session already exists — reattach
         tracing::debug!("reattaching to tmux session {session_name}");
         let err = Command::new("tmux")
@@ -518,6 +530,7 @@ pub fn spawn_background(
     engine: Engine,
     task_context: Option<&TaskContext>,
     session_name: Option<&str>,
+    force_new: bool,
 ) -> Result<orbit_core::session::Session> {
     // 1. Runtime dirs
     let paths = runtime::setup(scope, engine)?;
@@ -573,13 +586,19 @@ pub fn spawn_background(
 
     // 4. Tmux session name
     let username = orbit_core::user_config::UserConfig::load().user.name;
-    let tmux_name = session_name
+    let base_name = session_name
         .map(|s| s.to_string())
         .unwrap_or_else(|| tmux_session_name(scope, engine, &username));
+    let tmux_name = if force_new {
+        tmux::unique_session_name(&base_name)
+    } else {
+        base_name.clone()
+    };
 
-    // Reuse an existing session only when the caller did not supply an override.
+    // Reuse an existing session only when the caller did not supply an override
+    // and a new session was not explicitly requested.
     // Plan-node sessions always get a fresh dedicated session.
-    if session_name.is_none() && tmux::session_exists(&tmux_name) {
+    if !force_new && session_name.is_none() && tmux::session_exists(&tmux_name) {
         // Already running — return the existing session name so client can attach
         let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
         let session = orbit_core::session::Session::new(

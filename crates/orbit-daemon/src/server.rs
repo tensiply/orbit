@@ -253,6 +253,7 @@ impl ServerState {
                 repository,
                 engine,
                 no_tmux,
+                new_session,
             } => {
                 use orbit_core::engine::Engine;
                 use orbit_engine::{
@@ -301,7 +302,7 @@ impl ServerState {
                     }
                 };
 
-                match launcher::spawn_background(&scope, &merged, engine_val, None, None) {
+                match launcher::spawn_background(&scope, &merged, engine_val, None, None, new_session) {
                     Ok(session) => Response::Launched {
                         tmux_name: session.tmux_session.unwrap_or_default(),
                         session_id: session.id,

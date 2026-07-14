@@ -14,13 +14,36 @@ pub fn already_inside() -> bool {
 }
 
 pub fn session_exists(name: &str) -> bool {
-    Command::new("tmux")
-        .args(["has-session", "-t", name])
-        .stdout(std::process::Stdio::null())
+    // Use list-sessions for exact-name comparison instead of has-session,
+    // which uses tmux prefix/substring matching and can falsely match a
+    // parent-scope session when checking a longer child-scope name.
+    let out = Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .any(|l| l.trim() == name),
+        Err(_) => false,
+    }
+}
+
+/// Return `base` if it is not already in use, otherwise append `-2`, `-3`, …
+/// until a free name is found.
+pub fn unique_session_name(base: &str) -> String {
+    if !session_exists(base) {
+        return base.to_string();
+    }
+    let mut n = 2u32;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !session_exists(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 // ── auto-install ──────────────────────────────────────────────────────────────
