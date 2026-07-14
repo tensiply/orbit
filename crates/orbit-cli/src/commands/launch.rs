@@ -46,20 +46,24 @@ pub struct LaunchArgs {
     pub engine: Option<CliEngine>,
 
     /// Print the resolved config without launching the engine (useful for debugging)
-    #[arg(long)]
+    #[arg(short = 'd', long)]
     pub dry_run: bool,
 
     /// Launch the engine directly without wrapping in a tmux session
-    #[arg(long)]
+    #[arg(short = 'x', long)]
     pub no_tmux: bool,
 
     /// Attach a specific Jira issue to this session (e.g. ORBIT-123)
-    #[arg(long)]
+    #[arg(short = 't', long)]
     pub task: Option<String>,
 
     /// Skip the Jira task prompt for this launch
-    #[arg(long)]
+    #[arg(short = 'T', long)]
     pub no_task: bool,
+
+    /// Open a new session even if one for this scope is already running
+    #[arg(short = 'n', long)]
+    pub new_session: bool,
 }
 
 pub async fn run(args: LaunchArgs) -> Result<()> {
@@ -147,6 +151,7 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
                 },
                 engine.as_str(),
                 false,
+                args.new_session,
             )
             .await
             {
@@ -168,6 +173,7 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         engine,
         LaunchOptions {
             no_tmux: args.no_tmux,
+            new_session: args.new_session,
         },
         task_context.as_ref(),
     )

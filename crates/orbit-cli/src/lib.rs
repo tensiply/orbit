@@ -180,6 +180,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     no_tmux: params.no_tmux,
                     task: params.task_context.as_ref().map(|t| t.key.clone()),
                     no_task: params.task_context.is_none(),
+                    new_session: false,
                 })
                 .await?;
             }
