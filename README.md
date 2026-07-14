@@ -105,6 +105,28 @@ Requires Rust 1.75+.
 
 ## Docs
 
-- [Commands](https://github.com/befraeloircorona/orbit/wiki/Commands) — all CLI commands with flags and examples
-- [Plugins](https://github.com/befraeloircorona/orbit/wiki/Plugins) — plugin system: install, enable, create
-- [Workspace](https://github.com/befraeloircorona/orbit/wiki/Workspace) — full workspace structure and MCP merge order
+Documentación completa en la [wiki](https://github.com/befraeloircorona/orbit/wiki).
+
+**Uso básico**
+- [Primeros pasos](https://github.com/befraeloircorona/orbit/wiki/Primeros-pasos) — instalación, `orbit setup`, primer lanzamiento
+- [Lanzar y sesiones](https://github.com/befraeloircorona/orbit/wiki/Lanzar-y-sesiones) — `orbit launch`, `orbit session`, TUI, tmux
+- [Comandos](https://github.com/befraeloircorona/orbit/wiki/Comandos) — referencia completa de todos los comandos
+
+**Configuración**
+- [Modelo de workspace](https://github.com/befraeloircorona/orbit/wiki/Modelo-de-workspace) — jerarquía de scopes, capas de config, governance
+- [Configuración](https://github.com/befraeloircorona/orbit/wiki/Configuracion) — orbit.json, config.toml, `orbit config`
+- [Secretos y variables](https://github.com/befraeloircorona/orbit/wiki/Secretos-y-variables) — `orbit secret`, `orbit env`, resolvers
+
+**Herramientas**
+- [Engines](https://github.com/befraeloircorona/orbit/wiki/Engines) — engines soportados, instalación, autenticación
+- [Plugins](https://github.com/befraeloircorona/orbit/wiki/Plugins) — catálogo built-in, lifecycle, plugins custom
+- [Servidores MCP](https://github.com/befraeloircorona/orbit/wiki/Servidores-MCP) — `orbit mcp`, configuración por scope
+
+**Funciones avanzadas**
+- [Sistema de planes](https://github.com/befraeloircorona/orbit/wiki/Sistema-de-planes) — `orbit plan`, ejecución autónoma, memoria
+- [Compartir y descubrir](https://github.com/befraeloircorona/orbit/wiki/Compartir-y-descubrir) — `orbit serve`, `orbit discover`, LAN/mDNS
+
+**Referencia**
+- [Arquitectura](https://github.com/befraeloircorona/orbit/wiki/Arquitectura) — crates, daemon IPC, internals
+- [Contribuir](https://github.com/befraeloircorona/orbit/wiki/Contribuir) — dev setup, CI gates, convenciones
+- [Releases](https://github.com/befraeloircorona/orbit/wiki/Releases) — historial completo de versiones
