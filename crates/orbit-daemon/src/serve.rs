@@ -36,11 +36,17 @@ struct PeerEntry {
     requests: u64,
 }
 
-impl PeersRegistry {
-    pub fn new() -> Self {
+impl Default for PeersRegistry {
+    fn default() -> Self {
         Self {
             inner: Arc::new(Mutex::new(vec![])),
         }
+    }
+}
+
+impl PeersRegistry {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add(&self, addr: SocketAddr, role: NetworkRole) {
@@ -229,15 +235,19 @@ async fn handle_tcp_connection(
             let mut rx = state.event_tx.subscribe();
 
             let current_terminal =
-                orbit_core::plan::Plan::load(&plan_id).ok().and_then(|p| match p.status {
-                    PlanStatus::Completed => {
-                        Some(PlanStreamEvent::PlanCompleted { plan_id: plan_id.clone() })
-                    }
-                    PlanStatus::Failed | PlanStatus::Cancelled => {
-                        Some(PlanStreamEvent::PlanFailed { plan_id: plan_id.clone() })
-                    }
-                    _ => None,
-                });
+                orbit_core::plan::Plan::load(&plan_id)
+                    .ok()
+                    .and_then(|p| match p.status {
+                        PlanStatus::Completed => Some(PlanStreamEvent::PlanCompleted {
+                            plan_id: plan_id.clone(),
+                        }),
+                        PlanStatus::Failed | PlanStatus::Cancelled => {
+                            Some(PlanStreamEvent::PlanFailed {
+                                plan_id: plan_id.clone(),
+                            })
+                        }
+                        _ => None,
+                    });
 
             if let Some(ev) = current_terminal {
                 let _ = write_event(&mut writer, &ev).await;

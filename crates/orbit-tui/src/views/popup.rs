@@ -1,6 +1,6 @@
 use crate::app::{
-    AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, ShareDialogState,
-    ShareRole, ShareStatus, WriteJiraState,
+    AddMcpField, AddMcpState, FieldSelectState, LaunchField, McpScope, ShareDialogState, ShareRole,
+    ShareStatus, WriteJiraState,
 };
 use crate::mcp::McpEntry;
 use crate::theme::Palette;
@@ -755,12 +755,7 @@ pub fn render_add_comment(f: &mut Frame, area: Rect, state: &WriteJiraState, pal
 
 // ── share dialog popup ────────────────────────────────────────────────────────
 
-pub fn render_share_dialog(
-    f: &mut Frame,
-    area: Rect,
-    state: &ShareDialogState,
-    palette: &Palette,
-) {
+pub fn render_share_dialog(f: &mut Frame, area: Rect, state: &ShareDialogState, palette: &Palette) {
     let popup_area = centered_rect(52, 12, area);
     f.render_widget(Clear, popup_area);
 

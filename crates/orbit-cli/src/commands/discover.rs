@@ -28,24 +28,23 @@ pub fn run(args: DiscoverArgs) -> Result<()> {
 
     while Instant::now() < deadline {
         let remaining = deadline - Instant::now();
-        match receiver.recv_timeout(remaining.min(Duration::from_millis(200))) {
-            Ok(ServiceEvent::ServiceResolved(info)) => {
-                let props = info.get_properties();
-                let obs = props.get("obs").map(|v| v.val_str().to_string());
-                instances.push(DiscoveredInstance {
-                    instance_name: info.get_fullname().to_string(),
-                    hostname: info.get_hostname().to_string(),
-                    port: info.get_port(),
-                    observer_token: obs,
-                });
-                println!(
-                    "  Found: {} at {}:{}",
-                    info.get_fullname(),
-                    info.get_hostname(),
-                    info.get_port()
-                );
-            }
-            _ => {}
+        if let Ok(ServiceEvent::ServiceResolved(info)) =
+            receiver.recv_timeout(remaining.min(Duration::from_millis(200)))
+        {
+            let props = info.get_properties();
+            let obs = props.get("obs").map(|v| v.val_str().to_string());
+            instances.push(DiscoveredInstance {
+                instance_name: info.get_fullname().to_string(),
+                hostname: info.get_hostname().to_string(),
+                port: info.get_port(),
+                observer_token: obs,
+            });
+            println!(
+                "  Found: {} at {}:{}",
+                info.get_fullname(),
+                info.get_hostname(),
+                info.get_port()
+            );
         }
     }
 
@@ -57,10 +56,7 @@ pub fn run(args: DiscoverArgs) -> Result<()> {
     }
 
     println!("\n{} instance(s) found:", instances.len());
-    println!(
-        "{:<30} {:<20} {:<6} {}",
-        "INSTANCE", "HOST", "PORT", "TOKEN"
-    );
+    println!("{:<30} {:<20} {:<6} TOKEN", "INSTANCE", "HOST", "PORT");
     println!("{}", "-".repeat(80));
     for inst in &instances {
         let token_hint = inst

@@ -111,7 +111,7 @@ async fn status() -> Result<()> {
                 return Ok(());
             }
             println!("{} peer(s) connected:", peers.len());
-            println!("{:<25} {:<12} {}", "ADDRESS", "ROLE", "REQUESTS");
+            println!("{:<25} {:<12} REQUESTS", "ADDRESS", "ROLE");
             println!("{}", "-".repeat(50));
             for p in &peers {
                 println!(

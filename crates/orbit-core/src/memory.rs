@@ -448,7 +448,11 @@ mod tests {
         let mut r = make_record("build and test the service");
         r.node_outcomes = vec![
             make_outcome(Some("cargo"), "Completed", None),
-            make_outcome(Some("pytest"), "Failed", Some("ModuleNotFoundError: No module named 'app'")),
+            make_outcome(
+                Some("pytest"),
+                "Failed",
+                Some("ModuleNotFoundError: No module named 'app'"),
+            ),
         ];
         append_plan_run(&r).unwrap();
 
@@ -461,7 +465,13 @@ mod tests {
         assert!(outcomes[0].error_hint.is_none());
         assert_eq!(outcomes[1].executor.as_deref(), Some("pytest"));
         assert_eq!(outcomes[1].status, "Failed");
-        assert!(outcomes[1].error_hint.as_deref().unwrap().contains("ModuleNotFoundError"));
+        assert!(
+            outcomes[1]
+                .error_hint
+                .as_deref()
+                .unwrap()
+                .contains("ModuleNotFoundError")
+        );
     }
 
     #[test]

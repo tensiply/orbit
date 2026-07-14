@@ -1,5 +1,4 @@
 pub mod audit;
-pub mod net;
 pub mod catalog;
 pub mod config;
 pub mod context;
@@ -11,6 +10,7 @@ pub mod hooks;
 pub mod ipc;
 pub mod jira;
 pub mod memory;
+pub mod net;
 pub mod notify;
 pub mod plan;
 pub mod plugin;

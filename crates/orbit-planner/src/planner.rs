@@ -497,7 +497,7 @@ fn build_executor_history(recent_runs: &[PlanRunRecord]) -> String {
 
     // Sort by total run count descending, cap at 8 rows.
     let mut rows: Vec<(&String, &ExecStats)> = stats.iter().collect();
-    rows.sort_by(|a, b| b.1.total.cmp(&a.1.total));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.1.total));
     rows.truncate(8);
 
     let mut s = "\n## Executor History (from similar past runs)\n".to_string();
@@ -506,7 +506,12 @@ fn build_executor_history(recent_runs: &[PlanRunRecord]) -> String {
     s.push_str("| Executor | Success rate | Last failure hint |\n");
     s.push_str("|----------|-------------|-------------------|\n");
     for (exec, stat) in rows {
-        let rate = format!("{}/{} ({:.0}%)", stat.successes, stat.total, stat.successes as f64 / stat.total as f64 * 100.0);
+        let rate = format!(
+            "{}/{} ({:.0}%)",
+            stat.successes,
+            stat.total,
+            stat.successes as f64 / stat.total as f64 * 100.0
+        );
         let hint = stat.last_error.as_deref().unwrap_or("—");
         s.push_str(&format!("| {exec} | {rate} | {hint} |\n"));
     }
@@ -752,7 +757,11 @@ mod tests {
         }
     }
 
-    fn outcome(executor: Option<&str>, status: &str, error_hint: Option<&str>) -> NodeOutcomeSummary {
+    fn outcome(
+        executor: Option<&str>,
+        status: &str,
+        error_hint: Option<&str>,
+    ) -> NodeOutcomeSummary {
         NodeOutcomeSummary {
             label: "node".into(),
             executor: executor.map(|s| s.into()),
@@ -765,15 +774,21 @@ mod tests {
     #[test]
     fn executor_history_aggregates_correctly() {
         let records = vec![
-            make_run_record("build and test", vec![
-                outcome(Some("cargo"), "Completed", None),
-                outcome(Some("cargo"), "Completed", None),
-                outcome(Some("pytest"), "Failed", Some("ModuleNotFoundError")),
-            ]),
-            make_run_record("run tests again", vec![
-                outcome(Some("cargo"), "Completed", None),
-                outcome(Some("pytest"), "Completed", None),
-            ]),
+            make_run_record(
+                "build and test",
+                vec![
+                    outcome(Some("cargo"), "Completed", None),
+                    outcome(Some("cargo"), "Completed", None),
+                    outcome(Some("pytest"), "Failed", Some("ModuleNotFoundError")),
+                ],
+            ),
+            make_run_record(
+                "run tests again",
+                vec![
+                    outcome(Some("cargo"), "Completed", None),
+                    outcome(Some("pytest"), "Completed", None),
+                ],
+            ),
         ];
         let history = build_executor_history(&records);
         assert!(!history.is_empty(), "should produce history section");
@@ -782,16 +797,20 @@ mod tests {
         // cargo: 3/3 success
         assert!(history.contains("3/3"), "should show cargo 3/3");
         // pytest had a failure with this hint
-        assert!(history.contains("ModuleNotFoundError"), "should show error hint");
+        assert!(
+            history.contains("ModuleNotFoundError"),
+            "should show error hint"
+        );
     }
 
     #[test]
     fn executor_history_empty_when_no_executor_nodes() {
-        let records = vec![
-            make_run_record("write some code", vec![
+        let records = vec![make_run_record(
+            "write some code",
+            vec![
                 outcome(None, "Completed", None), // AI engine node
-            ]),
-        ];
+            ],
+        )];
         let history = build_executor_history(&records);
         assert!(history.is_empty(), "should be empty when no executor nodes");
     }
@@ -804,7 +823,10 @@ mod tests {
         let records = vec![make_run_record("large plan", outcomes)];
         let history = build_executor_history(&records);
         // Count table data rows (lines starting with "| plugin_")
-        let data_rows = history.lines().filter(|l| l.starts_with("| plugin_")).count();
+        let data_rows = history
+            .lines()
+            .filter(|l| l.starts_with("| plugin_"))
+            .count();
         assert!(data_rows <= 8, "should cap at 8 rows, got {data_rows}");
     }
 

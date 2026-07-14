@@ -6,7 +6,8 @@ use ratatui::{
 };
 
 pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
-    let chunks = Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).split(area);
+    let chunks =
+        Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).split(area);
 
     let peers = &app.peers_state.peers;
     let peer_rows: Vec<Row> = peers

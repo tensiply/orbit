@@ -1417,8 +1417,7 @@ impl App {
                         self.pending_async = Some(AsyncAction::StopSharing);
                         state.status = ShareStatus::Idle;
                     } else {
-                        self.pending_async =
-                            Some(AsyncAction::StartSharing { role, port, name });
+                        self.pending_async = Some(AsyncAction::StartSharing { role, port, name });
                     }
                     self.mode = Mode::ShareDialog(state);
                 }
@@ -2033,8 +2032,7 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
             {
                 Ok(Ok(Response::ServingStarted { port, .. })) => {
                     app.serving_active = true;
-                    app.status_msg =
-                        Some(format!("Sharing on port {port} via mDNS as '{name}'"));
+                    app.status_msg = Some(format!("Sharing on port {port} via mDNS as '{name}'"));
                 }
                 Ok(Ok(Response::Error { message })) => {
                     app.status_msg = Some(format!("Serve error: {message}"));

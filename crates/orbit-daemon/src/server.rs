@@ -105,7 +105,11 @@ impl ServerState {
                         *guard = Some(k);
                         k
                     }
-                    Err(e) => return Response::Error { message: format!("key error: {e}") },
+                    Err(e) => {
+                        return Response::Error {
+                            message: format!("key error: {e}"),
+                        };
+                    }
                 }
             } else {
                 (*guard).unwrap()
@@ -129,7 +133,11 @@ impl ServerState {
         let observer_token =
             match auth::mint_token(NetworkRole::Observer, &key, 86_400, &instance_name) {
                 Ok(t) => t,
-                Err(e) => return Response::Error { message: format!("token error: {e}") },
+                Err(e) => {
+                    return Response::Error {
+                        message: format!("token error: {e}"),
+                    };
+                }
             };
 
         let contributor_token = if max_network_role == NetworkRole::Contributor {
@@ -153,15 +161,14 @@ impl ServerState {
             signing_key: std::sync::Mutex::new(None),
         });
 
-        let bridge =
-            match serve::start(config, state_clone, self.shutdown_tx.subscribe()).await {
-                Ok(b) => b,
-                Err(e) => {
-                    return Response::Error {
-                        message: format!("TCP bridge error: {e}"),
-                    }
-                }
-            };
+        let bridge = match serve::start(config, state_clone, self.shutdown_tx.subscribe()).await {
+            Ok(b) => b,
+            Err(e) => {
+                return Response::Error {
+                    message: format!("TCP bridge error: {e}"),
+                };
+            }
+        };
 
         let actual_port = bridge.port;
         *self.tcp_bridge.lock().unwrap() = Some(bridge);
@@ -302,7 +309,14 @@ impl ServerState {
                     }
                 };
 
-                match launcher::spawn_background(&scope, &merged, engine_val, None, None, new_session) {
+                match launcher::spawn_background(
+                    &scope,
+                    &merged,
+                    engine_val,
+                    None,
+                    None,
+                    new_session,
+                ) {
                     Ok(session) => Response::Launched {
                         tmux_name: session.tmux_session.unwrap_or_default(),
                         session_id: session.id,
@@ -978,7 +992,12 @@ async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: Co
                 Response::Error {
                     message: "operation not permitted on project socket".into(),
                 }
-            } else if let Request::StartServing { port, max_role, name } = req {
+            } else if let Request::StartServing {
+                port,
+                max_role,
+                name,
+            } = req
+            {
                 state.handle_start_serving(port, max_role, name).await
             } else {
                 unreachable!()

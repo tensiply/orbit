@@ -62,11 +62,7 @@ pub fn mint_token(
 pub fn verify_token(token: &str, key: &[u8; 32]) -> Result<OrbitClaims> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_required_spec_claims(&["exp", "iat"]);
-    let data = decode::<OrbitClaims>(
-        token,
-        &DecodingKey::from_secret(key),
-        &validation,
-    )?;
+    let data = decode::<OrbitClaims>(token, &DecodingKey::from_secret(key), &validation)?;
     Ok(data.claims)
 }
 
@@ -129,10 +125,7 @@ mod tests {
     fn signing_key_persists() {
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var(
-                "XDG_DATA_HOME",
-                tmp.path().join("data").to_str().unwrap(),
-            );
+            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
         }
         let key1 = load_or_create_signing_key().unwrap();
         let key2 = load_or_create_signing_key().unwrap();
