@@ -1393,7 +1393,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orbit"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1407,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-cli"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1437,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-client"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "orbit-core",
@@ -1450,7 +1450,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-core"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-daemon"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -1488,7 +1488,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-dev"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-engine"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -1520,7 +1520,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-eval"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "orbit-core",
@@ -1531,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-integration-tests"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "orbit-client",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-planner"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -1559,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-tui"
-version = "0.10.5"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "crossterm",
