@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-14
+
+### Fixed
+
+- **Session isolation bug** — `orbit launch` now creates separate tmux sessions for different scopes. The previous `tmux has-session` call used prefix/substring matching, causing a child-scope launch (e.g. `jaframx interfaces jf-etl-interfaces`) to incorrectly reattach to a parent-scope session (`jaframx interfaces`). Fixed by switching to exact-match via `tmux list-sessions`.
+- **`--new-session` / `-n` flag** — force a fresh tmux session for an already-open scope. Each new session gets a unique suffix (`-2`, `-3`, …).
+- All `orbit launch` long flags now have single-character shortcuts: `-d` (`--dry-run`), `-x` (`--no-tmux`), `-t` (`--task`), `-T` (`--no-task`), `-n` (`--new-session`).
+
+### Changed
+
+- Bumped `keyring` dependency from 3 to 4 (API-compatible).
+- Fixed pre-existing `cargo fmt` and `cargo clippy` warnings across several crates.
+
 ## [0.11.0] - 2026-07-14
 
 ### Added
