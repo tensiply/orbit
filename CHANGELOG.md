@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-14
+
+### Added
+
+- **Planning system** (`orbit plan`) — autonomous AI task execution. Subcommands: `create`, `list`, `get`, `cancel`, `history`, `watch`, `retry`, `logs`, `export`, `import`, `audit`, `costs`, `diff`. Plans are composed of typed nodes dispatched to specialist engines; the planner decomposes natural-language intent into a structured DAG.
+- **`orbit plan --foreground`** — create a plan and stream its output in a single call.
+- **`orbit plan new`** — interactive wizard for plan creation.
+- **`orbit plan template`** — built-in specialist templates: `pr`, `code`, `verify`, `test`, `review`. Subcommands: `list`, `show`, `run`, `create`, `from-plan`.
+- **Plan supervisor** — node dispatch loop with timeout enforcement, budget hard-stop, pause/resume, verify-retry-replan loop, and auto-archival of completed plans.
+- **Budget enforcement** — configurable budget per plan (tokens or cost). The supervisor halts execution when the limit is reached. Tracked via `orbit plan costs` and `orbit plan audit`.
+- **`orbit memory`** — BM25 semantic search over plan run history. Subcommands: `search`, `list`, `show`. Cost and template metadata tracked per execution. Planner uses recent history as context.
+- **`orbit plan audit`** / **`orbit plan costs`** — cost enrichment and aggregate stats across plan executions.
+- **Streaming plan events** — IPC broadcast channel streams live node output to `orbit plan watch` and the TUI Plans tab.
+- **Streaming pipe-pane output** — daemon captures tmux pipe-pane output per node and broadcasts via `NodeOutput`.
+- **Scheduling and webhooks** — plans can be scheduled via cron expression or triggered by incoming webhooks. Managed from the TUI Schedules view.
+- **Desktop notifications** — `orbit notify` and automatic notifications on plan completion.
+- **`orbit context`** — inspect active context layers, instructions, and MCP servers for the current scope.
+- **Cross-repo DAG** — plan nodes can target different scopes via `scope_override`, enabling cross-repository workflows.
+- **`orbit plan import`** / **`list --scope` / `--group`** — import plans from files; filter plan list by scope or group.
+- **TUI Plans tab** — live plan dashboard: node tree, status, streaming log preview, plan diff, markdown export. Accessible via tab key.
+- **TUI Scopes tab** (`[7]`) — cross-scope plan view showing plans across all accessible scopes.
+- **`orbit workspace`** — register and manage multiple workspace configurations. Subcommands: `add`, `list`, `default`, `remove`. Workspace-scoped storage paths for audit and memory.
+- **TUI Workspaces tab** (`[8]`) — shows all registered workspaces.
+- **`orbit workspace` scoped audit/memory** — `orbit plan list --workspace` filters plans by workspace.
+- **Resolver moved to `orbit-core`** — scope resolution is now available to all crates. AI-assisted scope detection via `suggest_scope()`.
+- **`orbit plan` auto-scope** — `orbit plan create` auto-detects scope from cwd via the resolver, with AI fallback.
+- **Integration test harness** — `orbit-integration-tests` crate covering daemon/plan lifecycle, streaming events, supervisor state machine, approval gate, and schedule CRUD.
+- **Executor plugins** — pluggable backends for plan node execution. Plugins declared in `orbit.json`; the planner generates executor plugin nodes.
+- **Planner AI integration** — planner generates executor plugin nodes (P17); executor history context injected into the planner prompt (P18).
+- **`orbit serve`** — share an orbit instance over the LAN. mDNS zero-config discovery, RBAC with granular Contributor/Observer roles, local JWT auth. Non-blocking by default; use `--foreground` to run in the foreground.
+- **`orbit serve stop`** / **`orbit serve status`** — stop the server or check its status.
+- **`orbit discover`** — find orbit instances on the local network via mDNS.
+- **TUI Peers tab** (`[9]`) — shows orbit instances discovered on the local network.
+- **`orbit env`** — manage environment variables in `orbit.json` per scope. Subcommands: `set`, `get`, `delete`, `list`.
+- **`orbit secret`** — store and retrieve secrets in the OS keychain. Subcommands: `set`, `get`, `delete`.
+- **Secret resolvers** — `orbit.json` env values support `secret://keychain/<key>`, `env://<VAR>`, and `file://<path>` prefixes; resolved at launch time.
+- **`orbit daemon health`** — IPC health check endpoint.
+- **`orbit completions install`** — installs shell completions to the appropriate system path.
+- **`orbit man`** — generate and install man pages.
+- **`orbit doctor` enhancements** — additional checks and structured output improvements.
+- **Per-engine dry-run** — `orbit launch --dry-run` shows the actual exec command and real context per engine (Claude: `--append-system-prompt-file`; Gemini: merged `GEMINI.md`).
+- **Runtime instruction injection** — Claude instructions injected via `--append-system-prompt-file`; Gemini instructions via a merged `GEMINI.md` written to the runtime dir.
+- **`@ref` expansion in dry-run** — Claude context section expands `@path` references.
+- **`user.name` config** — configurable user name shown as prefix in tmux session names.
+- **RBAC granular roles** — Contributor vs Observer roles at the project socket level.
+
+### Changed
+
+- `source-of-truth/opencode/` directories renamed to `source-of-truth/orbit/` — engine-agnostic governance layout.
+- tmux session name format: `user@orbit.<engine>.<scope-path>` (simplified for tmux safety).
+- `orbit serve` is now non-blocking by default (previously blocking); use `--foreground` to restore the old behaviour.
+
+### Fixed
+
+- **`ORBIT_CONFIG_HOME`** — the real XDG config dir is now preserved before orbit overrides `XDG_CONFIG_HOME` for session isolation. Engines that read `XDG_CONFIG_HOME` (e.g. for auth config) no longer lose their config path.
+- **Nested YAML frontmatter in agent file merge** — multi-level YAML frontmatter is now preserved correctly when merging agent overlay files.
+- **Clippy warnings** — all warnings resolved across all crates.
+- **`TMUX` env var isolation** in `already_inside` detection test — prevents false positives when running tests inside a tmux session.
+
 ## [0.10.5] - 2026-07-06
 
 ### Added
@@ -202,19 +261,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 
 [Unreleased]: https://github.com/befraeloircorona/orbit/compare/v0.11.0...HEAD
-[0.11.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.11.0
-[0.10.5]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.5
-[0.10.4]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.4
+[0.11.0]: https://github.com/befraeloircorona/orbit/compare/v0.10.5...v0.11.0
+[0.10.5]: https://github.com/befraeloircorona/orbit/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/befraeloircorona/orbit/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/befraeloircorona/orbit/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/befraeloircorona/orbit/compare/v0.10.1...v0.10.2
-[0.10.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.1
-[0.10.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.10.0
-[0.9.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.9.0
-[0.8.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.8.0
-[main]: https://github.com/befraeloircorona/orbit/releases/tag/main
-[0.4.1]: https://github.com/befraeloircorona/orbit/releases/tag/v0.4.1
-[0.4.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.4.0
-[0.3.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.3.0
-[0.2.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.2.0
+[0.10.1]: https://github.com/befraeloircorona/orbit/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/befraeloircorona/orbit/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/befraeloircorona/orbit/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/befraeloircorona/orbit/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/befraeloircorona/orbit/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/befraeloircorona/orbit/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/befraeloircorona/orbit/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/befraeloircorona/orbit/compare/v0.3.0...v0.4.1
+[0.3.0]: https://github.com/befraeloircorona/orbit/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/befraeloircorona/orbit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.1.0
