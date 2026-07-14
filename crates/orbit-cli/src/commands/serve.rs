@@ -7,26 +7,30 @@ pub struct ServeArgs {
     #[command(subcommand)]
     pub command: Option<ServeCommand>,
 
-    /// TCP port to listen on (used when no subcommand is given)
+    /// TCP port to listen on
     #[arg(long, default_value = "7373", global = true)]
     pub port: u16,
 
-    /// Maximum role to grant network peers (used when no subcommand is given)
+    /// Maximum role to grant network peers
     #[arg(long, value_enum, default_value = "observer", global = true)]
     pub role: ServeRole,
 
     /// Instance name for mDNS (default: hostname)
     #[arg(long, global = true)]
     pub name: Option<String>,
+
+    /// Block the terminal until Ctrl+C (default: exits immediately, daemon keeps serving)
+    #[arg(long, global = true)]
+    pub foreground: bool,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum ServeCommand {
-    /// Start sharing (default when no subcommand is given)
+    /// Start sharing — daemon keeps serving after this command exits (default)
     Start,
-    /// Stop sharing and close the TCP listener
+    /// Stop sharing and close the TCP listener + mDNS announcement
     Stop,
-    /// Show current sharing status and connected peers
+    /// Show connected peers and sharing status
     Status,
 }
 
@@ -38,13 +42,13 @@ pub enum ServeRole {
 
 pub async fn run(args: ServeArgs) -> Result<()> {
     match args.command.unwrap_or(ServeCommand::Start) {
-        ServeCommand::Start => start(args.port, args.role, args.name).await,
+        ServeCommand::Start => start(args.port, args.role, args.name, args.foreground).await,
         ServeCommand::Stop => stop().await,
         ServeCommand::Status => status().await,
     }
 }
 
-async fn start(port: u16, role: ServeRole, name: Option<String>) -> Result<()> {
+async fn start(port: u16, role: ServeRole, name: Option<String>, foreground: bool) -> Result<()> {
     let max_role = match role {
         ServeRole::Observer => ProjectRole::Observer,
         ServeRole::Contributor => ProjectRole::Contributor,
@@ -56,12 +60,12 @@ async fn start(port: u16, role: ServeRole, name: Option<String>) -> Result<()> {
             .unwrap_or_else(|| "orbit".to_string())
     });
 
-    let req = Request::StartServing {
+    let resp = orbit_client::ipc::send_raw(&Request::StartServing {
         port,
         max_role,
         name: name.clone(),
-    };
-    let resp = orbit_client::ipc::send_raw(&req).await?;
+    })
+    .await?;
 
     match resp {
         Response::ServingStarted {
@@ -69,21 +73,20 @@ async fn start(port: u16, role: ServeRole, name: Option<String>) -> Result<()> {
             observer_token: _,
             contributor_token,
         } => {
-            println!("orbit serve: listening on port {actual_port}");
-            println!("mDNS: announcing as '{name}'");
-            if contributor_token.is_some() {
-                println!("Role: contributor (peers can read + approve nodes)");
+            let role_label = if contributor_token.is_some() {
+                "contributor"
             } else {
-                println!("Role: observer (peers can read plans and stream output)");
-            }
-            println!("Press Ctrl+C or run `orbit serve stop` to stop sharing.");
+                "observer"
+            };
+            println!("Serving on port {actual_port} as '{name}' [{role_label}]");
+            println!("Run `orbit serve stop` to stop sharing.");
 
-            tokio::signal::ctrl_c().await?;
-            stop().await?;
+            if foreground {
+                tokio::signal::ctrl_c().await?;
+                stop().await?;
+            }
         }
-        Response::Error { message } => {
-            anyhow::bail!("serve error: {message}");
-        }
+        Response::Error { message } => anyhow::bail!("serve error: {message}"),
         _ => anyhow::bail!("unexpected response from daemon"),
     }
     Ok(())
@@ -92,7 +95,7 @@ async fn start(port: u16, role: ServeRole, name: Option<String>) -> Result<()> {
 async fn stop() -> Result<()> {
     let resp = orbit_client::ipc::send_raw(&Request::StopServing).await?;
     match resp {
-        Response::ServingStopped => println!("orbit serve: stopped."),
+        Response::ServingStopped => println!("Sharing stopped."),
         Response::Error { message } => anyhow::bail!("stop error: {message}"),
         _ => anyhow::bail!("unexpected response from daemon"),
     }
@@ -104,20 +107,22 @@ async fn status() -> Result<()> {
     match resp {
         Response::NetworkPeers { peers } => {
             if peers.is_empty() {
-                println!("Not sharing (no active TCP bridge).");
+                println!("Not sharing.");
                 return Ok(());
             }
             println!("{} peer(s) connected:", peers.len());
             println!("{:<25} {:<12} {}", "ADDRESS", "ROLE", "REQUESTS");
             println!("{}", "-".repeat(50));
             for p in &peers {
-                println!("{:<25} {:<12} {}", p.addr, format!("{:?}", p.role), p.requests);
+                println!(
+                    "{:<25} {:<12} {}",
+                    p.addr,
+                    format!("{:?}", p.role),
+                    p.requests
+                );
             }
         }
-        Response::Error { message } => {
-            // daemon returns Error if not serving — treat as "not sharing"
-            println!("Not sharing: {message}");
-        }
+        Response::Error { message } => println!("Not sharing: {message}"),
         _ => anyhow::bail!("unexpected response from daemon"),
     }
     Ok(())
