@@ -49,7 +49,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(title, Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     if app.schedules.schedules.is_empty() {
         let msg = Paragraph::new(vec![

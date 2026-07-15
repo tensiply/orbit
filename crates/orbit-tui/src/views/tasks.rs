@@ -15,7 +15,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(" Tasks ", Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -112,6 +112,9 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
 fn render_table(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let dim = app.palette.dim;
+    let warning = app.palette.warning;
+    let success = app.palette.success;
+    let danger = app.palette.danger;
     let filtered = app.tasks.filtered_issues();
 
     if filtered.is_empty() {
@@ -136,7 +139,10 @@ fn render_table(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     ])
     .height(1);
 
-    let rows: Vec<Row> = filtered.iter().map(|issue| issue_row(issue, dim)).collect();
+    let rows: Vec<Row> = filtered
+        .iter()
+        .map(|issue| issue_row(issue, dim, warning, success, danger))
+        .collect();
 
     let sel_bg = app.palette.selected_bg;
     let sel_fg = app.palette.selected_fg;
@@ -162,9 +168,16 @@ fn render_table(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     f.render_stateful_widget(table, area, &mut app.tasks.table_state);
 }
 
-fn issue_row(issue: &JiraIssue, dim: Color) -> Row<'static> {
-    let (pri_sym, pri_style) = priority_display(&issue.priority, dim);
-    let (status_str, status_style) = status_display(&issue.status, &issue.status_color, dim);
+fn issue_row(
+    issue: &JiraIssue,
+    dim: Color,
+    warning: Color,
+    success: Color,
+    danger: Color,
+) -> Row<'static> {
+    let (pri_sym, pri_style) = priority_display(&issue.priority, dim, warning, danger);
+    let (status_str, status_style) =
+        status_display(&issue.status, &issue.status_color, dim, warning, success, danger);
 
     Row::new(vec![
         Cell::from(pri_sym).style(pri_style),
@@ -176,15 +189,20 @@ fn issue_row(issue: &JiraIssue, dim: Color) -> Row<'static> {
     .height(1)
 }
 
-fn priority_display(priority: &str, dim: Color) -> (&'static str, Style) {
+fn priority_display(
+    priority: &str,
+    dim: Color,
+    warning: Color,
+    danger: Color,
+) -> (&'static str, Style) {
     let p = priority.to_lowercase();
     if p.contains("highest") || p.contains("critical") || p.contains("blocker") {
         (
             "↑↑",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default().fg(danger).add_modifier(Modifier::BOLD),
         )
     } else if p.contains("high") {
-        ("↑ ", Style::default().fg(Color::Yellow))
+        ("↑ ", Style::default().fg(warning))
     } else if p.contains("medium") || p.contains("normal") || p.contains("medio") {
         ("→ ", Style::default().fg(Color::Reset))
     } else if p.contains("low") {
@@ -194,11 +212,18 @@ fn priority_display(priority: &str, dim: Color) -> (&'static str, Style) {
     }
 }
 
-fn status_display(status: &str, color_name: &str, dim: Color) -> (String, Style) {
+fn status_display(
+    status: &str,
+    color_name: &str,
+    dim: Color,
+    warning: Color,
+    success: Color,
+    danger: Color,
+) -> (String, Style) {
     let style = match color_name {
-        "yellow" => Style::default().fg(Color::Yellow),
-        "green" => Style::default().fg(Color::Green),
-        "warm-red" | "red" => Style::default().fg(Color::Red),
+        "yellow" => Style::default().fg(warning),
+        "green" => Style::default().fg(success),
+        "warm-red" | "red" => Style::default().fg(danger),
         _ => Style::default().fg(dim),
     };
     (status.to_string(), style)

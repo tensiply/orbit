@@ -13,7 +13,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(" System ", Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     let inner = block.inner(area);
     f.render_widget(block, area);

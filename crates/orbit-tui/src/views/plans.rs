@@ -93,7 +93,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(title, Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     if app.plans.plans.is_empty() {
         let msg = Paragraph::new(vec![
@@ -110,7 +110,8 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         let detail_block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(dim))
-            .title(Span::styled(" Nodes ", Style::default().fg(dim)));
+            .title(Span::styled(" Nodes ", Style::default().fg(dim)))
+            .padding(Padding::uniform(1));
         f.render_widget(detail_block, chunks[1]);
         return;
     }
@@ -182,7 +183,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(" Nodes ", Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     let selected_plan: Option<&Plan> = app.plans.plans.get(app.plans.selected);
     match selected_plan {

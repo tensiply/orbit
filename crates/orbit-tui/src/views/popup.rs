@@ -565,6 +565,9 @@ pub fn render_task_details(f: &mut Frame, area: Rect, detail: &JiraIssueDetail, 
     let popup_area = centered_rect(w, h, area);
     let accent = palette.accent;
     let dim = palette.dim;
+    let warning = palette.warning;
+    let success = palette.success;
+    let danger = palette.danger;
 
     f.render_widget(Clear, popup_area);
 
@@ -584,17 +587,26 @@ pub fn render_task_details(f: &mut Frame, area: Rect, detail: &JiraIssueDetail, 
         .constraints([Constraint::Length(7), Constraint::Min(0)])
         .split(inner);
 
-    render_detail_meta(f, detail, chunks[0], accent, dim);
+    render_detail_meta(f, detail, chunks[0], accent, dim, warning, success, danger);
     render_detail_body(f, detail, chunks[1], accent, dim);
 }
 
-fn render_detail_meta(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Color, dim: Color) {
+fn render_detail_meta(
+    f: &mut Frame,
+    d: &JiraIssueDetail,
+    area: Rect,
+    accent: Color,
+    dim: Color,
+    warning: Color,
+    success: Color,
+    danger: Color,
+) {
     let k = |s: &str| Span::styled(format!("{:<12}", s), Style::default().fg(accent));
 
     let status_style = match d.status_color.as_str() {
-        "yellow" => Style::default().fg(Color::Yellow),
-        "green" => Style::default().fg(Color::Green),
-        "warm-red" | "red" => Style::default().fg(Color::Red),
+        "yellow" => Style::default().fg(warning),
+        "green" => Style::default().fg(success),
+        "warm-red" | "red" => Style::default().fg(danger),
         _ => Style::default().fg(dim),
     };
 
@@ -679,7 +691,7 @@ fn render_detail_body(f: &mut Frame, d: &JiraIssueDetail, area: Rect, accent: Co
     lines.push(Line::from(""));
 
     if let Some(adf_val) = &d.description_adf {
-        let adf_lines = adf::render(adf_val, dim);
+        let adf_lines = adf::render(adf_val, dim, accent);
         if adf_lines.is_empty() || adf_lines.iter().all(|l| l.spans.is_empty()) {
             lines.push(Line::from(Span::styled(
                 "(no description)",
