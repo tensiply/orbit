@@ -2,10 +2,13 @@ use crate::app::App;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    style::Style,
+    text::Span,
+    widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table},
 };
 
 pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
+    let dim = app.palette.dim;
     let chunks =
         Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).split(area);
 
@@ -33,7 +36,12 @@ pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Connected Peers — [S] share  [r] refresh "),
+            .border_style(Style::default().fg(dim))
+            .title(Span::styled(
+                " Connected Peers — [S] share  [r] refresh ",
+                Style::default().fg(dim),
+            ))
+            .padding(Padding::uniform(1)),
     );
 
     f.render_widget(peers_table, chunks[0]);
@@ -44,7 +52,15 @@ pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
         "Not sharing. Press [S] to start sharing via LAN."
     };
 
-    let info = Paragraph::new(info_text)
-        .block(Block::default().borders(Borders::ALL).title(" LAN Status "));
+    let info = Paragraph::new(info_text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(dim))
+            .title(Span::styled(
+                " LAN Status ",
+                Style::default().fg(dim),
+            ))
+            .padding(Padding::uniform(1)),
+    );
     f.render_widget(info, chunks[1]);
 }

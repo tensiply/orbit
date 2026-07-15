@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table},
 };
 
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -64,7 +64,8 @@ fn render_sessions(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
-        .title(Span::styled(" Sessions ", Style::default().fg(dim)));
+        .title(Span::styled(" Sessions ", Style::default().fg(dim)))
+        .padding(Padding::uniform(1));
 
     if app.sessions.is_empty() {
         let text = vec![

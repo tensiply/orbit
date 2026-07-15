@@ -9,13 +9,13 @@ use ratatui::{
 };
 use serde_json::Value;
 
-pub fn render(val: &Value, dim: Color) -> Vec<Line<'static>> {
+pub fn render(val: &Value, dim: Color, accent: Color) -> Vec<Line<'static>> {
     let empty = vec![];
     let nodes = val
         .get("content")
         .and_then(|c| c.as_array())
         .unwrap_or(&empty);
-    render_blocks(nodes, 0, &mut 0, dim)
+    render_blocks(nodes, 0, &mut 0, dim, accent)
 }
 
 // ── block nodes ───────────────────────────────────────────────────────────────
@@ -25,10 +25,11 @@ fn render_blocks(
     list_depth: usize,
     list_idx: &mut usize,
     dim: Color,
+    accent: Color,
 ) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     for node in nodes {
-        out.extend(render_block(node, list_depth, list_idx, dim));
+        out.extend(render_block(node, list_depth, list_idx, dim, accent));
     }
     out
 }
@@ -38,6 +39,7 @@ fn render_block(
     list_depth: usize,
     list_idx: &mut usize,
     dim: Color,
+    accent: Color,
 ) -> Vec<Line<'static>> {
     let node_type = node.get("type").and_then(|t| t.as_str()).unwrap_or("");
     let content = node.get("content").and_then(|c| c.as_array());
@@ -45,11 +47,11 @@ fn render_block(
     match node_type {
         "doc" => {
             let empty = vec![];
-            render_blocks(content.unwrap_or(&empty), 0, &mut 0, dim)
+            render_blocks(content.unwrap_or(&empty), 0, &mut 0, dim, accent)
         }
 
         "paragraph" => {
-            let spans = collect_inline(content.map_or(&[], |v| v), dim);
+            let spans = collect_inline(content.map_or(&[], |v| v), dim, accent);
             let mut out = vec![Line::from(spans)];
             out.push(Line::from(""));
             out
@@ -61,11 +63,12 @@ fn render_block(
                 .and_then(|a| a.get("level"))
                 .and_then(|l| l.as_u64())
                 .unwrap_or(1);
-            let style = heading_style(level);
-            let spans: Vec<Span<'static>> = collect_inline(content.map_or(&[], |v| v), dim)
-                .into_iter()
-                .map(|s| Span::styled(s.content.to_string(), s.style.patch(style)))
-                .collect();
+            let style = heading_style(level, accent);
+            let spans: Vec<Span<'static>> =
+                collect_inline(content.map_or(&[], |v| v), dim, accent)
+                    .into_iter()
+                    .map(|s| Span::styled(s.content.to_string(), s.style.patch(style)))
+                    .collect();
             let mut out = vec![Line::from(spans)];
             out.push(Line::from(""));
             out
@@ -78,8 +81,13 @@ fn render_block(
             for item in items {
                 let prefix = format!("{}• ", "  ".repeat(list_depth));
                 let item_content = item.get("content").and_then(|c| c.as_array());
-                let inner =
-                    render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
+                let inner = render_blocks(
+                    item_content.map_or(&[], |v| v),
+                    list_depth + 1,
+                    &mut 0,
+                    dim,
+                    accent,
+                );
                 for (i, line) in inner.into_iter().enumerate() {
                     if i == 0 {
                         let mut spans =
@@ -108,8 +116,13 @@ fn render_block(
                 let n = start + i;
                 let prefix = format!("{}{}. ", "  ".repeat(list_depth), n);
                 let item_content = item.get("content").and_then(|c| c.as_array());
-                let inner =
-                    render_blocks(item_content.map_or(&[], |v| v), list_depth + 1, &mut 0, dim);
+                let inner = render_blocks(
+                    item_content.map_or(&[], |v| v),
+                    list_depth + 1,
+                    &mut 0,
+                    dim,
+                    accent,
+                );
                 for (j, line) in inner.into_iter().enumerate() {
                     if j == 0 {
                         let mut spans =
@@ -143,10 +156,10 @@ fn render_block(
                     Style::default().fg(dim),
                 )));
             }
-            for span in collect_inline(content.map_or(&[], |v| v), dim) {
+            for span in collect_inline(content.map_or(&[], |v| v), dim, accent) {
                 out.push(Line::from(vec![
                     Span::styled("  │ ", Style::default().fg(dim)),
-                    Span::styled(span.content.to_string(), Style::default().fg(Color::Cyan)),
+                    Span::styled(span.content.to_string(), Style::default().fg(accent)),
                 ]));
             }
             out.push(Line::from(Span::styled(
@@ -159,7 +172,7 @@ fn render_block(
 
         "blockquote" => {
             let empty = vec![];
-            let inner = render_blocks(content.unwrap_or(&empty), list_depth, &mut 0, dim);
+            let inner = render_blocks(content.unwrap_or(&empty), list_depth, &mut 0, dim, accent);
             let mut out = Vec::new();
             for line in inner {
                 let mut spans = vec![Span::styled("  │ ", Style::default().fg(dim))];
@@ -197,7 +210,7 @@ fn render_block(
         }
 
         // pass-through containers
-        "listItem" => render_blocks(content.map_or(&[], |v| v), list_depth, list_idx, dim),
+        "listItem" => render_blocks(content.map_or(&[], |v| v), list_depth, list_idx, dim, accent),
 
         _ => vec![],
     }
@@ -205,11 +218,14 @@ fn render_block(
 
 // ── inline nodes ──────────────────────────────────────────────────────────────
 
-fn collect_inline(nodes: &[Value], dim: Color) -> Vec<Span<'static>> {
-    nodes.iter().flat_map(|n| inline_span(n, dim)).collect()
+fn collect_inline(nodes: &[Value], dim: Color, accent: Color) -> Vec<Span<'static>> {
+    nodes
+        .iter()
+        .flat_map(|n| inline_span(n, dim, accent))
+        .collect()
 }
 
-fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
+fn inline_span(node: &Value, dim: Color, accent: Color) -> Vec<Span<'static>> {
     let node_type = node.get("type").and_then(|t| t.as_str()).unwrap_or("");
     match node_type {
         "text" => {
@@ -218,7 +234,7 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
                 .and_then(|t| t.as_str())
                 .unwrap_or("")
                 .to_string();
-            let style = marks_style(node.get("marks").and_then(|m| m.as_array()));
+            let style = marks_style(node.get("marks").and_then(|m| m.as_array()), accent);
             vec![Span::styled(text, style)]
         }
 
@@ -231,7 +247,7 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("@?")
                 .to_string();
-            vec![Span::styled(name, Style::default().fg(Color::Cyan))]
+            vec![Span::styled(name, Style::default().fg(accent))]
         }
 
         "emoji" => {
@@ -255,7 +271,7 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
             vec![Span::styled(
                 format!("[🔗 {url}]"),
                 Style::default()
-                    .fg(Color::Blue)
+                    .fg(accent)
                     .add_modifier(Modifier::UNDERLINED),
             )]
         }
@@ -268,7 +284,7 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
         _ => {
             // Unknown inline: recurse into content if available
             if let Some(content) = node.get("content").and_then(|c| c.as_array()) {
-                collect_inline(content, dim)
+                collect_inline(content, dim, accent)
             } else {
                 vec![]
             }
@@ -276,17 +292,17 @@ fn inline_span(node: &Value, dim: Color) -> Vec<Span<'static>> {
     }
 }
 
-fn marks_style(marks: Option<&Vec<Value>>) -> Style {
+fn marks_style(marks: Option<&Vec<Value>>, accent: Color) -> Style {
     let mut style = Style::default();
     let Some(marks) = marks else { return style };
     for mark in marks {
         match mark.get("type").and_then(|t| t.as_str()) {
             Some("strong") => style = style.add_modifier(Modifier::BOLD),
             Some("em") => style = style.add_modifier(Modifier::ITALIC),
-            Some("code") => style = style.fg(Color::Cyan),
+            Some("code") => style = style.fg(accent),
             Some("strike") => style = style.add_modifier(Modifier::CROSSED_OUT),
             Some("underline") => style = style.add_modifier(Modifier::UNDERLINED),
-            Some("link") => style = style.fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
+            Some("link") => style = style.fg(accent).add_modifier(Modifier::UNDERLINED),
             Some("textColor") => {
                 if let Some(hex) = mark
                     .get("attrs")
@@ -315,11 +331,9 @@ fn hex_to_color(hex: &str) -> Color {
     }
 }
 
-fn heading_style(level: u64) -> Style {
+fn heading_style(level: u64, accent: Color) -> Style {
     match level {
-        1 => Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
+        1 => Style::default().fg(accent).add_modifier(Modifier::BOLD),
         2 => Style::default()
             .fg(Color::Reset)
             .add_modifier(Modifier::BOLD),

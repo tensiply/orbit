@@ -23,7 +23,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
         .title(Span::styled(" Launch ", Style::default().fg(dim)))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::uniform(1));
 
     let inner = block.inner(area);
     f.render_widget(block, area);

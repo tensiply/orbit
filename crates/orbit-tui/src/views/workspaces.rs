@@ -5,8 +5,19 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
+
+fn dim_block(title: &str, dim: ratatui::style::Color) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(dim))
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(dim),
+        ))
+        .padding(Padding::uniform(1))
+}
 
 pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let accent = app.palette.accent;
@@ -20,7 +31,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 "No workspaces registered.\nRun `orbit workspace add <path>` to register one.\nPress [r] to refresh.",
             )
             .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title(" Workspaces ")),
+            .block(dim_block("Workspaces", dim)),
             area,
         );
         return;
@@ -79,7 +90,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .collect();
 
     let ws_list = List::new(ws_items)
-        .block(Block::default().borders(Borders::ALL).title(" Workspaces "))
+        .block(dim_block("Workspaces", dim))
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     let mut list_state = ListState::default();
@@ -201,11 +212,9 @@ pub fn render(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     }
 
     f.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {} ", entry.name)),
-        ),
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(dim_block(&entry.name, dim)),
         chunks[1],
     );
 }
