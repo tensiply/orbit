@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-15
+
+### Fixed
+
+- **TUI theme consistency** — all views now use palette colors (`accent`, `dim`, `warning`, `success`, `danger`) instead of hardcoded `Color::Red/Yellow/Green/Blue/Cyan`. Affects: priority and status colors in tasks, ADF code blocks/links/mentions/headings, Jira status in task detail popup, and border/title colors in scopes, workspaces, and peers panels.
+- **TUI padding uniformity** — all content panels now use `Padding::uniform(1)` (1 char on all four sides). Previously some panels used `Padding::horizontal(1)` (left/right only) and several had no padding at all.
+
 ## [0.11.1] - 2026-07-14
 
 ### Fixed
