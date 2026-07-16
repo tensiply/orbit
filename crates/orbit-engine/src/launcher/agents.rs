@@ -137,6 +137,23 @@ fn build_opencode(scope: &OrbitScope, runtime_dir: &Path) -> Result<()> {
         ensure_symlink(&skills_dir, &shared_skills)?;
     }
 
+    // ── global opencode skills → runtime XDG config dir ──────────────────────
+    // Orbit overrides XDG_CONFIG_HOME for session isolation, so opencode cannot
+    // find skills from ~/.config/opencode/skills/. Bridge them into the runtime
+    // config dir via symlink. ORBIT_CONFIG_HOME preserves the real config path.
+    let real_config = std::env::var("ORBIT_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::BaseDirs::new()
+                .map(|b| b.home_dir().join(".config"))
+                .unwrap_or_else(|| PathBuf::from("/.config"))
+        });
+    let global_opencode_skills = real_config.join("opencode/skills");
+    if global_opencode_skills.is_dir() {
+        let runtime_skills = runtime_dir.join("config/opencode/skills");
+        ensure_symlink(&runtime_skills, &global_opencode_skills)?;
+    }
+
     // ── materialise into work_dir/.opencode ───────────────────────────────────
     materialize_workdir(&runtime_opencode, &scope.work_dir.join(".opencode"))
 }
@@ -177,6 +194,15 @@ fn build_claude(scope: &OrbitScope, runtime_dir: &Path, instructions: &[PathBuf]
             None
         };
         write_agent_file_with_list(&agents_dir, &name, &description, &body, extra)?;
+    }
+
+    // ── commands ──────────────────────────────────────────────────────────────
+    let commands_dir = runtime_claude.join("commands");
+    fs::create_dir_all(&commands_dir)?;
+    for (name, _) in manifest_section(&manifest, "commands") {
+        if let Some(text) = merge_layered_markdown(scope, "commands", &name, &shared, &local) {
+            fs::write(commands_dir.join(format!("{name}.md")), text)?;
+        }
     }
 
     // ── skills + README symlinks ──────────────────────────────────────────────
