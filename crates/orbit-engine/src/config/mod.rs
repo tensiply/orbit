@@ -559,7 +559,11 @@ fn config_candidates(engine: Engine) -> &'static [&'static str] {
 }
 
 fn dirs_global_config() -> PathBuf {
-    // Respect XDG_CONFIG_HOME if set, otherwise ~/.config
+    // ORBIT_CONFIG_HOME is set by the launcher before it overrides XDG_CONFIG_HOME
+    // for session isolation. Use it to find the real user config dir.
+    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(orbit_home);
+    }
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg)
     } else {
