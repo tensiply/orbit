@@ -45,3 +45,17 @@ description = "Up-to-date library and framework documentation"
 command = ["npx", "-y", "@upstash/context7-mcp@latest"]
 required_vars = []
 optional_vars = []
+
+[[mcps]]
+name = "ast-grep"
+description = "Structural code search and rewrite using AST patterns"
+command = ["npx", "-y", "@notprolands/ast-grep-mcp"]
+required_vars = []
+optional_vars = []
+
+[[mcps]]
+name = "websearch"
+description = "Web search via DuckDuckGo"
+command = ["npx", "-y", "websearch-mcp"]
+required_vars = []
+optional_vars = []

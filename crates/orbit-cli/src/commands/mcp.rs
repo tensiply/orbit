@@ -69,25 +69,23 @@ pub fn run(args: McpArgs) -> Result<()> {
 
 fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     let scope = detect_scope_required(scope_override)?;
-    let mcps = catalog::mcps();
+    let catalog_mcps = catalog::mcps();
+    let scope_mcps = collect_all_scope_mcps(&scope, scope_override);
+    let catalog_names: std::collections::HashSet<&str> =
+        catalog_mcps.iter().map(|m| m.name.as_str()).collect();
 
-    if mcps.is_empty() {
-        println!("No MCPs in catalog.");
-        return Ok(());
+    // Build unified list: (name, description, scope_label_if_enabled, vars_hint)
+    struct Row {
+        name: String,
+        desc: String,
+        enabled_at: Option<String>,
+        vars_hint: String,
     }
 
-    let scope_label = scope_description(&scope, scope_override);
-    println!("mcps  \x1b[2m(scope: {scope_label})\x1b[0m\n");
+    let mut rows: Vec<Row> = Vec::new();
 
-    let name_w = mcps.iter().map(|m| m.name.len()).max().unwrap_or(8).max(8);
-
-    for m in &mcps {
+    for m in &catalog_mcps {
         let enabled_at = find_enabled_scope(&m.name, &scope, scope_override);
-        let (status, tag) = match &enabled_at {
-            Some(lvl) => ("\x1b[32m●\x1b[0m", format!("  \x1b[32m[{lvl}]\x1b[0m")),
-            None => ("\x1b[2m○\x1b[0m", "\x1b[2m  [disabled]\x1b[0m".to_string()),
-        };
-
         let vars_hint = if !m.required_vars.is_empty() {
             format!(
                 "  \x1b[33m({} var{})\x1b[0m",
@@ -97,24 +95,64 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
         } else {
             String::new()
         };
+        rows.push(Row {
+            name: m.name.clone(),
+            desc: m.description.clone(),
+            enabled_at,
+            vars_hint,
+        });
+    }
 
+    // Custom MCPs: in scope files but not in catalog — always enabled
+    let mut custom_names: Vec<String> = scope_mcps
+        .keys()
+        .filter(|n| !catalog_names.contains(n.as_str()))
+        .cloned()
+        .collect();
+    custom_names.sort();
+    for name in &custom_names {
+        rows.push(Row {
+            name: name.clone(),
+            desc: String::new(),
+            enabled_at: Some(scope_mcps[name].clone()),
+            vars_hint: String::new(),
+        });
+    }
+
+    // Stable sort: enabled first, disabled last; order within each group preserved
+    rows.sort_by_key(|r| if r.enabled_at.is_some() { 0u8 } else { 1u8 });
+
+    let total = rows.len();
+    if total == 0 {
+        println!("No MCPs available.");
+        return Ok(());
+    }
+
+    let scope_label = scope_description(&scope, scope_override);
+    println!("mcps  \x1b[2m(scope: {scope_label})\x1b[0m\n");
+
+    let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(8).max(8);
+
+    for r in &rows {
+        let (status, tag) = match &r.enabled_at {
+            Some(lvl) => ("\x1b[32m●\x1b[0m", format!("  \x1b[32m[{lvl}]\x1b[0m")),
+            None => ("\x1b[2m○\x1b[0m", "\x1b[2m  [disabled]\x1b[0m".to_string()),
+        };
+        let desc = if r.desc.is_empty() {
+            "\x1b[2m(custom)\x1b[0m".to_string()
+        } else {
+            r.desc.clone()
+        };
         println!(
             "  {status}  {name:<name_w$}  {desc}{tag}{vars_hint}",
-            name = m.name,
-            desc = m.description,
-            name_w = name_w,
+            name = r.name,
+            vars_hint = r.vars_hint,
         );
     }
 
     println!();
-    let enabled = mcps
-        .iter()
-        .filter(|m| find_enabled_scope(&m.name, &scope, scope_override).is_some())
-        .count();
-    println!(
-        "  {enabled}/{total} enabled  ·  orbit mcp enable/disable <name>",
-        total = mcps.len()
-    );
+    let enabled = rows.iter().filter(|r| r.enabled_at.is_some()).count();
+    println!("  {enabled}/{total} enabled  ·  orbit mcp enable/disable <name>");
 
     Ok(())
 }
@@ -406,6 +444,15 @@ fn find_enabled_scope(
     if matches!(override_level, Some(ScopeLevel::Global)) || scope.global_mode {
         return None;
     }
+    // Workspace (global_ai_root first, then ai_context_root if different)
+    if mcp_in_file(name, &scope.global_ai_root.join("mcp.json")) {
+        return Some("workspace".to_string());
+    }
+    if scope.ai_context_root != scope.global_ai_root
+        && mcp_in_file(name, &scope.ai_context_root.join("mcp.json"))
+    {
+        return Some("workspace".to_string());
+    }
     // Tenant
     if !scope.tenant.is_empty() {
         let p = scope
@@ -446,6 +493,88 @@ fn find_enabled_scope(
         }
     }
     None
+}
+
+/// Returns all MCP names defined across all scope layers.
+/// Higher-specificity layers overwrite the label from lower ones.
+fn collect_all_scope_mcps(
+    scope: &OrbitScope,
+    override_level: Option<ScopeLevel>,
+) -> std::collections::HashMap<String, String> {
+    let mut found: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    // Global
+    for name in mcp_names_in_file(&global_config_dir().join("orbit/mcps.json")) {
+        found.insert(name, "global".to_string());
+    }
+    if matches!(override_level, Some(ScopeLevel::Global)) || scope.global_mode {
+        return found;
+    }
+    // Workspace
+    for name in mcp_names_in_file(&scope.global_ai_root.join("mcp.json")) {
+        found.insert(name, "workspace".to_string());
+    }
+    if scope.ai_context_root != scope.global_ai_root {
+        for name in mcp_names_in_file(&scope.ai_context_root.join("mcp.json")) {
+            found.insert(name, "workspace".to_string());
+        }
+    }
+    // Tenant
+    if !scope.tenant.is_empty() {
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("mcp.json");
+        for name in mcp_names_in_file(&p) {
+            found.insert(name, format!("tenant:{}", scope.tenant));
+        }
+    }
+    // Project
+    if !scope.project.is_empty() {
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("projects")
+            .join(&scope.project)
+            .join("mcp.json");
+        for name in mcp_names_in_file(&p) {
+            found.insert(name, format!("project:{}", scope.project));
+        }
+    }
+    // Repo
+    if !scope.repository.is_empty() {
+        let p = scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("projects")
+            .join(&scope.project)
+            .join("repositories")
+            .join(&scope.repository)
+            .join("mcp.json");
+        for name in mcp_names_in_file(&p) {
+            found.insert(name, format!("repo:{}", scope.repository));
+        }
+    }
+    found
+}
+
+fn mcp_names_in_file(path: &Path) -> Vec<String> {
+    if !path.is_file() {
+        return vec![];
+    }
+    let Ok(text) = fs::read_to_string(path) else {
+        return vec![];
+    };
+    let Ok(val) = serde_json::from_str::<Value>(&text) else {
+        return vec![];
+    };
+    val.get("mcpServers")
+        .and_then(|s| s.as_object())
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
 }
 
 // ── var prompts ───────────────────────────────────────────────────────────────
