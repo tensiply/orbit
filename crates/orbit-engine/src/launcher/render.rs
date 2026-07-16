@@ -67,6 +67,10 @@ fn render_opencode(config: &MergedConfig) -> Value {
 }
 
 fn mcp_opencode(s: &McpServer) -> Value {
+    if let Some(url) = &s.url {
+        // OpenCode remote MCP format: { "type": "remote", "url": "...", "enabled": true }
+        return json!({ "type": "remote", "url": url, "enabled": true });
+    }
     let mut obj = json!({
         "type": s.server_type,
         "command": s.command,
@@ -165,7 +169,11 @@ fn render_claude(config: &MergedConfig) -> Value {
 
 /// Render a server in the split format used by Gemini and Claude:
 /// `{ "command": "bin", "args": [...rest], "env": {...} }`
+/// Remote servers render as `{ "type": "http", "url": "..." }`.
 fn mcp_split(s: &McpServer) -> Value {
+    if let Some(url) = &s.url {
+        return json!({ "type": s.server_type, "url": url });
+    }
     let (cmd, args) = s
         .command
         .split_first()
@@ -197,6 +205,7 @@ mod tests {
             environment: HashMap::new(),
             cwd: None,
             server_type: "local".into(),
+            url: None,
         }
     }
 
@@ -258,5 +267,43 @@ mod tests {
             dirs.iter()
                 .any(|d| d.as_str().unwrap().contains("source-of-truth"))
         );
+    }
+
+    #[test]
+    fn remote_mcp_renders_as_http_url_for_claude() {
+        let mut cfg = MergedConfig::default();
+        cfg.mcp.insert(
+            "lucid".into(),
+            McpServer {
+                command: vec![],
+                environment: HashMap::new(),
+                cwd: None,
+                server_type: "http".into(),
+                url: Some("https://mcp.lucid.app/mcp".into()),
+            },
+        );
+        let val = render(&cfg, Engine::Claude);
+        assert_eq!(val["mcpServers"]["lucid"]["type"], "http");
+        assert_eq!(val["mcpServers"]["lucid"]["url"], "https://mcp.lucid.app/mcp");
+        assert!(val["mcpServers"]["lucid"].get("command").is_none());
+    }
+
+    #[test]
+    fn remote_mcp_renders_as_remote_type_for_opencode() {
+        let mut cfg = MergedConfig::default();
+        cfg.mcp.insert(
+            "lucid".into(),
+            McpServer {
+                command: vec![],
+                environment: HashMap::new(),
+                cwd: None,
+                server_type: "http".into(),
+                url: Some("https://mcp.lucid.app/mcp".into()),
+            },
+        );
+        let val = render(&cfg, Engine::Opencode);
+        assert_eq!(val["mcp"]["lucid"]["type"], "remote");
+        assert_eq!(val["mcp"]["lucid"]["url"], "https://mcp.lucid.app/mcp");
+        assert_eq!(val["mcp"]["lucid"]["enabled"], true);
     }
 }
