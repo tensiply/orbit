@@ -290,7 +290,14 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
     let mut mcp_servers: Vec<(String, Vec<String>)> = merged
         .mcp
         .iter()
-        .map(|(name, srv)| (name.clone(), srv.command.clone()))
+        .map(|(name, srv)| {
+            let display = if let Some(url) = &srv.url {
+                vec![url.clone()]
+            } else {
+                srv.command.clone()
+            };
+            (name.clone(), display)
+        })
         .collect();
     mcp_servers.sort_by(|a, b| a.0.cmp(&b.0));
 

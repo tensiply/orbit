@@ -1,0 +1,18 @@
+name = "lucid"
+description = "Lucid integration — search, read, and create Lucid diagrams and boards from AI sessions"
+category = "productivity"
+url = "https://lucid.co/marketplace/e16391cc/lucid-mcp-server"
+
+[check]
+# Remote MCP — no local binary required
+
+[auth]
+hint = "First connection opens a browser OAuth flow to authorize your Lucid account — no API key needed"
+
+[[mcp]]
+name = "lucid"
+url = "https://mcp.lucid.app/mcp"
+label = "Lucid"
+
+[context]
+prompt = "You have access to the user's Lucid library. You can search documents by natural language, read diagram content, create new diagrams, and generate share links. Use Lucid tools when the user mentions diagrams, flowcharts, org charts, wireframes, or visual collaboration."

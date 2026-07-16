@@ -6,12 +6,14 @@ use std::{
 /// A normalized MCP server entry.
 #[derive(Debug, Clone)]
 pub struct McpServer {
-    /// Full command: binary + args merged into one list.
+    /// Full command: binary + args merged into one list. Empty for remote servers.
     pub command: Vec<String>,
     pub environment: HashMap<String, String>,
     pub cwd: Option<PathBuf>,
-    /// Server type for opencode format ("local" by default).
+    /// Server type for opencode format ("local" by default, "http" for remote).
     pub server_type: String,
+    /// Remote endpoint URL. When set, the server is remote (no local process).
+    pub url: Option<String>,
 }
 
 /// Normalize a raw MCP server JSON object into a `McpServer`.
@@ -29,6 +31,18 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
         .and_then(|v| v.as_str())
         .unwrap_or("local")
         .to_string();
+
+    // ── remote MCP (url present, no command) ─────────────────────────────────
+    let url = obj.get("url").and_then(|v| v.as_str()).map(str::to_string);
+    if url.is_some() && !obj.contains_key("command") {
+        return Some(McpServer {
+            command: vec![],
+            environment: HashMap::new(),
+            cwd: None,
+            server_type,
+            url,
+        });
+    }
 
     // ── build command list ────────────────────────────────────────────────────
     let command: Vec<String> = match obj.get("command") {
@@ -80,6 +94,7 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
         environment,
         cwd,
         server_type,
+        url: None,
     })
 }
 
@@ -177,5 +192,22 @@ mod tests {
         let server = normalize(Path::new("/"), &raw).unwrap();
         assert!(server.environment.contains_key("NEW"));
         assert!(!server.environment.contains_key("OLD"));
+    }
+
+    #[test]
+    fn normalizes_remote_http_server() {
+        let raw = json!({ "type": "http", "url": "https://mcp.lucid.app/mcp" });
+        let server = normalize(Path::new("/base"), &raw).unwrap();
+        assert_eq!(server.url.as_deref(), Some("https://mcp.lucid.app/mcp"));
+        assert_eq!(server.server_type, "http");
+        assert!(server.command.is_empty());
+    }
+
+    #[test]
+    fn remote_server_without_type_defaults_to_local() {
+        let raw = json!({ "url": "https://example.com/mcp" });
+        let server = normalize(Path::new("/base"), &raw).unwrap();
+        assert_eq!(server.server_type, "local");
+        assert!(server.url.is_some());
     }
 }

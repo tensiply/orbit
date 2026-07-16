@@ -131,12 +131,16 @@ pub struct ExecutorParam {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginMcp {
     pub name: String,
+    /// Local binary command. Empty for remote MCPs.
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
     pub label: Option<String>,
+    /// Remote endpoint URL. When set, the MCP is remote (no local process).
+    pub url: Option<String>,
 }
 
 // ── plugin state ──────────────────────────────────────────────────────────────
@@ -338,22 +342,27 @@ pub fn add_plugin_mcps(plugin: &Plugin) -> Result<()> {
         .expect("mcpServers should be an object");
 
     for entry in &plugin.mcp {
-        // Resolve MCP command to the absolute venv path so the AI engine can
-        // locate the binary regardless of the user's PATH at session time.
-        let command = if plugin.use_orbit_venv {
-            crate::venv::venv_bin(&entry.command)
-                .to_string_lossy()
-                .to_string()
+        let server = if let Some(url) = &entry.url {
+            serde_json::json!({ "type": "http", "url": url })
         } else {
-            entry.command.clone()
+            // Resolve MCP command to the absolute venv path so the AI engine can
+            // locate the binary regardless of the user's PATH at session time.
+            let command = if plugin.use_orbit_venv {
+                crate::venv::venv_bin(&entry.command)
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                entry.command.clone()
+            };
+            let mut s = serde_json::json!({
+                "command": command,
+                "args": entry.args,
+            });
+            if !entry.env.is_empty() {
+                s["env"] = serde_json::to_value(&entry.env)?;
+            }
+            s
         };
-        let mut server = serde_json::json!({
-            "command": command,
-            "args": entry.args,
-        });
-        if !entry.env.is_empty() {
-            server["env"] = serde_json::to_value(&entry.env)?;
-        }
         servers.insert(entry.name.clone(), server);
     }
 

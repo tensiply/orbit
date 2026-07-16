@@ -137,7 +137,11 @@ pub fn launch(
 
 /// Derive a stable tmux session name from scope + engine.
 /// Uses only tmux-safe characters (alphanumerics, `-`).
-/// Example: "eloir-orbit-claude-jafraus-ecommerce"
+/// Example: "eloir-orbit-claude-befra-jafraus-ecommerce"
+///
+/// The workspace name is always included in non-global mode so that sessions
+/// across different workspaces with the same tenant name never collide
+/// (e.g. ~/BeFra and ~/Tensiply both having an "AI" tenant).
 pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
     let safe = |s: &str| {
         s.to_lowercase()
@@ -150,6 +154,14 @@ pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> 
     parts.push("orbit".into());
     parts.push(engine.as_str().to_string());
     if !scope.global_mode {
+        let ws = scope
+            .workspace_root
+            .file_name()
+            .map(|n| safe(&n.to_string_lossy()))
+            .unwrap_or_default();
+        if !ws.is_empty() {
+            parts.push(ws);
+        }
         for seg in [&scope.tenant, &scope.project, &scope.repository] {
             if !seg.is_empty() {
                 parts.push(safe(seg));
@@ -1000,6 +1012,7 @@ mod tests {
                 environment: HashMap::from([("KEY".into(), "val".into())]),
                 cwd: None,
                 server_type: "local".into(),
+                url: None,
             },
         );
         cfg.instructions.push(PathBuf::from("/fake/README.md"));
@@ -1064,6 +1077,7 @@ mod tests {
     #[test]
     fn tmux_session_name_full_scope() {
         let scope = OrbitScope {
+            workspace_root: "/home/user/AI".into(),
             tenant: "AIDEV".into(),
             project: "AI-ECOSYSTEM".into(),
             repository: "orbit".into(),
@@ -1072,12 +1086,34 @@ mod tests {
         };
         assert_eq!(
             tmux_session_name(&scope, Engine::Opencode, ""),
-            "orbit-opencode-aidev-ai-ecosystem-orbit"
+            "orbit-opencode-ai-aidev-ai-ecosystem-orbit"
         );
         assert_eq!(
             tmux_session_name(&scope, Engine::Opencode, "eloir"),
-            "eloir-orbit-opencode-aidev-ai-ecosystem-orbit"
+            "eloir-orbit-opencode-ai-aidev-ai-ecosystem-orbit"
         );
+    }
+
+    #[test]
+    fn tmux_session_name_includes_workspace_to_avoid_collision() {
+        // ~/BeFra and ~/Tensiply both have an "AI" tenant — names must differ.
+        let befra = OrbitScope {
+            workspace_root: "/home/user/BeFra".into(),
+            tenant: "AI".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        let tensiply = OrbitScope {
+            workspace_root: "/home/user/Tensiply".into(),
+            tenant: "AI".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        let name_befra = tmux_session_name(&befra, Engine::Claude, "eloir");
+        let name_tensiply = tmux_session_name(&tensiply, Engine::Claude, "eloir");
+        assert_ne!(name_befra, name_tensiply);
+        assert_eq!(name_befra, "eloir-orbit-claude-befra-ai");
+        assert_eq!(name_tensiply, "eloir-orbit-claude-tensiply-ai");
     }
 
     #[test]
