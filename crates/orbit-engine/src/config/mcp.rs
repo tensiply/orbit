@@ -42,7 +42,11 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
         Some(serde_json::Value::String(cmd)) => {
             let mut parts = vec![resolve_relative(cmd, base_dir)];
             if let Some(serde_json::Value::Array(args)) = obj.get("args") {
-                parts.extend(args.iter().filter_map(|v| v.as_str()).map(String::from));
+                parts.extend(
+                    args.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| resolve_relative(s, base_dir)),
+                );
             }
             parts
         }
@@ -147,6 +151,20 @@ mod tests {
         let raw = json!({ "command": "node", "cwd": "./server" });
         let server = normalize(Path::new("/base"), &raw).unwrap();
         assert_eq!(server.cwd.unwrap(), Path::new("/base/server"));
+    }
+
+    #[test]
+    fn resolves_relative_args() {
+        let raw = json!({
+            "command": "npx",
+            "args": ["-y", "some-mcp", "--config", "./config/settings.yaml"]
+        });
+        let server = normalize(Path::new("/base"), &raw).unwrap();
+        assert_eq!(server.command[0], "npx");
+        assert_eq!(server.command[1], "-y");
+        assert_eq!(server.command[3], "--config");
+        // relative arg must be resolved to absolute path
+        assert_eq!(server.command[4], "/base/config/settings.yaml");
     }
 
     #[test]
