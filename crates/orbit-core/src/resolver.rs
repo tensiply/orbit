@@ -109,7 +109,7 @@ fn resolve_from_path_inner(cwd: &Path, home: &Path, ai_root: &Path) -> Result<Or
         let mut candidates: Vec<std::path::PathBuf> = rd
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.is_dir() && cwd.starts_with(p) && p.as_path() != cwd)
+            .filter(|p| p.is_dir() && cwd.starts_with(p))
             .collect();
         // Prefer the deepest match (shouldn't be more than one at home level)
         candidates.sort_by_key(|p| p.components().count());
@@ -585,5 +585,21 @@ mod tests {
         assert_eq!(scope.tenant, "AIDEV");
         assert_eq!(scope.project, "AI-ECOSYSTEM");
         assert_eq!(scope.repository, "orbit");
+    }
+
+    #[test]
+    fn resolve_from_path_workspace_root_as_cwd() {
+        // cwd == workspace root — should resolve with empty tenant/project/repo
+        let home = TempDir::new().unwrap();
+        let ai_root = home.path().join("AI");
+        fs::create_dir_all(ai_root.join("tenants")).unwrap();
+        let befra = home.path().join("BeFra");
+        fs::create_dir_all(&befra).unwrap();
+
+        let scope = resolve_from_path(&befra, home.path(), &ai_root).unwrap();
+        assert_eq!(scope.workspace_root, befra);
+        assert_eq!(scope.tenant, "");
+        assert_eq!(scope.project, "");
+        assert_eq!(scope.repository, "");
     }
 }
