@@ -195,9 +195,35 @@ fn exec_with_tmux(
         .arg("-s")
         .arg(session_name)
         .arg("-n")
-        .arg(window_name)
-        .arg("--")
-        .arg(&bin);
+        .arg(window_name);
+
+    // Inject orbit env vars into the tmux SESSION via -e flags.
+    // tmux update-environment does not include custom vars like XDG_CONFIG_HOME
+    // or OPENCODE_CONFIG, so without -e the engine reads the wrong config.
+    for var in &[
+        "ORBIT_CONFIG_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
+        "AI_ENGINE",
+        "AI_WORKSPACE_ROOT",
+        "AI_CONTEXT_ROOT",
+        "AI_GLOBAL_ROOT",
+        "AI_TENANT",
+        "AI_PROJECT",
+        "AI_REPOSITORY",
+        "AI_GLOBAL_MODE",
+        "OPENCODE_CONFIG",
+        "GEMINI_CLI_HOME",
+        "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
+    ] {
+        if let Ok(val) = std::env::var(var) {
+            cmd.arg("-e").arg(format!("{var}={val}"));
+        }
+    }
+
+    cmd.arg("--").arg(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
     }
@@ -463,17 +489,20 @@ fn set_env(
     }
 }
 
-/// Apply engine env vars to a `Command` instead of the current process.
-/// Used by the daemon to avoid polluting its own environment.
-fn apply_env_to_cmd(
-    cmd: &mut Command,
+/// Collect all orbit-managed session environment variables into a vec.
+///
+/// Used both to populate the tmux subprocess environment (`cmd.env`) and to
+/// inject variables directly into the new tmux session via `-e KEY=VALUE` flags.
+/// The two paths are both required: `cmd.env` sets them on the tmux CLIENT
+/// process, while `-e` sets them inside the new tmux SESSION (opencode's env).
+/// Without `-e`, tmux's `update-environment` option does not propagate custom
+/// variables like `XDG_CONFIG_HOME` or `OPENCODE_CONFIG` to the session.
+fn collect_session_env(
     scope: &OrbitScope,
     engine: Engine,
     paths: &runtime::RuntimePaths,
     extra_env: &std::collections::HashMap<String, String>,
-) {
-    // Preserve the real XDG_CONFIG_HOME so orbit commands spawned inside the
-    // session can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
+) -> Vec<(String, String)> {
     let real_config_home = std::env::var("ORBIT_CONFIG_HOME")
         .or_else(|_| std::env::var("XDG_CONFIG_HOME"))
         .unwrap_or_else(|_| {
@@ -483,34 +512,72 @@ fn apply_env_to_cmd(
                 .to_string_lossy()
                 .into_owned()
         });
-    cmd.env("ORBIT_CONFIG_HOME", real_config_home)
-        .env("XDG_CONFIG_HOME", &paths.xdg_config_home)
-        .env("XDG_DATA_HOME", &paths.xdg_data)
-        .env("XDG_CACHE_HOME", &paths.xdg_cache)
-        .env("XDG_STATE_HOME", &paths.xdg_state)
-        .env("AI_ENGINE", engine.as_str())
-        .env("AI_WORKSPACE_ROOT", &scope.workspace_root)
-        .env("AI_CONTEXT_ROOT", &scope.ai_context_root)
-        .env("AI_GLOBAL_ROOT", &scope.global_ai_root)
-        .env("AI_TENANT", &scope.tenant)
-        .env("AI_PROJECT", &scope.project)
-        .env("AI_REPOSITORY", &scope.repository)
-        .env("AI_GLOBAL_MODE", if scope.global_mode { "1" } else { "0" });
+
+    let mut env: Vec<(String, String)> = vec![
+        ("ORBIT_CONFIG_HOME".into(), real_config_home),
+        (
+            "XDG_CONFIG_HOME".into(),
+            paths.xdg_config_home.to_string_lossy().into_owned(),
+        ),
+        (
+            "XDG_DATA_HOME".into(),
+            paths.xdg_data.to_string_lossy().into_owned(),
+        ),
+        (
+            "XDG_CACHE_HOME".into(),
+            paths.xdg_cache.to_string_lossy().into_owned(),
+        ),
+        (
+            "XDG_STATE_HOME".into(),
+            paths.xdg_state.to_string_lossy().into_owned(),
+        ),
+        ("AI_ENGINE".into(), engine.as_str().to_string()),
+        (
+            "AI_WORKSPACE_ROOT".into(),
+            scope.workspace_root.to_string_lossy().into_owned(),
+        ),
+        (
+            "AI_CONTEXT_ROOT".into(),
+            scope.ai_context_root.to_string_lossy().into_owned(),
+        ),
+        (
+            "AI_GLOBAL_ROOT".into(),
+            scope.global_ai_root.to_string_lossy().into_owned(),
+        ),
+        ("AI_TENANT".into(), scope.tenant.clone()),
+        ("AI_PROJECT".into(), scope.project.clone()),
+        ("AI_REPOSITORY".into(), scope.repository.clone()),
+        (
+            "AI_GLOBAL_MODE".into(),
+            if scope.global_mode { "1" } else { "0" }.into(),
+        ),
+    ];
 
     match engine {
         Engine::Opencode => {
-            cmd.env("OPENCODE_CONFIG", &paths.config_file);
+            env.push((
+                "OPENCODE_CONFIG".into(),
+                paths.config_file.to_string_lossy().into_owned(),
+            ));
         }
         Engine::Gemini => {
-            cmd.env("GEMINI_CLI_HOME", &paths.runtime_dir)
-                .env("GEMINI_CLI_SYSTEM_SETTINGS_PATH", &paths.config_file);
+            env.push((
+                "GEMINI_CLI_HOME".into(),
+                paths.runtime_dir.to_string_lossy().into_owned(),
+            ));
+            env.push((
+                "GEMINI_CLI_SYSTEM_SETTINGS_PATH".into(),
+                paths.config_file.to_string_lossy().into_owned(),
+            ));
         }
         Engine::Claude => {}
     }
 
     for (k, v) in extra_env {
-        cmd.env(k, orbit_core::secrets::resolve(v));
+        env.push((k.clone(), orbit_core::secrets::resolve(v)));
     }
+
+    env
 }
 
 // ── daemon-side spawn ─────────────────────────────────────────────────────────
@@ -616,17 +683,19 @@ pub fn spawn_background(
 
     // 5. Build command
     let (bin, extra_args) = engine_cmd(engine, &paths.config_file, context_file.as_deref());
+    let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
-    cmd.arg("new-session")
-        .arg("-d")
-        .arg("-s")
-        .arg(&tmux_name)
-        .arg("--")
-        .arg(&bin);
+    cmd.arg("new-session").arg("-d").arg("-s").arg(&tmux_name);
+    for (k, v) in &session_env {
+        cmd.arg("-e").arg(format!("{k}={v}"));
+    }
+    cmd.arg("--").arg(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
     }
-    apply_env_to_cmd(&mut cmd, scope, engine, &paths, &config.env);
+    for (k, v) in &session_env {
+        cmd.env(k, v);
+    }
     cmd.current_dir(&scope.work_dir);
 
     let status = cmd.status()?;
@@ -708,17 +777,19 @@ pub fn spawn_plan_node(
         plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
 
     // 5. Launch in a dedicated detached tmux session
+    let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
-    cmd.arg("new-session")
-        .arg("-d")
-        .arg("-s")
-        .arg(session_name)
-        .arg("--")
-        .arg(&bin);
+    cmd.arg("new-session").arg("-d").arg("-s").arg(session_name);
+    for (k, v) in &session_env {
+        cmd.arg("-e").arg(format!("{k}={v}"));
+    }
+    cmd.arg("--").arg(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
     }
-    apply_env_to_cmd(&mut cmd, scope, engine, &paths, &config.env);
+    for (k, v) in &session_env {
+        cmd.env(k, v);
+    }
     cmd.current_dir(&scope.work_dir);
 
     let status = cmd.status()?;
