@@ -34,6 +34,10 @@ pub struct Plugin {
     /// When present, this plugin can be used as a plan node executor.
     #[serde(default)]
     pub executor: Option<ExecutorSpec>,
+    /// When true, Python-based install/check/MCP use the orbit-managed venv
+    /// at `~/.local/share/orbit/venv/` instead of the system Python environment.
+    #[serde(default)]
+    pub use_orbit_venv: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -187,6 +191,9 @@ impl PluginState {
 impl Plugin {
     pub fn is_installed(&self) -> bool {
         if let Some(bin) = &self.check.binary {
+            if self.use_orbit_venv {
+                return crate::venv::venv_bin(bin).exists();
+            }
             return bin_available(bin);
         }
         false
@@ -201,6 +208,8 @@ impl Plugin {
     pub fn best_install_method(&self) -> Option<&InstallMethod> {
         for m in &self.install {
             let prereq = match m.method.as_str() {
+                // venv-based plugins need python3, not pip (pip lives inside the venv)
+                "pip" | "pip3" if self.use_orbit_venv => "python3",
                 "pip" | "pip3" => "pip",
                 "npm" => "npm",
                 "cargo" => "cargo",
@@ -329,8 +338,17 @@ pub fn add_plugin_mcps(plugin: &Plugin) -> Result<()> {
         .expect("mcpServers should be an object");
 
     for entry in &plugin.mcp {
+        // Resolve MCP command to the absolute venv path so the AI engine can
+        // locate the binary regardless of the user's PATH at session time.
+        let command = if plugin.use_orbit_venv {
+            crate::venv::venv_bin(&entry.command)
+                .to_string_lossy()
+                .to_string()
+        } else {
+            entry.command.clone()
+        };
         let mut server = serde_json::json!({
-            "command": entry.command,
+            "command": command,
             "args": entry.args,
         });
         if !entry.env.is_empty() {
@@ -518,5 +536,34 @@ binary = "plain"
         .unwrap();
         let err = plugin.render_executor_command(&HashMap::new()).unwrap_err();
         assert!(err.to_string().contains("no [executor] spec"));
+    }
+
+    #[test]
+    fn markitdown_toml_parses() {
+        let toml = r#"
+name = "markitdown"
+description = "Convert PDFs, Office files, images, and URLs to Markdown"
+category = "tools"
+url = "https://github.com/microsoft/markitdown"
+use_orbit_venv = true
+
+[check]
+binary = "markitdown"
+
+[[install]]
+method = "pip"
+cmd = ["pip", "install", "markitdown[mcp]"]
+label = "orbit venv (pip)"
+
+[[mcp]]
+name = "markitdown"
+command = "markitdown-mcp"
+args = []
+label = "MarkItDown MCP"
+"#;
+        let p: Plugin = toml::from_str(toml).expect("markitdown TOML should parse");
+        assert_eq!(p.name, "markitdown");
+        assert!(p.use_orbit_venv);
+        assert_eq!(p.mcp.len(), 1);
     }
 }

@@ -218,7 +218,7 @@ fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
         pick_install_method(&plugin)?
     };
 
-    run_install(name, method)?;
+    run_install(&plugin, method)?;
 
     if plugin.has_mcp() {
         println!();
@@ -262,18 +262,29 @@ fn pick_install_method(plugin: &Plugin) -> Result<&InstallMethod> {
     }
 }
 
-fn run_install(name: &str, method: &InstallMethod) -> Result<()> {
+fn run_install(plugin: &Plugin, method: &InstallMethod) -> Result<()> {
     if method.cmd.is_empty() {
         bail!("install command is empty");
     }
 
-    println!("  Installing {name} via {}…", method.label);
-    println!("  $ {}", method.cmd.join(" "));
+    // For venv-based plugins, ensure the orbit Python venv exists and redirect
+    // pip/pip3 to the venv's own pip so the package stays isolated.
+    let cmd: Vec<String> =
+        if plugin.use_orbit_venv && (method.method == "pip" || method.method == "pip3") {
+            orbit_core::venv::ensure_venv()?;
+            let venv_pip = orbit_core::venv::venv_bin("pip");
+            let mut c = method.cmd.clone();
+            c[0] = venv_pip.to_string_lossy().to_string();
+            c
+        } else {
+            method.cmd.clone()
+        };
+
+    println!("  Installing {} via {}…", plugin.name, method.label);
+    println!("  $ {}", cmd.join(" "));
     println!();
 
-    let status = Command::new(&method.cmd[0])
-        .args(&method.cmd[1..])
-        .status()?;
+    let status = Command::new(&cmd[0]).args(&cmd[1..]).status()?;
 
     if status.success() {
         println!();
@@ -281,7 +292,7 @@ fn run_install(name: &str, method: &InstallMethod) -> Result<()> {
     } else {
         println!();
         println!("  \x1b[31m✗\x1b[0m  Install failed — run manually:");
-        println!("     {}", method.cmd.join(" "));
+        println!("     {}", cmd.join(" "));
     }
 
     Ok(())
