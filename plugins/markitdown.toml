@@ -1,0 +1,19 @@
+name = "markitdown"
+description = "Convert PDFs, Office files, images, and URLs to Markdown — enables AI agents to read any document format"
+category = "tools"
+url = "https://github.com/microsoft/markitdown"
+use_orbit_venv = true
+
+[check]
+binary = "markitdown"
+
+[[install]]
+method = "pip"
+cmd = ["pip", "install", "markitdown[mcp]"]
+label = "orbit venv (pip)"
+
+[[mcp]]
+name = "markitdown"
+command = "markitdown-mcp"
+args = []
+label = "MarkItDown MCP — convert files and URLs to Markdown during AI sessions"
