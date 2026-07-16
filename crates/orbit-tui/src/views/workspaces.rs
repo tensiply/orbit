@@ -12,10 +12,7 @@ fn dim_block(title: &str, dim: ratatui::style::Color) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(dim))
-        .title(Span::styled(
-            format!(" {title} "),
-            Style::default().fg(dim),
-        ))
+        .title(Span::styled(format!(" {title} "), Style::default().fg(dim)))
         .padding(Padding::uniform(1))
 }
 

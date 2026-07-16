@@ -176,8 +176,14 @@ fn issue_row(
     danger: Color,
 ) -> Row<'static> {
     let (pri_sym, pri_style) = priority_display(&issue.priority, dim, warning, danger);
-    let (status_str, status_style) =
-        status_display(&issue.status, &issue.status_color, dim, warning, success, danger);
+    let (status_str, status_style) = status_display(
+        &issue.status,
+        &issue.status_color,
+        dim,
+        warning,
+        success,
+        danger,
+    );
 
     Row::new(vec![
         Cell::from(pri_sym).style(pri_style),

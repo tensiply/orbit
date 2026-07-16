@@ -64,11 +64,10 @@ fn render_block(
                 .and_then(|l| l.as_u64())
                 .unwrap_or(1);
             let style = heading_style(level, accent);
-            let spans: Vec<Span<'static>> =
-                collect_inline(content.map_or(&[], |v| v), dim, accent)
-                    .into_iter()
-                    .map(|s| Span::styled(s.content.to_string(), s.style.patch(style)))
-                    .collect();
+            let spans: Vec<Span<'static>> = collect_inline(content.map_or(&[], |v| v), dim, accent)
+                .into_iter()
+                .map(|s| Span::styled(s.content.to_string(), s.style.patch(style)))
+                .collect();
             let mut out = vec![Line::from(spans)];
             out.push(Line::from(""));
             out
@@ -210,7 +209,13 @@ fn render_block(
         }
 
         // pass-through containers
-        "listItem" => render_blocks(content.map_or(&[], |v| v), list_depth, list_idx, dim, accent),
+        "listItem" => render_blocks(
+            content.map_or(&[], |v| v),
+            list_depth,
+            list_idx,
+            dim,
+            accent,
+        ),
 
         _ => vec![],
     }

@@ -56,10 +56,7 @@ pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(dim))
-            .title(Span::styled(
-                " LAN Status ",
-                Style::default().fg(dim),
-            ))
+            .title(Span::styled(" LAN Status ", Style::default().fg(dim)))
             .padding(Padding::uniform(1)),
     );
     f.render_widget(info, chunks[1]);
