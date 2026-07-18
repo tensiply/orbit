@@ -253,6 +253,35 @@ fn print_dry_run(
         row("repository", &scope.repository);
     }
     row("engine", engine.as_str());
+    // Auth is always stored in the opencode workspace runtime, regardless of
+    // which engine is being launched.
+    let opencode_ws = orbit_engine::launcher::runtime::workspace_runtime_dir_for_slug(scope, "opencode");
+    let auth_file = opencode_ws.join("data").join("opencode").join("auth.json");
+    let gh_file = opencode_ws.join("config").join("gh").join("hosts.yml");
+    if auth_file.exists() {
+        let account_file = opencode_ws.join("data").join("opencode").join("account.json");
+        let username = std::fs::read_to_string(&account_file)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("username")?.as_str().map(|s| s.to_string()));
+        let label = match username {
+            Some(u) => format!("github-copilot ({u}) \x1b[32m✓\x1b[0m"),
+            None => "github-copilot \x1b[32m✓\x1b[0m".into(),
+        };
+        row("account", &label);
+    } else if gh_file.exists() {
+        let user = std::fs::read_to_string(&gh_file)
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find(|l| l.trim_start().starts_with("user:"))
+                    .map(|l| l.trim().trim_start_matches("user:").trim().to_string())
+            })
+            .unwrap_or_else(|| "configured".into());
+        row("account", &format!("github ({user}) \x1b[32m✓\x1b[0m"));
+    } else {
+        row("account", &dim("not configured — run: orbit auth opencode"));
+    }
     row("work dir", &tp(&scope.work_dir));
     let config_file = orbit_engine::launcher::runtime::config_file_path(scope, engine);
     let context_file = orbit_engine::launcher::runtime::context_file_path(scope, engine);
