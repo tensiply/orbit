@@ -4,7 +4,7 @@ bin = "opencode"
 npm_package = "opencode-ai"
 description = "Agentic coding engine — supports multiple AI providers"
 auth_hint = "Run `opencode auth` or set OPENAI_API_KEY / provider keys"
-auth_cmd = "opencode auth"
+auth_cmd = "opencode auth login"
 auth_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
 auth_config_dirs = [".config/opencode"]
 

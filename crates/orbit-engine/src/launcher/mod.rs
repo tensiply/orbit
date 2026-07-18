@@ -110,7 +110,10 @@ pub fn launch(
         tracing::warn!("could not save session: {e}");
     }
 
-    // 6. Set environment variables
+    // 6. Sync workspace auth into tenant data dir, then set environment variables
+    if let Err(e) = runtime::sync_workspace_auth(&paths) {
+        tracing::warn!("could not sync workspace auth: {e}");
+    }
     set_env(scope, engine, &paths, &config.env);
 
     // 7. cd into work_dir, then exec
@@ -492,6 +495,20 @@ fn set_env(
             Engine::Claude => {}
         }
 
+        // gh CLI uses GH_CONFIG_DIR if set, otherwise falls back to $XDG_CONFIG_HOME/gh.
+        // Auth for gh is stored at workspace level (workspace_config_dir/gh). If that
+        // exists, point gh there; otherwise fall back to the real global config.
+        let gh_workspace = paths.workspace_config_dir.join("gh");
+        if gh_workspace.exists() {
+            std::env::set_var("GH_CONFIG_DIR", &gh_workspace);
+        } else {
+            let real_config = std::env::var("ORBIT_CONFIG_HOME").unwrap_or_default();
+            let real_gh = std::path::PathBuf::from(&real_config).join("gh");
+            if real_gh.exists() {
+                std::env::set_var("GH_CONFIG_DIR", real_gh);
+            }
+        }
+
         // User-defined env vars from orbit.json "env" key — applied last so they
         // can override any of the above if needed. Values are resolved through
         // the secrets layer ($VAR, env://, file://, keychain://).
@@ -526,7 +543,7 @@ fn collect_session_env(
         });
 
     let mut env: Vec<(String, String)> = vec![
-        ("ORBIT_CONFIG_HOME".into(), real_config_home),
+        ("ORBIT_CONFIG_HOME".into(), real_config_home.clone()),
         (
             "XDG_CONFIG_HOME".into(),
             paths.xdg_config_home.to_string_lossy().into_owned(),
@@ -583,6 +600,17 @@ fn collect_session_env(
             ));
         }
         Engine::Claude => {}
+    }
+
+    // gh: prefer workspace-scoped auth; fall back to global if not configured.
+    let gh_workspace = paths.workspace_config_dir.join("gh");
+    if gh_workspace.exists() {
+        env.push(("GH_CONFIG_DIR".into(), gh_workspace.to_string_lossy().into_owned()));
+    } else {
+        let real_gh = std::path::PathBuf::from(&real_config_home).join("gh");
+        if real_gh.exists() {
+            env.push(("GH_CONFIG_DIR".into(), real_gh.to_string_lossy().into_owned()));
+        }
     }
 
     for (k, v) in extra_env {
@@ -693,7 +721,10 @@ pub fn spawn_background(
         return Ok(session);
     }
 
-    // 5. Build command
+    // 5. Sync workspace auth into tenant data dir, then build command
+    if let Err(e) = runtime::sync_workspace_auth(&paths) {
+        tracing::warn!("could not sync workspace auth: {e}");
+    }
     let (bin, extra_args) = engine_cmd(engine, &paths.config_file, context_file.as_deref());
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
@@ -784,7 +815,10 @@ pub fn spawn_plan_node(
         None
     };
 
-    // 4. Build the headless engine command (print / run mode)
+    // 4. Sync workspace auth, then build the headless engine command
+    if let Err(e) = runtime::sync_workspace_auth(&paths) {
+        tracing::warn!("could not sync workspace auth: {e}");
+    }
     let (bin, extra_args) =
         plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
 

@@ -1,7 +1,8 @@
 use anyhow::{Result, bail};
 use clap::Args;
-use orbit_core::{catalog, catalog::EngineEntry};
-use std::process::Command;
+use orbit_core::{catalog, catalog::EngineEntry, resolver};
+use orbit_engine::launcher::runtime;
+use std::{fs, process::Command};
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -161,16 +162,90 @@ fn cmd_run_auth(name: &str) -> Result<()> {
         bail!("no auth command configured for {name}");
     }
 
+    let mut cmd = Command::new(parts[0]);
+    cmd.args(&parts[1..]);
+
+    // Auth is always workspace-level — one account per workspace regardless of
+    // which tenant or project the user is currently in.
+    match resolver::resolve_from_cwd() {
+        Ok(scope) => {
+            let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
+            let xdg_config = workspace_runtime.join("config");
+            let xdg_data = workspace_runtime.join("data");
+            fs::create_dir_all(&xdg_config)?;
+            fs::create_dir_all(&xdg_data)?;
+
+            cmd.env("XDG_CONFIG_HOME", &xdg_config);
+            cmd.env("XDG_DATA_HOME", &xdg_data);
+
+            // Gemini CLI reads GEMINI_CLI_HOME directly instead of XDG.
+            if engine.name == "gemini" {
+                cmd.env("GEMINI_CLI_HOME", &workspace_runtime);
+            }
+
+            let workspace = scope
+                .workspace_root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "unknown".into());
+            println!("workspace: {workspace}");
+            println!("auth dir:  {}", xdg_data.display());
+        }
+        Err(_) => {
+            println!("  note: not inside a workspace — auth will be stored globally");
+        }
+    }
+
     println!("Running: {}", engine.auth_cmd);
     println!();
 
-    let status = Command::new(parts[0]).args(&parts[1..]).status()?;
+    let status = cmd.status()?;
 
     if !status.success() {
         bail!("{} auth exited with non-zero status", engine.auth_cmd);
     }
 
+    // After successful auth, resolve the GitHub username from the stored token
+    // and cache it so dry-run can display it without a network call.
+    if let Ok(scope) = resolver::resolve_from_cwd() {
+        let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
+        let auth_file = workspace_runtime.join("data").join("opencode").join("auth.json");
+        if auth_file.exists() {
+            if let Some(username) = resolve_github_username(&auth_file) {
+                let account_file = workspace_runtime.join("data").join("opencode").join("account.json");
+                let _ = fs::write(
+                    &account_file,
+                    format!("{{\"username\":\"{username}\"}}"),
+                );
+                println!("account:   {username}");
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Read the access token from opencode's auth.json and resolve the GitHub username.
+fn resolve_github_username(auth_file: &std::path::Path) -> Option<String> {
+    let content = fs::read_to_string(auth_file).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let token = v
+        .as_object()?
+        .values()
+        .next()?
+        .get("access")?
+        .as_str()?
+        .to_string();
+
+    let output = Command::new("curl")
+        .args(["-sf", "-H", &format!("Authorization: token {token}"), "https://api.github.com/user"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let resp: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    resp.get("login")?.as_str().map(|s| s.to_string())
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
