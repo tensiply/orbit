@@ -284,7 +284,10 @@ mod tests {
         );
         let val = render(&cfg, Engine::Claude);
         assert_eq!(val["mcpServers"]["lucid"]["type"], "http");
-        assert_eq!(val["mcpServers"]["lucid"]["url"], "https://mcp.lucid.app/mcp");
+        assert_eq!(
+            val["mcpServers"]["lucid"]["url"],
+            "https://mcp.lucid.app/mcp"
+        );
         assert!(val["mcpServers"]["lucid"].get("command").is_none());
     }
 

@@ -209,15 +209,18 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     // and cache it so dry-run can display it without a network call.
     if let Ok(scope) = resolver::resolve_from_cwd() {
         let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
-        let auth_file = workspace_runtime.join("data").join("opencode").join("auth.json");
+        let auth_file = workspace_runtime
+            .join("data")
+            .join("opencode")
+            .join("auth.json");
         if auth_file.exists()
             && let Some(username) = resolve_github_username(&auth_file)
         {
-            let account_file = workspace_runtime.join("data").join("opencode").join("account.json");
-            let _ = fs::write(
-                &account_file,
-                format!("{{\"username\":\"{username}\"}}"),
-            );
+            let account_file = workspace_runtime
+                .join("data")
+                .join("opencode")
+                .join("account.json");
+            let _ = fs::write(&account_file, format!("{{\"username\":\"{username}\"}}"));
             println!("account:   {username}");
         }
     }
@@ -238,7 +241,12 @@ fn resolve_github_username(auth_file: &std::path::Path) -> Option<String> {
         .to_string();
 
     let output = Command::new("curl")
-        .args(["-sf", "-H", &format!("Authorization: token {token}"), "https://api.github.com/user"])
+        .args([
+            "-sf",
+            "-H",
+            &format!("Authorization: token {token}"),
+            "https://api.github.com/user",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {

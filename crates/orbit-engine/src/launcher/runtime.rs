@@ -138,5 +138,7 @@ pub fn runtime_dir_for_slug(scope: &OrbitScope, engine_slug: &str) -> PathBuf {
 /// Workspace-level runtime dir — always anchored at ai_context_root.
 /// Used for auth so that all tenants in a workspace share the same account.
 pub fn workspace_runtime_dir_for_slug(scope: &OrbitScope, engine_slug: &str) -> PathBuf {
-    scope.ai_context_root.join(format!(".{engine_slug}-runtime"))
+    scope
+        .ai_context_root
+        .join(format!(".{engine_slug}-runtime"))
 }

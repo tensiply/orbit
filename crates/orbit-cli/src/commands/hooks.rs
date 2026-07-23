@@ -60,10 +60,11 @@ fn list() -> Result<()> {
 
 fn enable(name: &str) -> Result<()> {
     let hooks = engine_hook::load_all();
-    let hook = hooks
-        .iter()
-        .find(|h| h.name == name)
-        .ok_or_else(|| anyhow::anyhow!("unknown engine hook: '{name}'. Run `orbit hooks list` to see available hooks."))?;
+    let hook = hooks.iter().find(|h| h.name == name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown engine hook: '{name}'. Run `orbit hooks list` to see available hooks."
+        )
+    })?;
 
     let mut state = EngineHookState::load();
     if state.is_enabled(name) {
@@ -95,8 +96,8 @@ fn disable(name: &str) -> Result<()> {
 }
 
 fn info(name: &str) -> Result<()> {
-    let hook = engine_hook::find(name)
-        .ok_or_else(|| anyhow::anyhow!("unknown engine hook: '{name}'"))?;
+    let hook =
+        engine_hook::find(name).ok_or_else(|| anyhow::anyhow!("unknown engine hook: '{name}'"))?;
     let state = EngineHookState::load();
 
     println!("Name:        {}", hook.name);

@@ -414,7 +414,13 @@ fn auth(name: &str) -> Result<()> {
         let default_hint = if already_set { "<already set>" } else { "" };
 
         let value = if var.secret {
-            ask_secret(&format!("  {} (secret, leave blank to keep existing)", var.description), already_set)?
+            ask_secret(
+                &format!(
+                    "  {} (secret, leave blank to keep existing)",
+                    var.description
+                ),
+                already_set,
+            )?
         } else {
             ask(&format!("  {}", var.description), default_hint)?
         };

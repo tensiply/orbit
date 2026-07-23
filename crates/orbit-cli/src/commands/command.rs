@@ -102,7 +102,10 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     for (name, desc) in &catalog {
         let pad = " ".repeat(name_w.saturating_sub(name.len()));
         let (marker, label) = match &enabled {
-            None => ("\x1b[32m●\x1b[0m", "\x1b[2m(all enabled — no filter set)\x1b[0m"),
+            None => (
+                "\x1b[32m●\x1b[0m",
+                "\x1b[2m(all enabled — no filter set)\x1b[0m",
+            ),
             Some(set) if set.contains(name.as_str()) => ("\x1b[32m●\x1b[0m", ""),
             Some(_) => ("\x1b[2m○\x1b[0m", "\x1b[2mdisabled\x1b[0m"),
         };
@@ -113,9 +116,7 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
 
     match &enabled {
         None => {
-            println!(
-                "  \x1b[2mNo commands filter set — all commands are enabled.\x1b[0m"
-            );
+            println!("  \x1b[2mNo commands filter set — all commands are enabled.\x1b[0m");
             println!(
                 "  \x1b[2mRun `orbit command add <name>` to start managing commands for this scope.\x1b[0m"
             );
@@ -171,10 +172,7 @@ fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     let path = orbit_json_path(&scope, level);
 
     let mut val = read_orbit_json(&path);
-    let commands = val["commands"]
-        .as_array_mut()
-        .cloned()
-        .unwrap_or_default();
+    let commands = val["commands"].as_array_mut().cloned().unwrap_or_default();
 
     let mut names: Vec<String> = commands
         .iter()
@@ -220,7 +218,9 @@ fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 
     if names.is_empty() {
         val.as_object_mut().unwrap().remove("commands");
-        println!("  \x1b[32m✓\x1b[0m  '{name}' disabled at {level} (commands list removed — all commands now enabled)");
+        println!(
+            "  \x1b[32m✓\x1b[0m  '{name}' disabled at {level} (commands list removed — all commands now enabled)"
+        );
     } else {
         val["commands"] = Value::Array(names);
         println!("  \x1b[32m✓\x1b[0m  '{name}' disabled at {level}");

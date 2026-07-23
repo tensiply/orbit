@@ -255,11 +255,15 @@ fn print_dry_run(
     row("engine", engine.as_str());
     // Auth is always stored in the opencode workspace runtime, regardless of
     // which engine is being launched.
-    let opencode_ws = orbit_engine::launcher::runtime::workspace_runtime_dir_for_slug(scope, "opencode");
+    let opencode_ws =
+        orbit_engine::launcher::runtime::workspace_runtime_dir_for_slug(scope, "opencode");
     let auth_file = opencode_ws.join("data").join("opencode").join("auth.json");
     let gh_file = opencode_ws.join("config").join("gh").join("hosts.yml");
     if auth_file.exists() {
-        let account_file = opencode_ws.join("data").join("opencode").join("account.json");
+        let account_file = opencode_ws
+            .join("data")
+            .join("opencode")
+            .join("account.json");
         let username = std::fs::read_to_string(&account_file)
             .ok()
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -293,21 +297,19 @@ fn print_dry_run(
                 .unwrap_or_default();
             let hook_state = orbit_core::engine_hook::EngineHookState::load();
             let catalog = orbit_core::engine_hook::load_all();
-            let hooks_settings_suffix = if orbit_engine::launcher::engine_hooks::build_settings(
-                &hook_state,
-                &catalog,
-            )
-            .is_some()
-            {
-                let hooks_path = orbit_engine::launcher::runtime::runtime_dir_for_slug(
-                    scope,
-                    Engine::Claude.as_str(),
-                )
-                .join("claude-hooks-settings.json");
-                format!(" --settings {}", tp(&hooks_path))
-            } else {
-                String::new()
-            };
+            let hooks_settings_suffix =
+                if orbit_engine::launcher::engine_hooks::build_settings(&hook_state, &catalog)
+                    .is_some()
+                {
+                    let hooks_path = orbit_engine::launcher::runtime::runtime_dir_for_slug(
+                        scope,
+                        Engine::Claude.as_str(),
+                    )
+                    .join("claude-hooks-settings.json");
+                    format!(" --settings {}", tp(&hooks_path))
+                } else {
+                    String::new()
+                };
             format!(
                 "claude --mcp-config {}{ctx}{hooks_settings_suffix}",
                 tp(&config_file)
@@ -599,7 +601,12 @@ fn print_dry_run(
     if report.commands.is_empty() {
         println!("  {}  none", skip);
     } else {
-        let name_w = report.commands.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+        let name_w = report
+            .commands
+            .iter()
+            .map(|(n, _)| n.len())
+            .max()
+            .unwrap_or(0);
         for (name, source) in &report.commands {
             let pad = " ".repeat(name_w.saturating_sub(name.len()));
             println!("  {}  {}{pad}  {}", ok, name, dim(source));

@@ -136,7 +136,8 @@ fn build_opencode(
         {
             continue;
         }
-        let text = apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
+        let text =
+            apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
         fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
     materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
@@ -220,7 +221,8 @@ fn build_claude(
         {
             continue;
         }
-        let text = apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
+        let text =
+            apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
         fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
     materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
@@ -645,7 +647,10 @@ fn materialize_user_commands(
         if path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+        let Some(stem) = path
+            .file_stem()
+            .and_then(|s| s.to_str().map(str::to_string))
+        else {
             continue;
         };
         if orbit_core::builtin_command::find(&stem).is_some() {
@@ -814,7 +819,13 @@ mod tests {
             ..Default::default()
         };
 
-        build_claude(&scope, &runtime_dir, &[PathBuf::from("/some/README.md")], None).unwrap();
+        build_claude(
+            &scope,
+            &runtime_dir,
+            &[PathBuf::from("/some/README.md")],
+            None,
+        )
+        .unwrap();
 
         let claude_md = runtime_dir.join(".claude/CLAUDE.md");
         assert!(claude_md.exists(), "CLAUDE.md should be created");

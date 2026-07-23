@@ -1,9 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 const BUILTIN_ENGINE_HOOKS: &[(&str, &str)] =
     include!(concat!(env!("OUT_DIR"), "/builtin_engine_hooks.rs"));
@@ -138,9 +135,7 @@ pub fn find(name: &str) -> Option<EngineHookCatalog> {
 
 /// Expand a leading `$HOME` in a command path to the actual home directory.
 pub fn expand_home(s: &str) -> String {
-    if let (Some(rest), Some(base)) =
-        (s.strip_prefix("$HOME"), directories::BaseDirs::new())
-    {
+    if let (Some(rest), Some(base)) = (s.strip_prefix("$HOME"), directories::BaseDirs::new()) {
         return format!("{}{rest}", base.home_dir().display());
     }
     s.to_string()

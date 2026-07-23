@@ -339,7 +339,10 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+            let Some(stem) = path
+                .file_stem()
+                .and_then(|s| s.to_str().map(str::to_string))
+            else {
                 continue;
             };
             if orbit_core::builtin_command::find(&stem).is_some() {

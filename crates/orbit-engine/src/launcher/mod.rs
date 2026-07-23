@@ -39,7 +39,13 @@ pub fn launch(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
+    agents::build(
+        scope,
+        engine,
+        &paths.runtime_dir,
+        &config.instructions,
+        config.commands_filter.as_ref(),
+    )?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();
@@ -638,11 +644,17 @@ fn collect_session_env(
     // gh: prefer workspace-scoped auth; fall back to global if not configured.
     let gh_workspace = paths.workspace_config_dir.join("gh");
     if gh_workspace.exists() {
-        env.push(("GH_CONFIG_DIR".into(), gh_workspace.to_string_lossy().into_owned()));
+        env.push((
+            "GH_CONFIG_DIR".into(),
+            gh_workspace.to_string_lossy().into_owned(),
+        ));
     } else {
         let real_gh = std::path::PathBuf::from(&real_config_home).join("gh");
         if real_gh.exists() {
-            env.push(("GH_CONFIG_DIR".into(), real_gh.to_string_lossy().into_owned()));
+            env.push((
+                "GH_CONFIG_DIR".into(),
+                real_gh.to_string_lossy().into_owned(),
+            ));
         }
     }
 
@@ -676,7 +688,13 @@ pub fn spawn_background(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
+    agents::build(
+        scope,
+        engine,
+        &paths.runtime_dir,
+        &config.instructions,
+        config.commands_filter.as_ref(),
+    )?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();
@@ -842,7 +860,13 @@ pub fn spawn_plan_node(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
+    agents::build(
+        scope,
+        engine,
+        &paths.runtime_dir,
+        &config.instructions,
+        config.commands_filter.as_ref(),
+    )?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();
