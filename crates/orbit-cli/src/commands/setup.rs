@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 use orbit_core::{
+    builtin_command,
     catalog::{self, McpEntry},
     user_config::UserConfig,
 };
@@ -60,6 +61,10 @@ pub struct SetupArgs {
     /// Skip MCP configuration prompts
     #[arg(long)]
     pub no_mcps: bool,
+
+    /// Skip built-in command announcement
+    #[arg(long)]
+    pub no_commands: bool,
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
@@ -240,6 +245,12 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         setup_mcps()?;
     }
 
+    // ── built-in commands ────────────────────────────────────────────────────
+    if !args.no_commands {
+        println!();
+        setup_commands();
+    }
+
     // ── next steps ────────────────────────────────────────────────────────────
     println!();
     if !ai_root.exists() {
@@ -400,6 +411,23 @@ fn setup_mcps() -> Result<()> {
     println!("  MCPs saved → {}", mcps_path.display());
 
     Ok(())
+}
+
+// ── commands setup ────────────────────────────────────────────────────────────
+
+fn setup_commands() {
+    let cmds = builtin_command::all();
+    if cmds.is_empty() {
+        return;
+    }
+    println!("  Built-in commands ({} available):", cmds.len());
+    println!();
+    for (name, _content) in cmds {
+        println!("  \x1b[32m✓\x1b[0m  {name}");
+    }
+    println!();
+    println!("  Commands are materialized automatically at session launch.");
+    println!("  Use `orbit command enable/disable <name>` to filter per scope.");
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────

@@ -1,12 +1,12 @@
 use std::{fs, path::Path};
 
-fn embed_toml_dir(dir: &Path, out_path: &Path) {
+fn embed_dir(dir: &Path, out_path: &Path, ext: &str) {
     let mut entries: Vec<(String, String)> = Vec::new();
 
     if let Ok(read) = fs::read_dir(dir) {
         let mut paths: Vec<_> = read
             .flatten()
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
+            .filter(|e| e.path().extension().is_some_and(|ex| ex == ext))
             .collect();
         paths.sort_by_key(|e| e.path());
 
@@ -39,11 +39,15 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../../plugins");
     println!("cargo:rerun-if-changed=../../hooks");
+    println!("cargo:rerun-if-changed=../../commands");
     println!("cargo:rerun-if-changed=../../config/catalog");
 
     let plugins_dir = Path::new(&manifest_dir).join("../../plugins");
-    embed_toml_dir(&plugins_dir, &out_dir.join("builtin_plugins.rs"));
+    embed_dir(&plugins_dir, &out_dir.join("builtin_plugins.rs"), "toml");
 
     let hooks_dir = Path::new(&manifest_dir).join("../../hooks");
-    embed_toml_dir(&hooks_dir, &out_dir.join("builtin_engine_hooks.rs"));
+    embed_dir(&hooks_dir, &out_dir.join("builtin_engine_hooks.rs"), "toml");
+
+    let commands_dir = Path::new(&manifest_dir).join("../../commands");
+    embed_dir(&commands_dir, &out_dir.join("builtin_commands.rs"), "md");
 }

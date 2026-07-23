@@ -48,6 +48,10 @@ pub struct ScopeReport {
     pub instructions: Vec<(PathBuf, bool)>,
     pub mcp_servers: Vec<(String, Vec<String>)>,
     pub env_vars: Vec<(String, String)>,
+    /// Commands that will be materialized: (name, source label).
+    pub commands: Vec<(String, String)>,
+    /// Enabled engine hooks (Claude only): (hook_name, events summary).
+    pub engine_hooks: Vec<(String, String)>,
 }
 
 /// Load config AND build a layer-visibility report for dry-run output.
@@ -312,6 +316,65 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         .collect();
     env_vars.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // ── commands ──────────────────────────────────────────────────────────────
+    let filter = merged.commands_filter.as_ref();
+    let mut commands: Vec<(String, String)> = Vec::new();
+
+    for (name, _) in orbit_core::builtin_command::all() {
+        if filter.map_or(true, |f| f.contains(*name)) {
+            commands.push(((*name).to_string(), "built-in".to_string()));
+        }
+    }
+
+    let user_cmds_dir = dirs_global_config().join("orbit/commands");
+    if user_cmds_dir.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(&user_cmds_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect();
+        entries.sort_by_key(|e| e.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+                continue;
+            };
+            if orbit_core::builtin_command::find(&stem).is_some() {
+                continue; // built-in already included
+            }
+            if filter.map_or(true, |f| f.contains(&stem)) {
+                commands.push((stem, "user".to_string()));
+            }
+        }
+    }
+    commands.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // ── engine hooks (Claude only) ────────────────────────────────────────────
+    let engine_hooks: Vec<(String, String)> = if engine == Engine::Claude {
+        let state = orbit_core::engine_hook::EngineHookState::load();
+        let catalog = orbit_core::engine_hook::load_all();
+        let mut hooks: Vec<(String, String)> = catalog
+            .iter()
+            .filter(|e| state.is_enabled(&e.name))
+            .map(|e| {
+                let events = e
+                    .events
+                    .iter()
+                    .map(|ev| ev.event.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (e.name.clone(), events)
+            })
+            .collect();
+        hooks.sort_by(|a, b| a.0.cmp(&b.0));
+        hooks
+    } else {
+        vec![]
+    };
+
     ScopeReport {
         config_layers,
         mcp_layers,
@@ -319,6 +382,8 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         instructions,
         mcp_servers,
         env_vars,
+        commands,
+        engine_hooks,
     }
 }
 

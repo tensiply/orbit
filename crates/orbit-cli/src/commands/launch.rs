@@ -584,6 +584,57 @@ fn print_dry_run(
         println!();
     }
 
+    // ── commands ──────────────────────────────────────────────────────────────
+    let filter_note = if merged.commands_filter.is_some() {
+        format!("  {}", dim("(filtered by scope)"))
+    } else {
+        String::new()
+    };
+    println!(
+        "{}  {}{}",
+        bold("commands"),
+        dim(&format!("({})", report.commands.len())),
+        filter_note,
+    );
+    if report.commands.is_empty() {
+        println!("  {}  none", skip);
+    } else {
+        let name_w = report.commands.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+        for (name, source) in &report.commands {
+            let pad = " ".repeat(name_w.saturating_sub(name.len()));
+            println!("  {}  {}{pad}  {}", ok, name, dim(source));
+        }
+    }
+    println!();
+
+    // ── engine hooks ──────────────────────────────────────────────────────────
+    if engine == Engine::Claude {
+        println!(
+            "{}  {}",
+            bold("hooks"),
+            dim(&format!("({})", report.engine_hooks.len())),
+        );
+        if report.engine_hooks.is_empty() {
+            println!(
+                "  {}  none enabled  {}",
+                skip,
+                dim("— use: orbit hooks enable <name>")
+            );
+        } else {
+            let name_w = report
+                .engine_hooks
+                .iter()
+                .map(|(n, _)| n.len())
+                .max()
+                .unwrap_or(0);
+            for (name, events) in &report.engine_hooks {
+                let pad = " ".repeat(name_w.saturating_sub(name.len()));
+                println!("  {}  {}{pad}  {}", ok, name, dim(events));
+            }
+        }
+        println!();
+    }
+
     let _ = merged;
 }
 

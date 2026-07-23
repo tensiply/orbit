@@ -130,16 +130,16 @@ fn build_opencode(
     }
 
     // ── commands ──────────────────────────────────────────────────────────────
-    for (name, _) in manifest_section(&manifest, "commands") {
+    for (name, content) in orbit_core::builtin_command::all() {
         if let Some(filter) = commands_filter
-            && !filter.contains(&name)
+            && !filter.contains(*name)
         {
             continue;
         }
-        if let Some(text) = merge_layered_markdown(scope, "commands", &name, &shared, &local) {
-            fs::write(commands_dir.join(format!("{name}.md")), text)?;
-        }
+        let text = apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
+        fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
+    materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
 
     // ── skills symlink ────────────────────────────────────────────────────────
     let shared_skills = shared.join("skills");
@@ -214,16 +214,16 @@ fn build_claude(
     // ── commands ──────────────────────────────────────────────────────────────
     let commands_dir = runtime_claude.join("commands");
     fs::create_dir_all(&commands_dir)?;
-    for (name, _) in manifest_section(&manifest, "commands") {
+    for (name, content) in orbit_core::builtin_command::all() {
         if let Some(filter) = commands_filter
-            && !filter.contains(&name)
+            && !filter.contains(*name)
         {
             continue;
         }
-        if let Some(text) = merge_layered_markdown(scope, "commands", &name, &shared, &local) {
-            fs::write(commands_dir.join(format!("{name}.md")), text)?;
-        }
+        let text = apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
+        fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
+    materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
 
     // ── skills + README symlinks ──────────────────────────────────────────────
     let shared_skills = shared.join("skills");
@@ -596,6 +596,83 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 
 fn read_opt(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
+}
+
+// ── command helpers ───────────────────────────────────────────────────────────
+
+/// Resolve the content for a command: prefer source-of-truth base if present,
+/// fall back to `fallback` (built-in content), then apply scope overlays.
+fn apply_scope_overlays_or_fallback(
+    scope: &OrbitScope,
+    kind: &str,
+    name: &str,
+    fallback: &str,
+    shared: &Path,
+    local: &Path,
+) -> String {
+    let base_candidates = [
+        shared.join(kind).join(format!("{name}.md")),
+        local.join(kind).join(format!("{name}.md")),
+    ];
+    let mut text = base_candidates
+        .iter()
+        .find_map(|p| read_opt(p))
+        .unwrap_or_else(|| fallback.to_string());
+    for overlay_path in overlay_paths(scope, kind, name) {
+        if let Some(overlay) = read_opt(&overlay_path) {
+            text = merge_preserve_base(&text, &overlay);
+        }
+    }
+    text
+}
+
+/// Materialise commands from `~/.config/orbit/commands/` that are not built-ins.
+fn materialize_user_commands(
+    scope: &OrbitScope,
+    commands_dir: &Path,
+    commands_filter: Option<&std::collections::HashSet<String>>,
+    shared: &Path,
+    local: &Path,
+) -> Result<()> {
+    let user_dir = user_config_dir().join("commands");
+    if !user_dir.is_dir() {
+        return Ok(());
+    }
+    let mut entries: Vec<_> = fs::read_dir(&user_dir)?.flatten().collect();
+    entries.sort_by_key(|e| e.path());
+    for entry in entries {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+            continue;
+        };
+        if orbit_core::builtin_command::find(&stem).is_some() {
+            continue; // built-in already handled
+        }
+        if let Some(filter) = commands_filter
+            && !filter.contains(&stem)
+        {
+            continue;
+        }
+        let fallback = fs::read_to_string(&path).unwrap_or_default();
+        let text =
+            apply_scope_overlays_or_fallback(scope, "commands", &stem, &fallback, shared, local);
+        fs::write(commands_dir.join(format!("{stem}.md")), text)?;
+    }
+    Ok(())
+}
+
+fn user_config_dir() -> PathBuf {
+    std::env::var("ORBIT_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::BaseDirs::new()
+                .map(|b| b.home_dir().join(".config"))
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+        })
+        .join("orbit")
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

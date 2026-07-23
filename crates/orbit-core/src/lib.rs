@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod builtin_command;
 pub mod catalog;
 pub mod config;
 pub mod context;
