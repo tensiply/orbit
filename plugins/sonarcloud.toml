@@ -1,0 +1,35 @@
+name = "sonarcloud"
+description = "SonarCloud integration — quality gate, issues, hotspots, coverage, and security analysis"
+category = "dev"
+url = "https://github.com/SonarSource/sonarqube-mcp-server"
+
+[check]
+binary = "node"
+
+[[install]]
+method = "npm"
+cmd = ["npm", "install", "-g", "@sonar/sonarqube-mcp-server"]
+label = "npm (global)"
+
+[auth]
+hint = "Generate a user token at https://sonarcloud.io/account/security. Your org slug is in the SonarCloud URL: sonarcloud.io/organizations/<slug>"
+
+[[auth.vars]]
+name = "SONARCLOUD_TOKEN"
+description = "SonarCloud user token (Settings > My Account > Security)"
+secret = true
+
+[[auth.vars]]
+name = "SONARCLOUD_ORG"
+description = "SonarCloud organization slug (from sonarcloud.io/organizations/<slug>)"
+secret = false
+
+[[mcp]]
+name = "sonarqube"
+command = "npx"
+args = ["-y", "@sonar/sonarqube-mcp-server@latest"]
+env = { SONARQUBE_TOKEN = "${SONARCLOUD_TOKEN}", SONARQUBE_ORG = "${SONARCLOUD_ORG}", SONARQUBE_URL = "https://sonarcloud.io" }
+label = "SonarCloud"
+
+[context]
+prompt = "You have access to SonarCloud via MCP. You can read quality gate status, issues (bugs, vulnerabilities, code smells), security hotspots, coverage metrics, and duplications for any project in the org. When the user asks about code quality, security, or test coverage, use SonarCloud MCP tools. The project key is typically in SONARQUBE_PROJECT_KEY env var or in sonar-project.properties."

@@ -55,6 +55,25 @@ pub struct InstallMethod {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthSpec {
     pub hint: String,
+    /// Shell command to run after collecting vars (e.g. "acli jira auth login")
+    pub cmd: Option<String>,
+    /// Credential vars to collect interactively and store in the OS keychain
+    #[serde(default)]
+    pub vars: Vec<AuthVar>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthVar {
+    /// Keychain key and env var name (e.g. "SONARCLOUD_TOKEN")
+    pub name: String,
+    /// Human-readable prompt shown to the user
+    pub description: String,
+    /// Mask input in the terminal — stored encrypted in keychain regardless
+    #[serde(default)]
+    pub secret: bool,
+    /// Allow empty value (skip storing if blank)
+    #[serde(default)]
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

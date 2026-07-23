@@ -17,7 +17,8 @@ cmd = ["bash", "-c", "curl -LO https://acli.atlassian.com/linux/latest/acli_linu
 label = "curl (Linux amd64)"
 
 [auth]
-hint = "Run `acli jira auth login --site 'yoursite.atlassian.net' --email 'you@example.com' --token < api-token.txt` to authenticate"
+hint = "Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens"
+cmd = "acli jira auth login"
 
 [tui]
 tab_title = "Tasks"

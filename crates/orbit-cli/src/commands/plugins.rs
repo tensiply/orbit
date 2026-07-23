@@ -1,6 +1,9 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
-use orbit_core::plugin::{self, InstallMethod, Plugin, PluginState};
+use orbit_core::{
+    plugin::{self, InstallMethod, Plugin, PluginState},
+    secrets,
+};
 use std::collections::HashMap;
 use std::{
     io::{self, Write},
@@ -71,6 +74,17 @@ pub enum PluginsCommand {
         #[arg(long = "param", short = 'p', value_name = "KEY=VALUE")]
         params: Vec<String>,
     },
+    /// Configure credentials for a plugin interactively
+    ///
+    /// Prompts for each required credential and stores it in the OS keychain.
+    /// Use `orbit secret get <KEY>` to verify stored values.
+    ///
+    /// Example:
+    ///   orbit plugins auth sonarcloud
+    Auth {
+        /// Plugin name (from `orbit plugins list`)
+        name: String,
+    },
 }
 
 pub fn run(args: PluginsArgs) -> Result<()> {
@@ -83,6 +97,7 @@ pub fn run(args: PluginsArgs) -> Result<()> {
         PluginsCommand::Wrap { name, engine } => wrap(&name, engine.as_deref()),
         PluginsCommand::Unwrap { name, engine } => unwrap_engine(&name, engine.as_deref()),
         PluginsCommand::Run { name, params } => run_executor(&name, &params),
+        PluginsCommand::Auth { name } => auth(&name),
     }
 }
 
@@ -370,6 +385,128 @@ fn disable(name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ── auth ──────────────────────────────────────────────────────────────────────
+
+fn auth(name: &str) -> Result<()> {
+    let Some(plugin) = plugin::find(name) else {
+        bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
+    };
+
+    let Some(auth_spec) = &plugin.auth else {
+        println!("  {name} has no auth configuration.");
+        return Ok(());
+    };
+
+    println!("  Configuring auth for: \x1b[1m{}\x1b[0m", plugin.name);
+    println!("  {}", auth_spec.hint);
+    println!();
+
+    if auth_spec.vars.is_empty() && auth_spec.cmd.is_none() {
+        println!("  No interactive setup available — follow the hint above.");
+        return Ok(());
+    }
+
+    // ── collect and store credential vars ─────────────────────────────────────
+    for var in &auth_spec.vars {
+        let already_set = secrets::keychain_get(&var.name).is_ok();
+        let default_hint = if already_set { "<already set>" } else { "" };
+
+        let value = if var.secret {
+            ask_secret(&format!("  {} (secret, leave blank to keep existing)", var.description), already_set)?
+        } else {
+            ask(&format!("  {}", var.description), default_hint)?
+        };
+
+        if value.is_empty() {
+            if already_set {
+                println!("    \x1b[2m↩  {} unchanged\x1b[0m", var.name);
+                continue;
+            }
+            if var.optional {
+                println!("    \x1b[2m-  {} skipped (optional)\x1b[0m", var.name);
+                continue;
+            }
+            bail!("{} is required and cannot be blank", var.name);
+        }
+
+        secrets::keychain_set(&var.name, &value)?;
+        println!("    \x1b[32m✓\x1b[0m  {} stored in keychain", var.name);
+    }
+
+    // ── run optional CLI auth command ─────────────────────────────────────────
+    if let Some(cmd) = &auth_spec.cmd {
+        println!();
+        println!("  Running: {cmd}");
+        let status = Command::new("sh").arg("-c").arg(cmd).status()?;
+        if !status.success() {
+            bail!("auth command exited with failure");
+        }
+    }
+
+    println!();
+    println!("  \x1b[32m✓\x1b[0m  Auth configured for {}.", plugin.name);
+    if plugin.has_mcp() && !PluginState::load().is_enabled(name) {
+        println!("     Run `orbit plugins enable {name}` to activate the MCP server.");
+    }
+
+    Ok(())
+}
+
+fn ask_secret(prompt: &str, has_existing: bool) -> Result<String> {
+    use crossterm::{
+        cursor,
+        event::{self, Event, KeyCode, KeyModifiers},
+        execute,
+        terminal::{self, ClearType},
+    };
+    use std::io::stderr;
+
+    print!("{prompt}: ");
+    io::stdout().flush()?;
+
+    terminal::enable_raw_mode()?;
+    let mut value = String::new();
+
+    loop {
+        match event::read()? {
+            Event::Key(key) => match (key.modifiers, key.code) {
+                // submit
+                (_, KeyCode::Enter) => {
+                    break;
+                }
+                // ctrl+c / ctrl+d → abort
+                (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('d')) => {
+                    terminal::disable_raw_mode()?;
+                    println!();
+                    bail!("cancelled");
+                }
+                // backspace
+                (_, KeyCode::Backspace) => {
+                    value.pop();
+                }
+                // printable char
+                (_, KeyCode::Char(c)) => {
+                    value.push(c);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    terminal::disable_raw_mode()?;
+    // print newline without echoing the secret
+    let mut err = stderr();
+    execute!(err, cursor::MoveToNextLine(1))?;
+    let _ = execute!(err, terminal::Clear(ClearType::CurrentLine));
+    println!();
+
+    if value.is_empty() && has_existing {
+        return Ok(String::new()); // caller interprets blank + has_existing as "keep"
+    }
+    Ok(value)
 }
 
 // ── info ──────────────────────────────────────────────────────────────────────
@@ -683,6 +820,19 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn ask(prompt: &str, default: &str) -> Result<String> {
+    print!("{prompt} [{default}]: ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    Ok(if trimmed.is_empty() {
+        default.to_string()
+    } else {
+        trimmed.to_string()
+    })
 }
 
 fn confirm(question: &str, default: bool) -> Result<bool> {
