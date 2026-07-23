@@ -234,9 +234,11 @@ fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── catalog helpers ───────────────────────────────────────────────────────────
 
 /// Discover the full command catalog:
+/// Priority order:
 /// 1. Built-in commands embedded in binary (lowest priority — overridable)
 /// 2. Source-of-truth commands from shared/local dirs (override built-ins by name)
 /// 3. User commands from `~/.config/orbit/commands/`
+///
 /// Returns (name, description) pairs, deduped (later entries win for description).
 fn discover_catalog(shared: &Path, local: &Path) -> Vec<(String, Option<String>)> {
     let mut seen = std::collections::HashSet::new();

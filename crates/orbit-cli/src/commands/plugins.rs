@@ -476,8 +476,8 @@ fn ask_secret(prompt: &str, has_existing: bool) -> Result<String> {
     let mut value = String::new();
 
     loop {
-        match event::read()? {
-            Event::Key(key) => match (key.modifiers, key.code) {
+        if let Event::Key(key) = event::read()? {
+            match (key.modifiers, key.code) {
                 // submit
                 (_, KeyCode::Enter) => {
                     break;
@@ -497,8 +497,7 @@ fn ask_secret(prompt: &str, has_existing: bool) -> Result<String> {
                     value.push(c);
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 

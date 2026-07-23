@@ -321,7 +321,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
     let mut commands: Vec<(String, String)> = Vec::new();
 
     for (name, _) in orbit_core::builtin_command::all() {
-        if filter.map_or(true, |f| f.contains(*name)) {
+        if filter.is_none_or(|f| f.contains(*name)) {
             commands.push(((*name).to_string(), "built-in".to_string()));
         }
     }
@@ -348,7 +348,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
             if orbit_core::builtin_command::find(&stem).is_some() {
                 continue; // built-in already included
             }
-            if filter.map_or(true, |f| f.contains(&stem)) {
+            if filter.is_none_or(|f| f.contains(&stem)) {
                 commands.push((stem, "user".to_string()));
             }
         }
