@@ -1,0 +1,9 @@
+name = "desktop-notify"
+description = "Desktop notification via notify-send when Claude sends a message"
+category = "productivity"
+requires_binary = "notify-send"
+
+[[events]]
+event = "Notification"
+command = "$HOME/.claude/hooks/on-notification.sh"
+is_async = true

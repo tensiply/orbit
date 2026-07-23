@@ -20,10 +20,11 @@ pub fn build(
     engine: Engine,
     runtime_dir: &Path,
     instructions: &[PathBuf],
+    commands_filter: Option<&std::collections::HashSet<String>>,
 ) -> Result<()> {
     match engine {
-        Engine::Opencode => build_opencode(scope, runtime_dir),
-        Engine::Claude => build_claude(scope, runtime_dir, instructions),
+        Engine::Opencode => build_opencode(scope, runtime_dir, commands_filter),
+        Engine::Claude => build_claude(scope, runtime_dir, instructions, commands_filter),
         Engine::Gemini => Ok(()),
     }
 }
@@ -86,7 +87,11 @@ fn overlay_paths(scope: &OrbitScope, kind: &str, name: &str) -> Vec<PathBuf> {
 
 // ── OpenCode ──────────────────────────────────────────────────────────────────
 
-fn build_opencode(scope: &OrbitScope, runtime_dir: &Path) -> Result<()> {
+fn build_opencode(
+    scope: &OrbitScope,
+    runtime_dir: &Path,
+    commands_filter: Option<&std::collections::HashSet<String>>,
+) -> Result<()> {
     let runtime_opencode = runtime_dir.join(".opencode");
     let agents_dir = runtime_opencode.join("agents");
     let commands_dir = runtime_opencode.join("commands");
@@ -126,6 +131,11 @@ fn build_opencode(scope: &OrbitScope, runtime_dir: &Path) -> Result<()> {
 
     // ── commands ──────────────────────────────────────────────────────────────
     for (name, _) in manifest_section(&manifest, "commands") {
+        if let Some(filter) = commands_filter
+            && !filter.contains(&name)
+        {
+            continue;
+        }
         if let Some(text) = merge_layered_markdown(scope, "commands", &name, &shared, &local) {
             fs::write(commands_dir.join(format!("{name}.md")), text)?;
         }
@@ -160,7 +170,12 @@ fn build_opencode(scope: &OrbitScope, runtime_dir: &Path) -> Result<()> {
 
 // ── Claude ────────────────────────────────────────────────────────────────────
 
-fn build_claude(scope: &OrbitScope, runtime_dir: &Path, instructions: &[PathBuf]) -> Result<()> {
+fn build_claude(
+    scope: &OrbitScope,
+    runtime_dir: &Path,
+    instructions: &[PathBuf],
+    commands_filter: Option<&std::collections::HashSet<String>>,
+) -> Result<()> {
     let runtime_claude = runtime_dir.join(".claude");
     let agents_dir = runtime_claude.join("agents");
     let skills_dir = runtime_claude.join("skills");
@@ -200,6 +215,11 @@ fn build_claude(scope: &OrbitScope, runtime_dir: &Path, instructions: &[PathBuf]
     let commands_dir = runtime_claude.join("commands");
     fs::create_dir_all(&commands_dir)?;
     for (name, _) in manifest_section(&manifest, "commands") {
+        if let Some(filter) = commands_filter
+            && !filter.contains(&name)
+        {
+            continue;
+        }
         if let Some(text) = merge_layered_markdown(scope, "commands", &name, &shared, &local) {
             fs::write(commands_dir.join(format!("{name}.md")), text)?;
         }
@@ -717,7 +737,7 @@ mod tests {
             ..Default::default()
         };
 
-        build_claude(&scope, &runtime_dir, &[PathBuf::from("/some/README.md")]).unwrap();
+        build_claude(&scope, &runtime_dir, &[PathBuf::from("/some/README.md")], None).unwrap();
 
         let claude_md = runtime_dir.join(".claude/CLAUDE.md");
         assert!(claude_md.exists(), "CLAUDE.md should be created");

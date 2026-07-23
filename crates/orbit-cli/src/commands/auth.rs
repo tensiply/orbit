@@ -210,15 +210,15 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     if let Ok(scope) = resolver::resolve_from_cwd() {
         let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
         let auth_file = workspace_runtime.join("data").join("opencode").join("auth.json");
-        if auth_file.exists() {
-            if let Some(username) = resolve_github_username(&auth_file) {
-                let account_file = workspace_runtime.join("data").join("opencode").join("account.json");
-                let _ = fs::write(
-                    &account_file,
-                    format!("{{\"username\":\"{username}\"}}"),
-                );
-                println!("account:   {username}");
-            }
+        if auth_file.exists()
+            && let Some(username) = resolve_github_username(&auth_file)
+        {
+            let account_file = workspace_runtime.join("data").join("opencode").join("account.json");
+            let _ = fs::write(
+                &account_file,
+                format!("{{\"username\":\"{username}\"}}"),
+            );
+            println!("account:   {username}");
         }
     }
 

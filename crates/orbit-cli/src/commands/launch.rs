@@ -291,7 +291,27 @@ fn print_dry_run(
                 .as_ref()
                 .map(|p| format!(" --append-system-prompt-file {}", tp(p)))
                 .unwrap_or_default();
-            format!("claude --mcp-config {}{ctx}", tp(&config_file))
+            let hook_state = orbit_core::engine_hook::EngineHookState::load();
+            let catalog = orbit_core::engine_hook::load_all();
+            let hooks_settings_suffix = if orbit_engine::launcher::engine_hooks::build_settings(
+                &hook_state,
+                &catalog,
+            )
+            .is_some()
+            {
+                let hooks_path = orbit_engine::launcher::runtime::runtime_dir_for_slug(
+                    scope,
+                    Engine::Claude.as_str(),
+                )
+                .join("claude-hooks-settings.json");
+                format!(" --settings {}", tp(&hooks_path))
+            } else {
+                String::new()
+            };
+            format!(
+                "claude --mcp-config {}{ctx}{hooks_settings_suffix}",
+                tp(&config_file)
+            )
         }
         Engine::Opencode => format!("OPENCODE_CONFIG={} opencode", tp(&config_file)),
         Engine::Gemini => format!(

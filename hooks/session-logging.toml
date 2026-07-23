@@ -1,0 +1,8 @@
+name = "session-logging"
+description = "Log session stop events to ~/.claude/logs/sessions.log"
+category = "governance"
+
+[[events]]
+event = "Stop"
+command = "$HOME/.claude/hooks/on-stop.sh"
+is_async = false

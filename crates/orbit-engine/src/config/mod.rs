@@ -23,6 +23,10 @@ pub struct MergedConfig {
     pub mcp: HashMap<String, McpServer>,
     /// Extra environment variables injected into the engine process (last writer wins).
     pub env: HashMap<String, String>,
+    /// Union of all `commands` arrays across scope layers.
+    /// `None` = no scope layer declared a commands list → all commands materialised.
+    /// `Some(set)` = only commands in this set are materialised.
+    pub commands_filter: Option<std::collections::HashSet<String>>,
     /// All other keys (model, agent, compaction, …) — last writer wins.
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -442,6 +446,19 @@ fn merge_value_into(
                         if let Some(s) = v.as_str() {
                             cfg.env.insert(k.clone(), s.to_string());
                         }
+                    }
+                }
+            }
+            "commands" => {
+                if let Some(arr) = value.as_array() {
+                    let names: std::collections::HashSet<String> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect();
+                    match &mut cfg.commands_filter {
+                        None => cfg.commands_filter = Some(names),
+                        Some(set) => set.extend(names),
                     }
                 }
             }

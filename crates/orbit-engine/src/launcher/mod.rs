@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod engine_hooks;
 pub mod plugin_hooks;
 pub mod render;
 pub mod runtime;
@@ -38,7 +39,7 @@ pub fn launch(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
+    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();
@@ -63,6 +64,21 @@ pub fn launch(
             config.instructions.push(path);
         }
     }
+
+    // 2d. Engine hooks settings (Claude only) — write runtime settings file for --settings
+    let hooks_settings_path = if engine == Engine::Claude {
+        let state = orbit_core::engine_hook::EngineHookState::load();
+        let catalog = orbit_core::engine_hook::load_all();
+        if let Some(val) = engine_hooks::build_settings(&state, &catalog) {
+            let path = paths.runtime_dir.join("claude-hooks-settings.json");
+            fs::write(&path, serde_json::to_string_pretty(&val)?)?;
+            Some(path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
     if engine == Engine::Gemini {
@@ -127,12 +143,18 @@ pub fn launch(
             engine,
             &paths.config_file,
             context_file.as_deref(),
+            hooks_settings_path.as_deref(),
             &tmux_name,
             &title,
             opts.new_session,
         )
     } else {
-        exec_engine(engine, &paths.config_file, context_file.as_deref())
+        exec_engine(
+            engine,
+            &paths.config_file,
+            context_file.as_deref(),
+            hooks_settings_path.as_deref(),
+        )
     }
 }
 
@@ -178,6 +200,7 @@ fn exec_with_tmux(
     engine: Engine,
     config_file: &Path,
     context_file: Option<&Path>,
+    hooks_settings: Option<&Path>,
     session_name: &str,
     window_name: &str,
     force_new: bool,
@@ -200,7 +223,7 @@ fn exec_with_tmux(
     }
 
     // Build the engine command args for tmux
-    let (bin, extra_args) = engine_cmd(engine, config_file, context_file);
+    let (bin, extra_args) = engine_cmd(engine, config_file, context_file, hooks_settings);
 
     // Create session detached so we can lock the window name before attaching.
     // Without this, the engine rewrites the window name via OSC sequences on startup.
@@ -268,8 +291,13 @@ fn exec_with_tmux(
 
 // ── direct exec ───────────────────────────────────────────────────────────────
 
-fn exec_engine(engine: Engine, config_file: &Path, context_file: Option<&Path>) -> Result<()> {
-    let (bin, extra_args) = engine_cmd(engine, config_file, context_file);
+fn exec_engine(
+    engine: Engine,
+    config_file: &Path,
+    context_file: Option<&Path>,
+    hooks_settings: Option<&Path>,
+) -> Result<()> {
+    let (bin, extra_args) = engine_cmd(engine, config_file, context_file, hooks_settings);
     let mut cmd = Command::new(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
@@ -282,6 +310,7 @@ fn engine_cmd(
     engine: Engine,
     config_file: &Path,
     context_file: Option<&Path>,
+    hooks_settings: Option<&Path>,
 ) -> (String, Vec<String>) {
     match engine {
         Engine::Claude => {
@@ -292,6 +321,10 @@ fn engine_cmd(
             if let Some(ctx) = context_file {
                 args.push("--append-system-prompt-file".to_string());
                 args.push(ctx.to_string_lossy().into_owned());
+            }
+            if let Some(h) = hooks_settings {
+                args.push("--settings".to_string());
+                args.push(h.to_string_lossy().into_owned());
             }
             ("claude".to_string(), args)
         }
@@ -643,7 +676,7 @@ pub fn spawn_background(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
+    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();
@@ -668,6 +701,21 @@ pub fn spawn_background(
             config.instructions.push(path);
         }
     }
+
+    // 2d. Engine hooks settings (Claude only) — write runtime settings file for --settings
+    let hooks_settings_path = if engine == Engine::Claude {
+        let hook_state = orbit_core::engine_hook::EngineHookState::load();
+        let catalog = orbit_core::engine_hook::load_all();
+        if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
+            let path = paths.runtime_dir.join("claude-hooks-settings.json");
+            fs::write(&path, serde_json::to_string_pretty(&val)?)?;
+            Some(path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
     if engine == Engine::Gemini {
@@ -725,7 +773,12 @@ pub fn spawn_background(
     if let Err(e) = runtime::sync_workspace_auth(&paths) {
         tracing::warn!("could not sync workspace auth: {e}");
     }
-    let (bin, extra_args) = engine_cmd(engine, &paths.config_file, context_file.as_deref());
+    let (bin, extra_args) = engine_cmd(
+        engine,
+        &paths.config_file,
+        context_file.as_deref(),
+        hooks_settings_path.as_deref(),
+    );
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session").arg("-d").arg("-s").arg(&tmux_name);
@@ -789,7 +842,7 @@ pub fn spawn_plan_node(
     let paths = runtime::setup(scope, engine)?;
 
     // 2. Agent materialisation
-    agents::build(scope, engine, &paths.runtime_dir, &config.instructions)?;
+    agents::build(scope, engine, &paths.runtime_dir, &config.instructions, config.commands_filter.as_ref())?;
 
     // 2b. Plugin context + pre-launch hooks
     let mut config = config.clone();

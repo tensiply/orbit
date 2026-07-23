@@ -591,6 +591,7 @@ pub fn render_task_details(f: &mut Frame, area: Rect, detail: &JiraIssueDetail, 
     render_detail_body(f, detail, chunks[1], accent, dim);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_detail_meta(
     f: &mut Frame,
     d: &JiraIssueDetail,

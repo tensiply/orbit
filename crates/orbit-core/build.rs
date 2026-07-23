@@ -1,19 +1,10 @@
 use std::{fs, path::Path};
 
-fn main() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let plugins_dir = Path::new(&manifest_dir).join("../../plugins");
-
-    println!("cargo:rerun-if-changed=../../plugins");
-    println!("cargo:rerun-if-changed=../../config/catalog");
-
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let out_path = Path::new(&out_dir).join("builtin_plugins.rs");
-
+fn embed_toml_dir(dir: &Path, out_path: &Path) {
     let mut entries: Vec<(String, String)> = Vec::new();
 
-    if let Ok(dir) = fs::read_dir(&plugins_dir) {
-        let mut paths: Vec<_> = dir
+    if let Ok(read) = fs::read_dir(dir) {
+        let mut paths: Vec<_> = read
             .flatten()
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
             .collect();
@@ -38,5 +29,21 @@ fn main() {
     }
     code.push(']');
 
-    fs::write(&out_path, code).unwrap();
+    fs::write(out_path, code).unwrap();
+}
+
+fn main() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let out_dir = Path::new(&out_dir);
+
+    println!("cargo:rerun-if-changed=../../plugins");
+    println!("cargo:rerun-if-changed=../../hooks");
+    println!("cargo:rerun-if-changed=../../config/catalog");
+
+    let plugins_dir = Path::new(&manifest_dir).join("../../plugins");
+    embed_toml_dir(&plugins_dir, &out_dir.join("builtin_plugins.rs"));
+
+    let hooks_dir = Path::new(&manifest_dir).join("../../hooks");
+    embed_toml_dir(&hooks_dir, &out_dir.join("builtin_engine_hooks.rs"));
 }
