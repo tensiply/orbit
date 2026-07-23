@@ -1,0 +1,100 @@
+name = "kubectl-destructive-guard"
+description = "Block kubectl commands that delete, drain, cordon, or forcefully modify Kubernetes resources"
+category = "security"
+requires_binary = "python3"
+
+[[events]]
+event = "PreToolUse"
+matcher = "Bash"
+command = "$HOME/.claude/hooks/kubectl-destructive-guard.sh"
+is_async = false
+
+[[scripts]]
+path = "$HOME/.claude/hooks/kubectl-destructive-guard.sh"
+executable = true
+content = '''
+#!/bin/bash
+# PreToolUse hook — guards against automatic kubectl destructive operations.
+# JSON stdin: { "tool_name": "...", "tool_input": { "command": "..." } }
+#
+# Covers: kubectl delete, drain, cordon, taint, replace --force, scale --replicas=0.
+# Exit code 2 signals Claude Code to block the tool call; stderr is shown to the model.
+
+INPUT=$(cat)
+
+COMMAND=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+
+# Skip quickly if no kubectl invocation is present
+if ! echo "$COMMAND" | grep -qE '(^|[[:space:];&|`(])kubectl[[:space:]]'; then
+    exit 0
+fi
+
+# Detect destructive operation
+MATCHED=$(echo "$COMMAND" | python3 -c "
+import sys, re
+
+cmd = sys.stdin.read()
+
+for chunk in re.split(r'&&|\|\||[;&|]', cmd):
+    chunk = chunk.strip()
+
+    if not re.search(r'\bkubectl\b', chunk, re.IGNORECASE):
+        continue
+
+    # kubectl delete <resource> — always destructive
+    if re.search(r'\bkubectl\b.*\bdelete\b', chunk, re.IGNORECASE):
+        print('kubectl:delete')
+        break
+
+    # kubectl drain <node> — evicts all pods from a node
+    if re.search(r'\bkubectl\b.*\bdrain\b', chunk, re.IGNORECASE):
+        print('kubectl:drain')
+        break
+
+    # kubectl cordon <node> — marks node unschedulable
+    if re.search(r'\bkubectl\b.*\bcordon\b', chunk, re.IGNORECASE):
+        print('kubectl:cordon')
+        break
+
+    # kubectl taint nodes — adds taint that can evict pods
+    if re.search(r'\bkubectl\b.*\btaint\b', chunk, re.IGNORECASE):
+        print('kubectl:taint')
+        break
+
+    # kubectl replace --force — deletes and recreates resource
+    if re.search(r'\bkubectl\b.*\breplace\b.*--force\b', chunk, re.IGNORECASE):
+        print('kubectl:replace --force')
+        break
+
+    # kubectl scale --replicas=0 — scales down to zero (equivalent to stop)
+    if re.search(r'\bkubectl\b.*\bscale\b.*--replicas[= ]*0\b', chunk, re.IGNORECASE):
+        print('kubectl:scale --replicas=0')
+        break
+
+    # kubectl rollout restart — restarts all pods of a workload
+    if re.search(r'\bkubectl\b.*\brollout\b.*\brestart\b', chunk, re.IGNORECASE):
+        print('kubectl:rollout restart')
+        break
+
+" 2>/dev/null || echo "")
+
+if [ -n "$MATCHED" ]; then
+    TOOL=$(echo "$MATCHED" | cut -d: -f1)
+    OP=$(echo "$MATCHED" | cut -d: -f2-)
+    printf '[kubectl-destructive-guard] BLOCKED: kubectl operation "%s" requires manual confirmation\n' "$OP" >&2
+    printf 'Command: %s\n' "$COMMAND" >&2
+    printf '\nThis hook prevents automatic execution of kubectl operations that delete, drain,\n' >&2
+    printf 'cordon, taint, or forcefully modify Kubernetes resources.\n' >&2
+    printf 'Run the command manually in the terminal to proceed.\n' >&2
+    exit 2
+fi
+
+exit 0
+'''

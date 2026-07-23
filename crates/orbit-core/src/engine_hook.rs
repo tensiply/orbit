@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -18,6 +18,20 @@ pub struct EngineHookCatalog {
     #[serde(default)]
     pub events: Vec<EngineHookEventDef>,
     pub requires_binary: Option<String>,
+    #[serde(default)]
+    pub scripts: Vec<EngineHookScript>,
+}
+
+/// A shell script shipped with an engine hook and installed to disk on `enable`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EngineHookScript {
+    /// Destination path; `$HOME` is expanded at install time.
+    pub path: String,
+    /// Whether to set the executable bit (755).
+    #[serde(default)]
+    pub executable: bool,
+    /// Verbatim script content.
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,6 +144,29 @@ pub fn expand_home(s: &str) -> String {
         return format!("{}{rest}", base.home_dir().display());
     }
     s.to_string()
+}
+
+/// Install all scripts declared by a hook to their target paths.
+/// Returns the list of paths written.
+pub fn install_scripts(hook: &EngineHookCatalog) -> Result<Vec<PathBuf>> {
+    let mut written = Vec::new();
+    for script in &hook.scripts {
+        let dest = PathBuf::from(expand_home(&script.path));
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create parent dir for {}", dest.display()))?;
+        }
+        fs::write(&dest, &script.content)
+            .with_context(|| format!("write script {}", dest.display()))?;
+        #[cfg(unix)]
+        if script.executable {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
+                .with_context(|| format!("chmod +x {}", dest.display()))?;
+        }
+        written.push(dest);
+    }
+    Ok(written)
 }
 
 fn user_config_dir() -> PathBuf {

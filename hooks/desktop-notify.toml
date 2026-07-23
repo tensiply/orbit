@@ -7,3 +7,16 @@ requires_binary = "notify-send"
 event = "Notification"
 command = "$HOME/.claude/hooks/on-notification.sh"
 is_async = true
+
+[[scripts]]
+path = "$HOME/.claude/hooks/on-notification.sh"
+executable = true
+content = """
+#!/bin/bash
+# Fires when Claude Code emits a notification (task complete, waiting for input, etc.)
+# JSON stdin: { "message": "...", "session_id": "..." }
+INPUT=$(cat)
+MESSAGE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message','Task complete'))" 2>/dev/null || echo "Task complete")
+notify-send "Claude Code" "$MESSAGE" --icon=dialog-information 2>/dev/null || true
+echo "NOTIFY: $MESSAGE" >&2
+"""

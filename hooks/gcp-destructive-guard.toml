@@ -1,0 +1,84 @@
+name = "gcp-destructive-guard"
+description = "Block GCP CLI commands (gcloud/gsutil/bq) that create, disable, or delete resources in any project"
+category = "security"
+requires_binary = "python3"
+
+[[events]]
+event = "PreToolUse"
+matcher = "Bash"
+command = "$HOME/.claude/hooks/gcp-destructive-guard.sh"
+is_async = false
+
+[[scripts]]
+path = "$HOME/.claude/hooks/gcp-destructive-guard.sh"
+executable = true
+content = '''
+#!/bin/bash
+# PreToolUse hook — guards against automatic GCP CLI destructive operations.
+# JSON stdin: { "tool_name": "...", "tool_input": { "command": "..." } }
+#
+# Covers: gcloud (any project/account), gsutil, bq.
+# Exit code 2 signals Claude Code to block the tool call; stderr is shown to the model.
+
+INPUT=$(cat)
+
+COMMAND=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+
+# Skip quickly if no GCP CLI invocation is present
+if ! echo "$COMMAND" | grep -qE '(^|[[:space:];&|`(])(gcloud|gsutil|bq)[[:space:]]'; then
+    exit 0
+fi
+
+# Detect destructive operation and which tool triggered it
+MATCHED=$(echo "$COMMAND" | python3 -c "
+import sys, re
+
+cmd = sys.stdin.read()
+
+for chunk in re.split(r'&&|\|\||[;&|]', cmd):
+    chunk = chunk.strip()
+
+    # gcloud: verb appears after service+resource, e.g. 'gcloud compute instances delete'
+    if re.search(r'\bgcloud\b', chunk, re.IGNORECASE):
+        ops = r'\b(create|delete|disable|stop|remove|terminate|detach|revoke|deactivate|deprecate|cancel|drain|abandon)\b'
+        m = re.search(ops, chunk, re.IGNORECASE)
+        if m:
+            print(f'gcloud:{m.group(1)}')
+            break
+
+    # gsutil: rm/rb = delete, mb = create bucket
+    if re.search(r'\bgsutil\b', chunk, re.IGNORECASE):
+        ops = r'\b(rm|rb|mb)\b'
+        m = re.search(ops, chunk, re.IGNORECASE)
+        if m:
+            print(f'gsutil:{m.group(1)}')
+            break
+
+    # bq: rm = delete dataset/table, mk = create dataset/table
+    if re.search(r'\bbq\b\s', chunk, re.IGNORECASE):
+        ops = r'\b(rm|mk)\b'
+        m = re.search(ops, chunk, re.IGNORECASE)
+        if m:
+            print(f'bq:{m.group(1)}')
+            break
+" 2>/dev/null || echo "")
+
+if [ -n "$MATCHED" ]; then
+    TOOL=$(echo "$MATCHED" | cut -d: -f1)
+    OP=$(echo "$MATCHED" | cut -d: -f2)
+    printf '[gcp-destructive-guard] BLOCKED: %s operation "%s" requires manual confirmation\n' "$TOOL" "$OP" >&2
+    printf 'Command: %s\n' "$COMMAND" >&2
+    printf '\nThis hook prevents automatic execution of GCP operations that create, disable, or\n' >&2
+    printf 'delete resources. Run the command manually in the terminal to proceed.\n' >&2
+    exit 2
+fi
+
+exit 0
+'''

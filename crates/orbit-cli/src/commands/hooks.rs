@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{Args, Subcommand};
 use orbit_core::engine_hook::{self, EngineHookState};
 
@@ -60,9 +60,11 @@ fn list() -> Result<()> {
 
 fn enable(name: &str) -> Result<()> {
     let hooks = engine_hook::load_all();
-    if hooks.iter().all(|h| h.name != name) {
-        bail!("unknown engine hook: '{name}'. Run `orbit hooks list` to see available hooks.");
-    }
+    let hook = hooks
+        .iter()
+        .find(|h| h.name == name)
+        .ok_or_else(|| anyhow::anyhow!("unknown engine hook: '{name}'. Run `orbit hooks list` to see available hooks."))?;
+
     let mut state = EngineHookState::load();
     if state.is_enabled(name) {
         println!("Engine hook '{name}' is already enabled.");
@@ -70,6 +72,12 @@ fn enable(name: &str) -> Result<()> {
     }
     state.enable(name);
     state.save()?;
+
+    let written = engine_hook::install_scripts(hook)?;
+    for path in &written {
+        println!("  script → {}", path.display());
+    }
+
     println!("Engine hook '{name}' enabled — will inject into Claude Code sessions at launch.");
     Ok(())
 }

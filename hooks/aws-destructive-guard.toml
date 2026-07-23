@@ -1,0 +1,64 @@
+name = "aws-destructive-guard"
+description = "Block AWS CLI commands that create, disable, or delete resources in any profile"
+category = "security"
+requires_binary = "python3"
+
+[[events]]
+event = "PreToolUse"
+matcher = "Bash"
+command = "$HOME/.claude/hooks/aws-destructive-guard.sh"
+is_async = false
+
+[[scripts]]
+path = "$HOME/.claude/hooks/aws-destructive-guard.sh"
+executable = true
+content = '''
+#!/bin/bash
+# PreToolUse hook — guards against automatic AWS CLI destructive operations.
+# JSON stdin: { "tool_name": "...", "tool_input": { "command": "..." } }
+#
+# Blocks commands that create, disable, or delete AWS resources (any --profile).
+# Exit code 2 signals Claude Code to block the tool call; stderr is shown to the model.
+
+INPUT=$(cat)
+
+COMMAND=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+
+# Skip quickly if no AWS CLI invocation is present
+if ! echo "$COMMAND" | grep -qE '(^|[[:space:];&|`(])aws[[:space:]]'; then
+    exit 0
+fi
+
+# Operations that create, disable, or delete AWS resources
+MATCHED=$(echo "$COMMAND" | python3 -c "
+import sys, re
+
+cmd = sys.stdin.read()
+ops = r'(create-|delete-|disable-|terminate-|remove-|destroy-|revoke-|stop-|deactivate-|run-instances|run-task|put-[a-z]|detach-|deregister-)'
+
+for chunk in re.split(r'&&|\|\||[;&|]', cmd):
+    if not re.search(r'\baws\b', chunk, re.IGNORECASE):
+        continue
+    m = re.search(r'\s' + ops, chunk, re.IGNORECASE)
+    if m:
+        print(m.group(1).rstrip('-'))
+        break
+" 2>/dev/null || echo "")
+
+if [ -n "$MATCHED" ]; then
+    printf '[aws-destructive-guard] BLOCKED: AWS operation "%s" requires manual confirmation\n' "$MATCHED" >&2
+    printf 'Command: %s\n' "$COMMAND" >&2
+    printf '\nThis hook prevents automatic execution of AWS operations that create, disable, or\n' >&2
+    printf 'delete resources. Run the command manually in the terminal to proceed.\n' >&2
+    exit 2
+fi
+
+exit 0
+'''

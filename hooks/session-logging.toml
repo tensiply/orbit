@@ -6,3 +6,16 @@ category = "governance"
 event = "Stop"
 command = "$HOME/.claude/hooks/on-stop.sh"
 is_async = false
+
+[[scripts]]
+path = "$HOME/.claude/hooks/on-stop.sh"
+executable = true
+content = """
+#!/bin/bash
+# Fires when a Claude Code session stops.
+# JSON stdin: { "session_id": "...", "stop_hook_active": bool }
+mkdir -p ~/.claude/logs
+INPUT=$(cat)
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+printf '%s session=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$SESSION_ID" >> ~/.claude/logs/sessions.log
+"""
