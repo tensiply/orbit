@@ -88,12 +88,27 @@ pub fn launch(
 
     // 2e. Activity context — last 5 entries for this scope, injected as context
     let activity_scope = orbit_core::activity::scope_key(
-        if scope.tenant.is_empty() { None } else { Some(scope.tenant.as_str()) },
-        if scope.project.is_empty() { None } else { Some(scope.project.as_str()) },
-        if scope.repository.is_empty() { None } else { Some(scope.repository.as_str()) },
+        if scope.tenant.is_empty() {
+            None
+        } else {
+            Some(scope.tenant.as_str())
+        },
+        if scope.project.is_empty() {
+            None
+        } else {
+            Some(scope.project.as_str())
+        },
+        if scope.repository.is_empty() {
+            None
+        } else {
+            Some(scope.repository.as_str())
+        },
     );
     if !activity_scope.is_empty() {
-        let ws_name = scope.workspace_root.file_name().map(|n| n.to_string_lossy().into_owned());
+        let ws_name = scope
+            .workspace_root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
         if let Ok(entries) =
             orbit_core::activity::list(ws_name.as_deref(), Some(&activity_scope), None, 5)
         {
