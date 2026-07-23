@@ -53,7 +53,12 @@ pub struct ActivityEntry {
 
 impl ActivityEntry {
     pub fn new(scope: String, summary: String) -> Self {
-        Self { ts: now_secs(), scope, summary, session_id: None }
+        Self {
+            ts: now_secs(),
+            scope,
+            summary,
+            session_id: None,
+        }
     }
 
     pub fn with_session(mut self, session_id: String) -> Self {
@@ -100,7 +105,7 @@ pub fn list(
     let reader = BufReader::new(fs::File::open(&path)?);
     let mut entries: Vec<ActivityEntry> = reader
         .lines()
-        .filter_map(|l| l.ok())
+        .map_while(Result::ok)
         .filter(|l| !l.trim().is_empty())
         .filter_map(|l| serde_json::from_str(&l).ok())
         .filter(|e: &ActivityEntry| {

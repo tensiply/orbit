@@ -27,5 +27,6 @@ pub mod session;
 pub mod setup;
 pub mod snapshot;
 pub mod status;
+pub mod task;
 pub mod update;
 pub mod workspace;

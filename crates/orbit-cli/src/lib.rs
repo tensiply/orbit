@@ -78,6 +78,8 @@ pub enum Commands {
     Man(commands::man::ManArgs),
     /// Manage registered workspaces (multi-workspace support)
     Workspace(commands::workspace::WorkspaceArgs),
+    /// Create, list, update and delete internal tasks
+    Task(commands::task::TaskArgs),
     /// Share this orbit instance over LAN via TCP + mDNS
     Serve(commands::serve::ServeArgs),
     /// Discover orbit instances on the local network via mDNS
@@ -152,6 +154,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Context(args)) => commands::context::run(args),
         Some(Commands::Man(args)) => commands::man::run(args),
         Some(Commands::Workspace(args)) => commands::workspace::run(args),
+        Some(Commands::Task(args)) => commands::task::run(args),
         Some(Commands::Serve(args)) => commands::serve::run(args).await,
         Some(Commands::Discover(args)) => commands::discover::run(args),
         None => {

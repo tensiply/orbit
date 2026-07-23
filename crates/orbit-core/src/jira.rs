@@ -43,6 +43,69 @@ pub struct TaskContext {
     pub org: String,
 }
 
+impl JiraIssue {
+    /// Convert a Jira issue into an `OrbitTask` for the internal task store.
+    pub fn to_orbit_task(
+        &self,
+        workspace: &str,
+        tenant: Option<String>,
+        project: Option<String>,
+        repository: Option<String>,
+    ) -> crate::task::OrbitTask {
+        use crate::task::{OrbitTask, TaskPriority, TaskSource, TaskStatus};
+
+        let status = match self.status_color.as_str() {
+            "green" => TaskStatus::Done,
+            "yellow" => TaskStatus::InProgress,
+            "warm-red" | "red" => TaskStatus::Blocked,
+            _ => TaskStatus::Todo,
+        };
+
+        let priority = {
+            let p = self.priority.to_lowercase();
+            if p.contains("highest") || p.contains("critical") || p.contains("blocker") {
+                TaskPriority::Critical
+            } else if p.contains("high") {
+                TaskPriority::High
+            } else if p.contains("low") || p.contains("lowest") || p.contains("minor") {
+                TaskPriority::Low
+            } else {
+                TaskPriority::Medium
+            }
+        };
+
+        let url = if !self.org.is_empty() {
+            Some(format!(
+                "https://{}.atlassian.net/browse/{}",
+                self.org, self.key
+            ))
+        } else {
+            None
+        };
+
+        OrbitTask {
+            id: String::new(),
+            title: self.summary.clone(),
+            description: None,
+            status,
+            priority,
+            task_type: Some(self.issue_type.clone()),
+            source: TaskSource::Plugin {
+                name: "jira".into(),
+                external_id: self.key.clone(),
+                url,
+            },
+            workspace: workspace.to_string(),
+            tenant,
+            project,
+            repository,
+            tags: vec![],
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+}
+
 impl From<JiraIssue> for TaskContext {
     fn from(issue: JiraIssue) -> Self {
         Self {
@@ -54,6 +117,26 @@ impl From<JiraIssue> for TaskContext {
             board_id: issue.board_id,
             board_name: issue.board_name,
             org: issue.org,
+        }
+    }
+}
+
+impl From<crate::task::OrbitTask> for TaskContext {
+    fn from(t: crate::task::OrbitTask) -> Self {
+        let key = t
+            .source
+            .external_id()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| t.id.clone());
+        Self {
+            key,
+            summary: t.title,
+            status: t.status.display().to_string(),
+            priority: t.priority.display().to_string(),
+            issue_type: t.task_type.unwrap_or_default(),
+            board_id: t.project.unwrap_or_default(),
+            board_name: String::new(),
+            org: t.source.label(),
         }
     }
 }

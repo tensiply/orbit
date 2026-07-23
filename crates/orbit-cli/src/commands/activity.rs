@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use orbit_core::{
     activity::{self, ActivityEntry},
@@ -70,10 +70,10 @@ fn resolve_workspace(arg: Option<String>) -> Option<String> {
     if let Some(ws) = arg {
         return Some(ws);
     }
-    if let Ok(root) = std::env::var("AI_WORKSPACE_ROOT") {
-        if let Some(name) = Path::new(&root).file_name() {
-            return Some(name.to_string_lossy().into_owned());
-        }
+    if let Ok(root) = std::env::var("AI_WORKSPACE_ROOT")
+        && let Some(name) = Path::new(&root).file_name()
+    {
+        return Some(name.to_string_lossy().into_owned());
     }
     let root = UserConfig::load().ai_root_expanded();
     root.file_name().map(|n| n.to_string_lossy().into_owned())
@@ -87,18 +87,40 @@ fn resolve_scope(arg: Option<String>) -> String {
     let project = std::env::var("AI_PROJECT").unwrap_or_default();
     let repository = std::env::var("AI_REPOSITORY").unwrap_or_default();
     activity::scope_key(
-        if tenant.is_empty() { None } else { Some(tenant.as_str()) },
-        if project.is_empty() { None } else { Some(project.as_str()) },
-        if repository.is_empty() { None } else { Some(repository.as_str()) },
+        if tenant.is_empty() {
+            None
+        } else {
+            Some(tenant.as_str())
+        },
+        if project.is_empty() {
+            None
+        } else {
+            Some(project.as_str())
+        },
+        if repository.is_empty() {
+            None
+        } else {
+            Some(repository.as_str())
+        },
     )
 }
 
 pub fn run(args: ActivityArgs) -> Result<()> {
     match args.subcommand {
-        ActivitySubcommand::List { scope, session_id, limit, workspace, md } => {
+        ActivitySubcommand::List {
+            scope,
+            session_id,
+            limit,
+            workspace,
+            md,
+        } => {
             let ws = resolve_workspace(workspace);
-            let entries =
-                activity::list(ws.as_deref(), scope.as_deref(), session_id.as_deref(), limit)?;
+            let entries = activity::list(
+                ws.as_deref(),
+                scope.as_deref(),
+                session_id.as_deref(),
+                limit,
+            )?;
             if md {
                 print!("{}", activity::format_for_context(&entries));
             } else if entries.is_empty() {
@@ -115,11 +137,18 @@ pub fn run(args: ActivityArgs) -> Result<()> {
             }
         }
 
-        ActivitySubcommand::Append { scope, summary, session_id, workspace } => {
+        ActivitySubcommand::Append {
+            scope,
+            summary,
+            session_id,
+            workspace,
+        } => {
             let ws = resolve_workspace(workspace);
             let scope_key = resolve_scope(scope);
             if scope_key.is_empty() {
-                bail!("--scope is required (or set AI_TENANT / AI_PROJECT / AI_REPOSITORY env vars)");
+                bail!(
+                    "--scope is required (or set AI_TENANT / AI_PROJECT / AI_REPOSITORY env vars)"
+                );
             }
             let summary = summary.unwrap_or_else(|| "Session ended".into());
             let mut entry = ActivityEntry::new(scope_key, summary);
@@ -129,7 +158,10 @@ pub fn run(args: ActivityArgs) -> Result<()> {
             activity::append(ws.as_deref(), &entry)?;
         }
 
-        ActivitySubcommand::Has { session_id, workspace } => {
+        ActivitySubcommand::Has {
+            session_id,
+            workspace,
+        } => {
             let ws = resolve_workspace(workspace);
             if !activity::session_exists(ws.as_deref(), &session_id) {
                 std::process::exit(1);

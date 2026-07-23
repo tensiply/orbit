@@ -80,6 +80,17 @@ pub fn activity_index_path_for(workspace_name: Option<&str>) -> std::path::PathB
     }
 }
 
+pub fn tasks_index_path_for(workspace_name: Option<&str>) -> PathBuf {
+    let root = orbit_data_root();
+    match workspace_name.filter(|s| !s.is_empty()) {
+        None => root.join("tasks/index.jsonl"),
+        Some(name) => root
+            .join("workspaces")
+            .join(slugify(name))
+            .join("tasks/index.jsonl"),
+    }
+}
+
 // ── cross-workspace discovery ─────────────────────────────────────────────────
 
 /// All plans directories that exist on disk: legacy flat + every `workspaces/*/plans/`.
@@ -109,6 +120,22 @@ pub fn all_memory_paths() -> Vec<PathBuf> {
         for entry in entries.filter_map(|e| e.ok()) {
             if entry.file_type().is_ok_and(|t| t.is_dir()) {
                 paths.push(entry.path().join("memory/plan_runs.jsonl"));
+            }
+        }
+    }
+    paths
+}
+
+/// All tasks JSONL paths: legacy flat + every `workspaces/*/tasks/index.jsonl`.
+pub fn all_tasks_paths() -> Vec<PathBuf> {
+    let root = orbit_data_root();
+    let mut paths = vec![root.join("tasks/index.jsonl")];
+
+    let ws_root = root.join("workspaces");
+    if let Ok(entries) = std::fs::read_dir(&ws_root) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                paths.push(entry.path().join("tasks/index.jsonl"));
             }
         }
     }

@@ -21,6 +21,7 @@ pub mod resolver;
 pub mod schedule;
 pub mod secrets;
 pub mod session;
+pub mod task;
 pub mod template;
 pub mod user_config;
 pub mod venv;

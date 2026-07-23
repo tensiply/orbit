@@ -33,18 +33,12 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub fn next(self, jira_enabled: bool) -> Self {
+    pub fn next(self) -> Self {
         match self {
             Tab::Sessions => Tab::Launch,
             Tab::Launch => Tab::Plans,
             Tab::Plans => Tab::System,
-            Tab::System => {
-                if jira_enabled {
-                    Tab::Tasks
-                } else {
-                    Tab::Schedules
-                }
-            }
+            Tab::System => Tab::Tasks,
             Tab::Tasks => Tab::Schedules,
             Tab::Schedules => Tab::Scopes,
             Tab::Scopes => Tab::Workspaces,
@@ -53,20 +47,14 @@ impl Tab {
         }
     }
 
-    pub fn prev(self, jira_enabled: bool) -> Self {
+    pub fn prev(self) -> Self {
         match self {
             Tab::Sessions => Tab::Peers,
             Tab::Launch => Tab::Sessions,
             Tab::Plans => Tab::Launch,
             Tab::System => Tab::Plans,
             Tab::Tasks => Tab::System,
-            Tab::Schedules => {
-                if jira_enabled {
-                    Tab::Tasks
-                } else {
-                    Tab::System
-                }
-            }
+            Tab::Schedules => Tab::Tasks,
             Tab::Scopes => Tab::Schedules,
             Tab::Workspaces => Tab::Scopes,
             Tab::Peers => Tab::Workspaces,
@@ -324,68 +312,77 @@ impl PeersState {
 // ── tasks state ───────────────────────────────────────────────────────────────
 
 pub struct TasksState {
-    pub issues: Vec<orbit_core::jira::JiraIssue>,
+    pub items: Vec<orbit_core::task::OrbitTask>,
     pub selected: usize,
     pub table_state: ratatui::widgets::TableState,
     pub loading: bool,
     pub loaded: bool,
     pub error: Option<String>,
-    pub org_filter_idx: usize,
-    pub last_cache_mtime: Option<std::time::SystemTime>,
+    /// Index into sources() + 1; 0 = show all.
+    pub source_filter_idx: usize,
+    pub last_store_mtime: Option<std::time::SystemTime>,
 }
 
 impl TasksState {
     pub fn new() -> Self {
         Self {
-            issues: vec![],
+            items: vec![],
             selected: 0,
             table_state: ratatui::widgets::TableState::default(),
             loading: false,
             loaded: false,
             error: None,
-            org_filter_idx: 0,
-            last_cache_mtime: None,
+            source_filter_idx: 0,
+            last_store_mtime: None,
         }
     }
 
-    pub fn orgs(&self) -> Vec<String> {
+    /// Unique source labels across all items (e.g. ["jira", "manual"]).
+    pub fn sources(&self) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
-        let mut orgs = Vec::new();
-        for issue in &self.issues {
-            if seen.insert(issue.org.clone()) {
-                orgs.push(issue.org.clone());
+        let mut sources = Vec::new();
+        for item in &self.items {
+            let lbl = item.source.label();
+            if seen.insert(lbl.clone()) {
+                sources.push(lbl);
             }
         }
-        orgs
+        sources
     }
 
     pub fn filtered_count(&self) -> usize {
-        if self.org_filter_idx == 0 {
-            return self.issues.len();
+        if self.source_filter_idx == 0 {
+            return self.items.len();
         }
-        let orgs = self.orgs();
-        if let Some(org) = orgs.get(self.org_filter_idx - 1) {
-            self.issues.iter().filter(|i| &i.org == org).count()
+        let sources = self.sources();
+        if let Some(src) = sources.get(self.source_filter_idx - 1) {
+            self.items
+                .iter()
+                .filter(|t| &t.source.label() == src)
+                .count()
         } else {
-            self.issues.len()
+            self.items.len()
         }
     }
 
-    pub fn filtered_issues(&self) -> Vec<&orbit_core::jira::JiraIssue> {
-        if self.org_filter_idx == 0 {
-            return self.issues.iter().collect();
+    pub fn filtered_items(&self) -> Vec<&orbit_core::task::OrbitTask> {
+        if self.source_filter_idx == 0 {
+            return self.items.iter().collect();
         }
-        let orgs = self.orgs();
-        if let Some(org) = orgs.get(self.org_filter_idx - 1) {
-            self.issues.iter().filter(|i| &i.org == org).collect()
+        let sources = self.sources();
+        if let Some(src) = sources.get(self.source_filter_idx - 1) {
+            self.items
+                .iter()
+                .filter(|t| &t.source.label() == src)
+                .collect()
         } else {
-            self.issues.iter().collect()
+            self.items.iter().collect()
         }
     }
 
-    pub fn selected_issue(&self) -> Option<orbit_core::jira::JiraIssue> {
-        let filtered = self.filtered_issues();
-        filtered.get(self.selected).map(|i| (*i).clone())
+    pub fn selected_task(&self) -> Option<orbit_core::task::OrbitTask> {
+        let filtered = self.filtered_items();
+        filtered.get(self.selected).map(|t| (*t).clone())
     }
 
     pub fn move_up(&mut self) {
@@ -410,22 +407,22 @@ impl TasksState {
         self.table_state.select(Some(self.selected));
     }
 
-    pub fn cycle_org_right(&mut self) {
-        let n = self.orgs().len() + 1;
+    pub fn cycle_source_right(&mut self) {
+        let n = self.sources().len() + 1;
         if n <= 1 {
             return;
         }
-        self.org_filter_idx = (self.org_filter_idx + 1) % n;
+        self.source_filter_idx = (self.source_filter_idx + 1) % n;
         self.selected = 0;
         self.table_state.select(Some(0));
     }
 
-    pub fn cycle_org_left(&mut self) {
-        let n = self.orgs().len() + 1;
+    pub fn cycle_source_left(&mut self) {
+        let n = self.sources().len() + 1;
         if n <= 1 {
             return;
         }
-        self.org_filter_idx = (self.org_filter_idx + n - 1) % n;
+        self.source_filter_idx = (self.source_filter_idx + n - 1) % n;
         self.selected = 0;
         self.table_state.select(Some(0));
     }
@@ -1141,14 +1138,14 @@ impl App {
         if !in_text_input {
             match code {
                 KeyCode::Tab => {
-                    self.tab = self.tab.next(self.jira_enabled);
+                    self.tab = self.tab.next();
                     if self.tab == Tab::Tasks && !self.tasks.loaded && !self.tasks.loading {
                         self.pending_async = Some(AsyncAction::RefreshTasks);
                     }
                     return;
                 }
                 KeyCode::BackTab => {
-                    self.tab = self.tab.prev(self.jira_enabled);
+                    self.tab = self.tab.prev();
                     if self.tab == Tab::Tasks && !self.tasks.loaded && !self.tasks.loading {
                         self.pending_async = Some(AsyncAction::RefreshTasks);
                     }
@@ -1171,7 +1168,7 @@ impl App {
                     self.tab = Tab::System;
                     return;
                 }
-                KeyCode::Char('5') if self.jira_enabled => {
+                KeyCode::Char('5') => {
                     self.tab = Tab::Tasks;
                     if !self.tasks.loaded && !self.tasks.loading {
                         self.pending_async = Some(AsyncAction::RefreshTasks);
@@ -1466,7 +1463,7 @@ impl App {
                     self.launch.task_context = None;
                     return;
                 }
-                KeyCode::Char('t') if self.jira_enabled => {
+                KeyCode::Char('t') => {
                     self.tab = Tab::Tasks;
                     if !self.tasks.loaded && !self.tasks.loading {
                         self.pending_async = Some(AsyncAction::RefreshTasks);
@@ -1679,26 +1676,33 @@ impl App {
         match code {
             KeyCode::Up | KeyCode::Char('k') => self.tasks.move_up(),
             KeyCode::Down | KeyCode::Char('j') => self.tasks.move_down(),
-            KeyCode::Left => self.tasks.cycle_org_left(),
-            KeyCode::Right => self.tasks.cycle_org_right(),
+            KeyCode::Left => self.tasks.cycle_source_left(),
+            KeyCode::Right => self.tasks.cycle_source_right(),
             KeyCode::Enter => {
-                if let Some(issue) = self.tasks.selected_issue() {
-                    self.launch.task_context = Some(orbit_core::jira::TaskContext::from(issue));
+                if let Some(task) = self.tasks.selected_task() {
+                    self.launch.task_context = Some(orbit_core::jira::TaskContext::from(task));
                     self.tab = Tab::Launch;
                     self.launch.focused = LaunchField::Task;
                 }
             }
             KeyCode::Char('d') => {
-                if let Some(issue) = self.tasks.selected_issue() {
+                // Only available for Jira-sourced tasks.
+                if let Some(task) = self.tasks.selected_task()
+                    && let orbit_core::task::TaskSource::Plugin {
+                        name, external_id, ..
+                    } = &task.source
+                    && name == "jira"
+                {
                     self.mode = Mode::TaskDetailsLoading;
-                    self.pending_async = Some(AsyncAction::FetchTaskDetail(issue.key));
+                    self.pending_async = Some(AsyncAction::FetchTaskDetail(external_id.clone()));
                 }
             }
             KeyCode::Char('e') => {
-                if let Some(issue) = self.tasks.selected_issue() {
-                    let _ = std::process::Command::new("acli")
-                        .args(["jira", "workitem", "view", &issue.key, "--web"])
-                        .spawn();
+                if let Some(task) = self.tasks.selected_task()
+                    && let orbit_core::task::TaskSource::Plugin { url: Some(url), .. } =
+                        &task.source
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
                 }
             }
             KeyCode::Char('r') => {
@@ -1821,109 +1825,90 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
         }
 
         AsyncAction::RefreshTasks => {
-            use orbit_core::jira;
+            let workspace = {
+                let cfg = orbit_core::user_config::UserConfig::load();
+                let root = cfg.ai_root_expanded();
+                root.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "AI".into())
+            };
 
-            // Try cache first (populated by daemon's background poller).
-            let cached = jira::read_issues_cache();
-            if !cached.is_empty() {
-                let n = cached.len();
-                app.tasks.issues = cached;
-                app.tasks.loaded = true;
-                app.tasks.loading = false;
-                app.tasks.error = None;
-                app.tasks.last_cache_mtime = jira::cache_mtime();
-                app.tasks.selected = 0;
-                app.tasks
-                    .table_state
-                    .select(if n > 0 { Some(0) } else { None });
-                return;
-            }
-
-            // No cache yet — fall back to a direct acli call.
-            app.tasks.loading = true;
-            app.tasks.error = None;
-
-            let result = tokio::task::spawn_blocking(move || {
-                let jira_installed = orbit_core::plugin::load_all()
-                    .iter()
-                    .find(|p| p.name == "jira")
-                    .map(|p| p.is_installed())
-                    .unwrap_or(false);
-                if !jira_installed {
-                    return (
-                        vec![],
-                        Some("acli not found — install Jira plugin first.".to_string()),
-                    );
-                }
-                let orgs = jira::load_orgs();
-                if orgs.is_empty() {
-                    return (vec![], Some("No Jira orgs configured.".to_string()));
-                }
-                let issues = jira::fetch_issues(&orgs);
-                // Persist so future loads are instant.
-                jira::write_issues_cache(&issues);
-                (issues, None)
-            })
-            .await;
-
-            app.tasks.loading = false;
+            // Load from the task store (kept fresh by the daemon poller).
+            let stored = orbit_core::task::load_for_tui(&workspace);
+            let n = stored.len();
+            app.tasks.items = stored;
             app.tasks.loaded = true;
-            match result {
-                Ok((issues, err)) => {
-                    let has = !issues.is_empty();
-                    app.tasks.last_cache_mtime = jira::cache_mtime();
-                    app.tasks.issues = issues;
-                    app.tasks.selected = 0;
-                    app.tasks
-                        .table_state
-                        .select(if has { Some(0) } else { None });
-                    app.tasks.error = err;
-                }
-                Err(e) => {
-                    app.tasks.error = Some(format!("Refresh failed: {e}"));
-                }
-            }
+            app.tasks.loading = false;
+            app.tasks.error = None;
+            app.tasks.last_store_mtime = orbit_core::task::store_mtime(&workspace);
+            app.tasks.selected = 0;
+            app.tasks
+                .table_state
+                .select(if n > 0 { Some(0) } else { None });
         }
 
         AsyncAction::ForceRefreshTasks => {
-            use orbit_core::jira;
             app.tasks.loading = true;
             app.tasks.error = None;
 
             let result = tokio::task::spawn_blocking(move || {
+                let cfg = orbit_core::user_config::UserConfig::load();
+                let root = cfg.ai_root_expanded();
+                let workspace = root
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "AI".into());
+
+                // If Jira is installed, do a live fetch (writes to task store).
                 let jira_installed = orbit_core::plugin::load_all()
                     .iter()
                     .find(|p| p.name == "jira")
                     .map(|p| p.is_installed())
                     .unwrap_or(false);
-                if !jira_installed {
-                    return (
-                        vec![],
-                        Some("acli not found — install Jira plugin first.".to_string()),
-                    );
+
+                if jira_installed {
+                    let orgs = orbit_core::jira::load_orgs();
+                    if !orgs.is_empty() {
+                        let issues = orbit_core::jira::fetch_issues(&orgs);
+                        for issue in &issues {
+                            let orbit_task = issue.to_orbit_task(&workspace, None, None, None);
+                            let url = match &orbit_task.source {
+                                orbit_core::task::TaskSource::Plugin { url, .. } => url.clone(),
+                                _ => None,
+                            };
+                            let data = orbit_core::task::UpsertData {
+                                title: orbit_task.title,
+                                status: orbit_task.status,
+                                priority: orbit_task.priority,
+                                task_type: orbit_task.task_type,
+                                url,
+                                tenant: None,
+                                project: None,
+                                repository: None,
+                            };
+                            let _ = orbit_core::task::upsert_by_external_id(
+                                &workspace, "jira", &issue.key, data,
+                            );
+                        }
+                    }
                 }
-                let orgs = jira::load_orgs();
-                if orgs.is_empty() {
-                    return (vec![], Some("No Jira orgs configured.".to_string()));
-                }
-                let issues = jira::fetch_issues(&orgs);
-                jira::write_issues_cache(&issues);
-                (issues, None)
+
+                (orbit_core::task::load_for_tui(&workspace), workspace)
             })
             .await;
 
             app.tasks.loading = false;
             app.tasks.loaded = true;
             match result {
-                Ok((issues, err)) => {
-                    let has = !issues.is_empty();
-                    app.tasks.last_cache_mtime = orbit_core::jira::cache_mtime();
-                    app.tasks.issues = issues;
+                Ok((items, workspace)) => {
+                    let n = items.len();
+                    app.tasks.last_store_mtime = orbit_core::task::store_mtime(&workspace);
+                    app.tasks.items = items;
                     app.tasks.selected = 0;
                     app.tasks
                         .table_state
-                        .select(if has { Some(0) } else { None });
-                    app.tasks.error = err;
+                        .select(if n > 0 { Some(0) } else { None });
+                    app.tasks.error = None;
                 }
                 Err(e) => {
                     app.tasks.error = Some(format!("Refresh failed: {e}"));
@@ -2176,16 +2161,23 @@ where
                 app.refresh_sessions();
             }
 
-            // Watch Jira cache file for changes written by the daemon poller.
-            if app.jira_enabled {
-                let mtime = orbit_core::jira::cache_mtime();
-                if mtime.is_some() && mtime != app.tasks.last_cache_mtime {
-                    app.tasks.last_cache_mtime = mtime;
-                    let fresh = orbit_core::jira::read_issues_cache();
+            // Watch task store for changes written by the daemon poller.
+            {
+                let workspace = {
+                    let cfg = orbit_core::user_config::UserConfig::load();
+                    let root = cfg.ai_root_expanded();
+                    root.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "AI".into())
+                };
+                let mtime = orbit_core::task::store_mtime(&workspace);
+                if mtime.is_some() && mtime != app.tasks.last_store_mtime {
+                    app.tasks.last_store_mtime = mtime;
+                    let fresh = orbit_core::task::load_for_tui(&workspace);
                     if !fresh.is_empty() {
                         let n = fresh.len();
                         let sel = app.tasks.selected.min(n.saturating_sub(1));
-                        app.tasks.issues = fresh;
+                        app.tasks.items = fresh;
                         app.tasks.loaded = true;
                         app.tasks.loading = false;
                         app.tasks.selected = sel;
