@@ -20,6 +20,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Track and query session activity history
+    Activity(commands::activity::ActivityArgs),
     /// Check and manage engine authentication
     Auth(commands::auth::AuthArgs),
     /// Manage AI engines: list, install, update, info
@@ -121,6 +123,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     auto_update::spawn(ws_cfg.clone(), user_cfg.clone(), cli.no_update);
 
     match cli.command {
+        Some(Commands::Activity(args)) => commands::activity::run(args),
         Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Engines(args)) => commands::engines::run(args),
         Some(Commands::Setup(args)) => commands::setup::run(args).await,

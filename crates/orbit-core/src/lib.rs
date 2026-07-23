@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod audit;
 pub mod builtin_command;
 pub mod catalog;

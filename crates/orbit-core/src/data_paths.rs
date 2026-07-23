@@ -69,6 +69,17 @@ pub fn schedules_path_for(workspace_name: Option<&str>) -> PathBuf {
     }
 }
 
+pub fn activity_index_path_for(workspace_name: Option<&str>) -> std::path::PathBuf {
+    let root = orbit_data_root();
+    match workspace_name.filter(|s| !s.is_empty()) {
+        None => root.join("activity/index.jsonl"),
+        Some(name) => root
+            .join("workspaces")
+            .join(slugify(name))
+            .join("activity/index.jsonl"),
+    }
+}
+
 // ── cross-workspace discovery ─────────────────────────────────────────────────
 
 /// All plans directories that exist on disk: legacy flat + every `workspaces/*/plans/`.

@@ -86,6 +86,28 @@ pub fn launch(
         None
     };
 
+    // 2e. Activity context — last 5 entries for this scope, injected as context
+    let activity_scope = orbit_core::activity::scope_key(
+        if scope.tenant.is_empty() { None } else { Some(scope.tenant.as_str()) },
+        if scope.project.is_empty() { None } else { Some(scope.project.as_str()) },
+        if scope.repository.is_empty() { None } else { Some(scope.repository.as_str()) },
+    );
+    if !activity_scope.is_empty() {
+        let ws_name = scope.workspace_root.file_name().map(|n| n.to_string_lossy().into_owned());
+        if let Ok(entries) =
+            orbit_core::activity::list(ws_name.as_deref(), Some(&activity_scope), None, 5)
+        {
+            let ctx = orbit_core::activity::format_for_context(&entries);
+            if !ctx.is_empty() {
+                let path = paths.runtime_dir.join("activity-context.md");
+                fs::write(&path, &ctx)?;
+                if !config.instructions.contains(&path) {
+                    config.instructions.push(path);
+                }
+            }
+        }
+    }
+
     // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
     if engine == Engine::Gemini {
         let gemini_ctx = paths.runtime_dir.join("GEMINI.md");

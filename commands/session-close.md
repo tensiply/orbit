@@ -21,4 +21,10 @@ Close the current work session for $ARGUMENTS. Answer these questions and act on
 5. **¿Qué NO documentar?**
    Skip ephemeral details, in-progress state, and anything already in git history or CLAUDE.md.
 
+6. **Registrar en el log de actividad** — Redactar un resumen de 1-3 líneas de lo realizado en esta sesión (qué se implementó, qué se corrigió, qué se decidió) y ejecutar:
+   ```bash
+   orbit activity append --summary "<resumen>"
+   ```
+   El scope y workspace se detectan automáticamente desde las variables de entorno de orbit (`AI_TENANT`, `AI_PROJECT`, `AI_REPOSITORY`, `AI_WORKSPACE_ROOT`). Si hay `$CLAUDE_SESSION_ID` o `$SESSION_ID` disponible, agregar `--session-id <id>`.
+
 Leave the context better than at the start of the session.

@@ -7,6 +7,7 @@ Inicializa la sesión de trabajo actual para $ARGUMENTS.
 
 Pasos (ejecutar en paralelo donde sea posible):
 
+0. **Actividad reciente** — ejecutar `orbit activity list --limit 5` para obtener las últimas 5 sesiones registradas en el scope actual. Mostrarlas brevemente antes de continuar.
 1. Detectar el engine activo (Claude Code, OpenCode, Gemini).
 2. Identificar el scope desde el directorio de trabajo: workspace → tenant → project → repositorio.
 3. Confirmar que el contexto compartido cargó correctamente (governance, workflows, capas de source-of-truth).

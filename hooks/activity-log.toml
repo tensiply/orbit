@@ -1,0 +1,52 @@
+name = "activity-log"
+description = "Log session activity to the orbit activity index on session close"
+category = "governance"
+
+[[events]]
+event = "Stop"
+command = "$HOME/.claude/hooks/on-activity-stop.sh"
+is_async = true
+
+[[scripts]]
+path = "$HOME/.claude/hooks/on-activity-stop.sh"
+executable = true
+content = """
+#!/bin/bash
+# Fires when a Claude Code session stops.
+# JSON stdin: { "session_id": "...", "stop_hook_active": bool }
+INPUT=$(cat)
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+
+# Resolve workspace name from AI_WORKSPACE_ROOT (set by orbit launch)
+WORKSPACE_ARG=""
+if [ -n "$AI_WORKSPACE_ROOT" ]; then
+    WS_NAME=$(basename "$AI_WORKSPACE_ROOT")
+    WORKSPACE_ARG="--workspace $WS_NAME"
+fi
+
+# Skip if session-close already wrote an entry for this session
+if orbit activity has --session-id "$SESSION_ID" $WORKSPACE_ARG 2>/dev/null; then
+    exit 0
+fi
+
+# Build scope from orbit env vars
+SCOPE=$(python3 -c "
+import os
+parts = [
+    os.environ.get('AI_TENANT', ''),
+    os.environ.get('AI_PROJECT', ''),
+    os.environ.get('AI_REPOSITORY', ''),
+]
+print('/'.join(p for p in parts if p))
+" 2>/dev/null || echo "")
+
+# No scope = not launched via orbit, skip
+[ -z "$SCOPE" ] && exit 0
+
+orbit activity append \
+    --scope "$SCOPE" \
+    --summary "Session closed (no summary recorded — run /session-close next time)" \
+    --session-id "$SESSION_ID" \
+    $WORKSPACE_ARG \
+    2>/dev/null || true
+"""
