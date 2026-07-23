@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-23
+
+### Features
+
+- **Built-in command catalog** — Commands (`create-command`, `create-hook`, `git-commit`, `git-pr`, `git-release`, `init-scope`, `session-close`, `session-start`, `sonar-scan`) are now embedded in the binary at compile time from `commands/*.md`. No manifest declaration required. Scope overlays still apply. New `orbit command list|info|enable|disable` CLI for per-scope filtering. `orbit setup` announces available commands. `orbit launch --dry-run` shows which commands will be materialized.
+- **Claude Code engine hooks catalog** — `orbit hooks list|info|enable|disable` CLI manages hooks from a built-in catalog (`hooks/*.toml`). Hook scripts are now declared inline in TOML via `[[scripts]]` blocks and auto-installed to their target paths (with `chmod +x`) when `orbit hooks enable` is called. Existing `desktop-notify` and `session-logging` hooks embed their scripts. Hook grouping now respects the `matcher` field for correct Claude Code `settings.json` format.
+- **Destructive guard hooks** — Three new `PreToolUse/Bash` hooks: `aws-destructive-guard`, `gcp-destructive-guard`, `kubectl-destructive-guard`. Block create/delete/disable CLI operations and require explicit confirmation before proceeding.
+- **`orbit plugins auth`** — Interactive credential setup for plugins. Walks through declared `auth.vars`, prompts for each credential (masking secrets), stores values in the OS keychain, and optionally runs a post-auth command. Jira plugin updated with Atlassian API token URL and `acli jira auth login` cmd.
+- **SonarCloud plugin** — New built-in plugin with `orbit plugins auth sonarcloud` support, `SONARCLOUD_TOKEN`/`SONARCLOUD_ORG` keychain vars, `sonar-scanner` install, and a TUI tab.
+
 ## [0.11.2] - 2026-07-15
 
 ### Fixed
