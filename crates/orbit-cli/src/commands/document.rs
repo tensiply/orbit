@@ -339,6 +339,7 @@ fn run_template(args: TemplateArgs) -> Result<()> {
                 let src_label = match source {
                     TemplateSource::Builtin => "builtin".to_string(),
                     TemplateSource::User(_) => "user".to_string(),
+                    TemplateSource::Workspace(_) => "workspace".to_string(),
                 };
                 println!("{:<22} {:<10} {}", meta.name, src_label, meta.description);
             }

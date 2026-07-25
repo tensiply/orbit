@@ -133,7 +133,10 @@ pub struct DocumentTemplateMeta {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TemplateSource {
     Builtin,
+    /// Template from `~/.local/share/orbit/templates/documents/`
     User(PathBuf),
+    /// Template from `$AI_CONTEXT_ROOT/templates/document/` (workspace-scoped)
+    Workspace(PathBuf),
 }
 
 impl std::fmt::Display for TemplateSource {
@@ -141,6 +144,7 @@ impl std::fmt::Display for TemplateSource {
         match self {
             Self::Builtin => write!(f, "builtin"),
             Self::User(p) => write!(f, "user:{}", p.display()),
+            Self::Workspace(p) => write!(f, "workspace:{}", p.display()),
         }
     }
 }
@@ -380,6 +384,10 @@ pub fn parse_template_front_matter(source: &str) -> (DocumentTemplateMeta, Strin
 /// List all available templates (builtin + user).
 ///
 /// User templates with the same name as a builtin override it in the list.
+/// List all available templates.
+///
+/// Precedence (highest first): workspace → user → builtin.
+/// A higher-priority template with the same name shadows lower ones.
 pub fn list_templates() -> Vec<(TemplateSource, DocumentTemplateMeta)> {
     let mut results: Vec<(TemplateSource, DocumentTemplateMeta)> = Vec::new();
 
@@ -389,29 +397,52 @@ pub fn list_templates() -> Vec<(TemplateSource, DocumentTemplateMeta)> {
     }
 
     let user_dir = data_paths::document_templates_dir();
-    if let Ok(entries) = fs::read_dir(&user_dir) {
-        let mut paths: Vec<_> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|x| x == "html"))
-            .collect();
-        paths.sort_by_key(|e| e.path());
+    collect_html_templates(&user_dir, |path, meta| {
+        results.retain(|(_, m)| m.name != meta.name);
+        results.push((TemplateSource::User(path), meta));
+    });
 
-        for entry in paths {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                let (meta, _) = parse_template_front_matter(&content);
-                results.retain(|(_, m)| m.name != meta.name);
-                results.push((TemplateSource::User(entry.path()), meta));
-            }
-        }
+    if let Some(ws_dir) = data_paths::workspace_document_templates_dir() {
+        collect_html_templates(&ws_dir, |path, meta| {
+            results.retain(|(_, m)| m.name != meta.name);
+            results.push((TemplateSource::Workspace(path), meta));
+        });
     }
 
     results
 }
 
+fn collect_html_templates(dir: &std::path::Path, mut push: impl FnMut(PathBuf, DocumentTemplateMeta)) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        let mut paths: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|x| x == "html"))
+            .collect();
+        paths.sort_by_key(|e| e.path());
+        for entry in paths {
+            if let Ok(content) = fs::read_to_string(entry.path()) {
+                let (meta, _) = parse_template_front_matter(&content);
+                push(entry.path(), meta);
+            }
+        }
+    }
+}
+
 /// Resolve a template by name, returning `(source, raw_html_source)`.
 ///
-/// User dir takes priority over builtins.
+/// Precedence: workspace dir → user dir → builtin.
 pub fn resolve_template(name: &str) -> Result<(TemplateSource, String)> {
+    // 1. workspace-scoped templates ($AI_CONTEXT_ROOT/templates/document/)
+    if let Some(ws_dir) = data_paths::workspace_document_templates_dir() {
+        let ws_path = ws_dir.join(format!("{name}.html"));
+        if ws_path.exists() {
+            let content = fs::read_to_string(&ws_path)
+                .with_context(|| format!("failed to read template {}", ws_path.display()))?;
+            return Ok((TemplateSource::Workspace(ws_path), content));
+        }
+    }
+
+    // 2. user local templates (~/.local/share/orbit/templates/documents/)
     let user_dir = data_paths::document_templates_dir();
     let user_path = user_dir.join(format!("{name}.html"));
     if user_path.exists() {
@@ -420,6 +451,7 @@ pub fn resolve_template(name: &str) -> Result<(TemplateSource, String)> {
         return Ok((TemplateSource::User(user_path), content));
     }
 
+    // 3. built-in templates
     for (tpl_name, content) in BUILTIN_DOCUMENT_TEMPLATES {
         if *tpl_name == name {
             return Ok((TemplateSource::Builtin, content.to_string()));
