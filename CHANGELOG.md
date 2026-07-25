@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-25
+
+### Features
+
+- **Activity log** — `orbit activity list|append|has` CLI tracks a persistent, scope-aware history of work sessions. The launcher injects the last 5 entries for the current scope as context into every `orbit launch`. A new `activity-log` Stop hook writes a stub entry when `session-close` did not already record one. `session-start` and `session-close` commands integrate automatically.
+- **OrbitTask** — Internal canonical task model that decouples the Tasks TUI tab from Jira specifically. Any plugin (or the user directly) can now contribute tasks through a unified `orbit task list|add|get|update|delete|import` CLI. NDJSON storage per workspace at `~/.local/share/orbit/workspaces/<slug>/tasks/index.jsonl`, sequential IDs (`OT-NNNNNN`). Jira poller writes `OrbitTask` entries via `upsert_by_external_id`; TUI Tasks tab no longer gated on `jira_enabled`.
+- **Document generation pipeline** — `orbit document create` generates PDF, HTML, DOCX, XLSX, and CSV from markdown via `weasyprint`/`pandoc`/`xlsxwriter`. Built-in templates: `default` and `technical-report`; user templates override builtins. New `document-generator` plugin with `weasyprint` + `wkhtmltopdf` fallback. `orbit setup --display-name` sets the name used in document signatures. Gemini engine compatibility: `build_gemini_commands()` injects all slash commands as `GEMINI.md` context.
+- **Workspace-scoped document templates** — Template resolution order: workspace (`$AI_CONTEXT_ROOT/templates/document/`) → user (`~/.config/orbit/templates/document/`) → builtin. `orbit document template list` shows a `source` column indicating where each template was loaded from.
+
 ## [0.16.0] - 2026-07-23
 
 ### Features
