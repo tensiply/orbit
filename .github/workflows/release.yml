@@ -215,4 +215,4 @@ jobs:
           git -C wiki config user.email "ecorona@better.com.mx"
           git -C wiki add .
           git -C wiki diff --cached --quiet || git -C wiki commit -m "Release ${TAG}"
-          git -C wiki push -u origin HEAD:master
+          git -C wiki push --force -u origin HEAD:master
