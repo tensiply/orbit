@@ -56,6 +56,7 @@ pub enum PlanNodeType {
     Review,
     Verify,
     Pr,
+    Document,
     Custom(String),
 }
 

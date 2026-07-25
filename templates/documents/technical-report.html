@@ -1,0 +1,172 @@
+<!-- ---
+name: technical-report
+description: Technical report with cover page, sections, and code block styling
+variables:
+  - project
+  - version
+  - status
+--- -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @page {
+      size: A4;
+      margin: 25mm 20mm 28mm 20mm;
+      @bottom-left {
+        content: element(running-footer);
+        vertical-align: top;
+      }
+      @bottom-right {
+        content: "Page " counter(page) " / " counter(pages);
+        font-size: 7.5pt;
+        color: #94a3b8;
+        font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+        border-top: 0.5px solid #e2e8f0;
+        padding-top: 5pt;
+        vertical-align: top;
+      }
+    }
+
+    @page :first {
+      margin-top: 0;
+    }
+
+    #running-footer {
+      position: running(running-footer);
+      font-size: 7.5pt;
+      color: #64748b;
+      line-height: 1.5;
+      font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+      border-top: 0.5px solid #e2e8f0;
+      padding-top: 5pt;
+    }
+
+    body {
+      font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.65;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .cover {
+      min-height: 220px;
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+      color: #fff;
+      padding: 50px 60px 40px;
+      page-break-after: always;
+      margin: -25mm -20mm 0 -20mm;
+      padding-top: 50mm;
+    }
+    .cover .label {
+      font-size: 8pt;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0.75;
+      margin-bottom: 16px;
+    }
+    .cover h1 { font-size: 28pt; font-weight: 800; line-height: 1.2; margin-bottom: 24px; }
+    .cover .meta-grid { display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px; }
+    .cover .meta-item .label2 { font-size: 8pt; opacity: 0.65; text-transform: uppercase; letter-spacing: 1px; }
+    .cover .meta-item .value { font-size: 11pt; font-weight: 600; margin-top: 2px; }
+    h1 { font-size: 18pt; font-weight: 700; margin: 32px 0 14px; color: #1e40af; border-bottom: 2px solid #dbeafe; padding-bottom: 6px; }
+    h2 { font-size: 13pt; font-weight: 600; margin: 24px 0 10px; color: #1e3a8a; }
+    h3 { font-size: 11pt; font-weight: 600; margin: 18px 0 8px; color: #2563eb; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0 0 12px 22px; }
+    li { margin: 4px 0; }
+    code {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 9pt;
+      color: #1d4ed8;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 0 0 16px;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+      font-size: 9pt;
+    }
+    blockquote {
+      border-left: 4px solid #3b82f6;
+      padding: 10px 18px;
+      margin: 0 0 14px;
+      background: #eff6ff;
+      border-radius: 0 6px 6px 0;
+      color: #1e3a8a;
+    }
+    table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 10pt; }
+    th { background: #1e40af; color: #fff; padding: 9px 14px; text-align: left; font-weight: 600; }
+    td { padding: 8px 14px; border-bottom: 1px solid #e2e8f0; }
+    tr:nth-child(even) td { background: #f0f9ff; }
+    a { color: #2563eb; text-decoration: none; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
+
+    @media print {
+      .cover { page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+  <div id="running-footer">
+    Generated at {{ timestamp_human }} by {{ display_name }} with orbit documents
+  </div>
+
+  <div class="cover">
+    <div class="label">Technical Report</div>
+    <h1>{{ title }}</h1>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <div class="label2">Date</div>
+        <div class="value">{{ date }}</div>
+      </div>
+      {% if author %}
+      <div class="meta-item">
+        <div class="label2">Author</div>
+        <div class="value">{{ author }}</div>
+      </div>
+      {% endif %}
+      {% if project %}
+      <div class="meta-item">
+        <div class="label2">Project</div>
+        <div class="value">{{ project }}</div>
+      </div>
+      {% endif %}
+      {% if version %}
+      <div class="meta-item">
+        <div class="label2">Version</div>
+        <div class="value">{{ version }}</div>
+      </div>
+      {% endif %}
+      {% if status %}
+      <div class="meta-item">
+        <div class="label2">Status</div>
+        <div class="value">{{ status }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {{ content_html }}
+
+  {% if reviewer %}
+  <hr>
+  <p><em>Reviewed by: {{ reviewer }}</em></p>
+  {% endif %}
+</body>
+</html>

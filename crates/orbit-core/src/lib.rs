@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod config;
 pub mod context;
 pub mod data_paths;
+pub mod document;
 pub mod engine;
 pub mod engine_hook;
 pub mod error;

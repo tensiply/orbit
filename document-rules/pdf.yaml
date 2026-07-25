@@ -1,0 +1,12 @@
+format: pdf
+renderer: weasyprint
+template: default
+page_size: A4
+margins:
+  top: 20
+  right: 20
+  bottom: 20
+  left: 20
+pdf_options:
+  dpi: 150
+  zoom: 1.0

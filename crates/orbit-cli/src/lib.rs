@@ -84,6 +84,8 @@ pub enum Commands {
     Serve(commands::serve::ServeArgs),
     /// Discover orbit instances on the local network via mDNS
     Discover(commands::discover::DiscoverArgs),
+    /// Generate documents (PDF, HTML, DOCX, XLSX, CSV) from markdown or data
+    Document(commands::document::DocumentArgs),
 }
 
 impl Cli {
@@ -157,6 +159,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Task(args)) => commands::task::run(args),
         Some(Commands::Serve(args)) => commands::serve::run(args).await,
         Some(Commands::Discover(args)) => commands::discover::run(args),
+        Some(Commands::Document(args)) => commands::document::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 

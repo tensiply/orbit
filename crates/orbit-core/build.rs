@@ -50,4 +50,21 @@ fn main() {
 
     let commands_dir = Path::new(&manifest_dir).join("../../commands");
     embed_dir(&commands_dir, &out_dir.join("builtin_commands.rs"), "md");
+
+    println!("cargo:rerun-if-changed=../../document-rules");
+    println!("cargo:rerun-if-changed=../../templates/documents");
+
+    let rules_dir = Path::new(&manifest_dir).join("../../document-rules");
+    embed_dir(
+        &rules_dir,
+        &out_dir.join("builtin_document_rules.rs"),
+        "yaml",
+    );
+
+    let doc_tpl_dir = Path::new(&manifest_dir).join("../../templates/documents");
+    embed_dir(
+        &doc_tpl_dir,
+        &out_dir.join("builtin_document_templates.rs"),
+        "html",
+    );
 }

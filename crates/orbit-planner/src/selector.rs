@@ -18,7 +18,7 @@ pub fn select(node: &PlanNode) -> DispatchConfig {
     let engine = match node.task_type {
         PlanNodeType::Test => Engine::Opencode,
         PlanNodeType::Review | PlanNodeType::Pr | PlanNodeType::Verify => Engine::Claude,
-        PlanNodeType::Code | PlanNodeType::Custom(_) => node.engine,
+        PlanNodeType::Code | PlanNodeType::Document | PlanNodeType::Custom(_) => node.engine,
     };
     DispatchConfig { engine }
 }

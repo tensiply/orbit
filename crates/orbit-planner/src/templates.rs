@@ -14,7 +14,8 @@ pub fn get_template(task_type: &PlanNodeType) -> Option<&'static str> {
         PlanNodeType::Review => Some(REVIEW),
         PlanNodeType::Verify => Some(VERIFY),
         PlanNodeType::Pr => Some(PR),
-        PlanNodeType::Custom(_) => None,
+        // Document nodes dispatch to the orbit document create executor — no specialist template.
+        PlanNodeType::Document | PlanNodeType::Custom(_) => None,
     }
 }
 

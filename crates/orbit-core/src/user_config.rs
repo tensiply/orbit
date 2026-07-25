@@ -64,6 +64,9 @@ impl Default for PlanRetentionConfig {
 pub struct UserSection {
     /// Display name shown in tmux session names (e.g. "ecorona").
     pub name: String,
+    /// Full display name for documents and reports (e.g. "Eloir Corona").
+    /// Falls back to `name` when empty.
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

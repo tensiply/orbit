@@ -22,6 +22,10 @@ pub struct SetupArgs {
     #[arg(long)]
     pub username: Option<String>,
 
+    /// Full display name for document signatures (e.g. "Eloir Corona")
+    #[arg(long)]
+    pub display_name: Option<String>,
+
     /// AI workspace root directory [default: ~/AI]
     #[arg(long)]
     pub ai_root: Option<PathBuf>,
@@ -93,6 +97,25 @@ pub async fn run(args: SetupArgs) -> Result<()> {
             } else {
                 let val = ask("Your username (shown in tmux session names)", default)?;
                 if val == "(none)" { String::new() } else { val }
+            }
+        }
+    };
+
+    let display_name = match args.display_name {
+        Some(d) => d,
+        None => {
+            let current_dn = if current.user.display_name.is_empty() {
+                current.user.name.as_str()
+            } else {
+                current.user.display_name.as_str()
+            };
+            if args.yes {
+                current_dn.to_string()
+            } else {
+                ask(
+                    "Your full display name (for document signatures, e.g. \"Eloir Corona\")",
+                    current_dn,
+                )?
             }
         }
     };
@@ -178,6 +201,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     // ── build final config ────────────────────────────────────────────────────
     let mut cfg = UserConfig::default();
     cfg.user.name = username.clone();
+    cfg.user.display_name = display_name.clone();
     cfg.workspace.ai_root = ai_root.clone();
     cfg.engine.default = default_engine.clone();
     cfg.engine.default_tenant = default_tenant.clone();

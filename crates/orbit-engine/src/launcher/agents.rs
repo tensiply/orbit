@@ -85,6 +85,54 @@ fn overlay_paths(scope: &OrbitScope, kind: &str, name: &str) -> Vec<PathBuf> {
     paths
 }
 
+// ── Gemini commands ───────────────────────────────────────────────────────────
+
+/// Write all orbit commands as a single markdown context file for Gemini.
+/// Gemini has no slash-command container, so commands are injected as plain context.
+pub fn build_gemini_commands(
+    scope: &OrbitScope,
+    runtime_dir: &Path,
+    commands_filter: Option<&std::collections::HashSet<String>>,
+) -> Result<PathBuf> {
+    let shared = shared_opencode_dir(scope);
+    let local = local_opencode_dir(scope);
+
+    let mut parts = vec![
+        "# Available Commands\n\nOrbit provides the following commands. When the user asks to generate a document, commit code, open a PR, or manage sessions, invoke the corresponding `orbit` command directly.\n".to_string(),
+    ];
+
+    for (name, content) in orbit_core::builtin_command::all() {
+        if let Some(filter) = commands_filter {
+            if !filter.contains(*name) {
+                continue;
+            }
+        }
+        let text =
+            apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
+        // Strip YAML front matter so Gemini only sees the usable instructions
+        let body = strip_front_matter(&text);
+        parts.push(format!("\n---\n\n## /{name}\n\n{body}"));
+    }
+
+    let dest = runtime_dir.join("gemini-commands.md");
+    fs::write(&dest, parts.join("\n"))?;
+    Ok(dest)
+}
+
+fn strip_front_matter(text: &str) -> &str {
+    let t = text.trim_start();
+    if !t.starts_with("---") {
+        return text;
+    }
+    // find the closing ---
+    if let Some(rest) = t.strip_prefix("---") {
+        if let Some(idx) = rest.find("\n---") {
+            return rest[idx + 4..].trim_start();
+        }
+    }
+    text
+}
+
 // ── OpenCode ──────────────────────────────────────────────────────────────────
 
 fn build_opencode(

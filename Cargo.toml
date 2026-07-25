@@ -61,6 +61,13 @@ mdns-sd = "0.20"
 rand = "0.8"
 hostname = "0.4"
 
+# Document generation
+serde_yml = "0.0.12"
+minijinja = "2"
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+rust_xlsxwriter = "0.80"
+open = "5"
+
 # Internal crates
 orbit-core = { path = "crates/orbit-core" }
 orbit-cli = { path = "crates/orbit-cli" }

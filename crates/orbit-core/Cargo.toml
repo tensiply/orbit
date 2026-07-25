@@ -13,6 +13,10 @@ thiserror.workspace = true
 tracing.workspace = true
 directories.workspace = true
 keyring.workspace = true
+serde_yml.workspace = true
+minijinja.workspace = true
+pulldown-cmark.workspace = true
+rust_xlsxwriter.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

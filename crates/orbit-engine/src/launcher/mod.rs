@@ -123,8 +123,16 @@ pub fn launch(
         }
     }
 
-    // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
+    // 3a. For Gemini: inject commands as context, then write merged GEMINI.md
     if engine == Engine::Gemini {
+        let cmd_file = agents::build_gemini_commands(
+            scope,
+            &paths.runtime_dir,
+            config.commands_filter.as_ref(),
+        )?;
+        if !config.instructions.contains(&cmd_file) {
+            config.instructions.push(cmd_file);
+        }
         let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
         build_gemini_context(&config.instructions, &gemini_ctx)?;
         config.instructions.push(gemini_ctx);
@@ -772,8 +780,16 @@ pub fn spawn_background(
         None
     };
 
-    // 3a. For Gemini: write merged instructions as GEMINI.md so includeDirectories picks it up
+    // 3a. For Gemini: inject commands as context, then write merged GEMINI.md
     if engine == Engine::Gemini {
+        let cmd_file = agents::build_gemini_commands(
+            scope,
+            &paths.runtime_dir,
+            config.commands_filter.as_ref(),
+        )?;
+        if !config.instructions.contains(&cmd_file) {
+            config.instructions.push(cmd_file);
+        }
         let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
         build_gemini_context(&config.instructions, &gemini_ctx)?;
         config.instructions.push(gemini_ctx);
@@ -916,7 +932,22 @@ pub fn spawn_plan_node(
         }
     }
 
-    // 3. Write config + context files
+    // 3. For Gemini: inject commands as context, then write merged GEMINI.md
+    if engine == Engine::Gemini {
+        let cmd_file = agents::build_gemini_commands(
+            scope,
+            &paths.runtime_dir,
+            config.commands_filter.as_ref(),
+        )?;
+        if !config.instructions.contains(&cmd_file) {
+            config.instructions.push(cmd_file);
+        }
+        let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
+        build_gemini_context(&config.instructions, &gemini_ctx)?;
+        config.instructions.push(gemini_ctx);
+    }
+
+    // 3b. Write config + context files
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 

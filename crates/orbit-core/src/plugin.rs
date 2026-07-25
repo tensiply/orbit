@@ -42,7 +42,11 @@ pub struct Plugin {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CheckSpec {
+    /// Primary binary — checked in the orbit venv when `use_orbit_venv = true`.
     pub binary: Option<String>,
+    /// Alternative binaries checked in the system PATH (any match → installed).
+    #[serde(default)]
+    pub any_of: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -214,12 +218,17 @@ impl PluginState {
 impl Plugin {
     pub fn is_installed(&self) -> bool {
         if let Some(bin) = &self.check.binary {
-            if self.use_orbit_venv {
-                return crate::venv::venv_bin(bin).exists();
+            let primary_ok = if self.use_orbit_venv {
+                crate::venv::venv_bin(bin).exists()
+            } else {
+                bin_available(bin)
+            };
+            if primary_ok {
+                return true;
             }
-            return bin_available(bin);
         }
-        false
+        // Any alternative binary available in the system PATH counts as installed.
+        self.check.any_of.iter().any(|b| bin_available(b))
     }
 
     pub fn has_mcp(&self) -> bool {

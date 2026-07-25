@@ -91,6 +91,58 @@ pub fn tasks_index_path_for(workspace_name: Option<&str>) -> PathBuf {
     }
 }
 
+// ── document paths ────────────────────────────────────────────────────────────
+
+/// User-defined document templates: `~/.local/share/orbit/templates/documents/`
+pub fn document_templates_dir() -> PathBuf {
+    orbit_data_root().join("templates/documents")
+}
+
+/// User document rule overrides: `~/.config/orbit/document-rules/`
+pub fn document_rules_dir() -> PathBuf {
+    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(orbit_home).join("document-rules");
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg).join("orbit/document-rules")
+    } else {
+        directories::BaseDirs::new()
+            .map(|b| b.home_dir().join(".config/orbit/document-rules"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/orbit/document-rules"))
+    }
+}
+
+/// Root for user-visible generated documents: `~/.orbit/documents/`
+/// (NOT XDG data home — this is an intentionally accessible location).
+pub fn documents_output_base() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|b| b.home_dir().join(".orbit/documents"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/documents"))
+}
+
+/// Scope-based output directory: `~/.orbit/documents/{workspace}/{tenant}/{project}/{repo}/`
+pub fn documents_scope_dir(workspace: &str, tenant: &str, project: &str, repo: &str) -> PathBuf {
+    let mut path = documents_output_base();
+    for part in [workspace, tenant, project, repo] {
+        if !part.is_empty() {
+            path = path.join(part);
+        }
+    }
+    path
+}
+
+/// NDJSON index of document entries for a workspace.
+pub fn documents_index_path_for(workspace_name: Option<&str>) -> PathBuf {
+    let root = orbit_data_root();
+    match workspace_name.filter(|s| !s.is_empty()) {
+        None => root.join("documents/index.jsonl"),
+        Some(name) => root
+            .join("workspaces")
+            .join(slugify(name))
+            .join("documents/index.jsonl"),
+    }
+}
+
 // ── cross-workspace discovery ─────────────────────────────────────────────────
 
 /// All plans directories that exist on disk: legacy flat + every `workspaces/*/plans/`.

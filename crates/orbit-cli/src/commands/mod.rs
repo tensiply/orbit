@@ -7,6 +7,7 @@ pub mod context;
 pub mod daemon;
 pub mod discover;
 pub mod doctor;
+pub mod document;
 pub mod engines;
 pub mod env;
 pub mod hooks;

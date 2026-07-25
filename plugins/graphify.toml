@@ -1,0 +1,27 @@
+name = "graphify"
+description = "AI-powered knowledge graph builder — transforms code and docs into queryable semantic graphs with 16 MCP tools"
+category = "dev"
+url = "https://crates.io/crates/graphify-rs"
+
+[check]
+binary = "graphify-rs"
+
+[[install]]
+method = "cargo"
+cmd = ["cargo", "install", "graphify-rs"]
+label = "cargo (global)"
+
+[[mcp]]
+name = "graphify"
+command = "graphify-rs"
+args = ["serve"]
+label = "Graphify — semantic knowledge graph (16 MCP tools)"
+
+[pre_launch]
+cmd = "graphify-rs build --path ."
+output = "none"
+timeout_secs = 60
+cache_ttl_secs = 3600
+
+[context]
+prompt = "You have access to a semantic knowledge graph of this codebase via graphify MCP tools. The graph captures code structure, module relationships, and inferred conceptual connections between components. Use it to explore how subsystems relate, trace dependencies, and understand the codebase before making changes."

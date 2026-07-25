@@ -1,0 +1,102 @@
+name = "document-generator"
+description = "Document generation pipeline: PDF, HTML, DOCX, XLSX, CSV. PDF via weasyprint (best quality) or wkhtmltopdf (standalone fallback)."
+category = "productivity"
+use_orbit_venv = true
+
+[check]
+# Primary: weasyprint in the orbit venv (use_orbit_venv = true → checks venv path).
+# Fallback: wkhtmltopdf in the system PATH — either counts as installed.
+binary = "weasyprint"
+any_of = ["wkhtmltopdf"]
+
+# ── PDF renderer: weasyprint (preferred — better CSS support) ──────────────────
+#
+# weasyprint is a Python package installed in the orbit venv.
+# It requires native libs (pango, fribidi, harfbuzz) visible to its Python interpreter.
+#
+# If your Python is from Homebrew (Linux), those libs must also come from Homebrew:
+#   brew install pango
+# If your Python is from the system (/usr/bin/python3), install via apt:
+#   sudo apt install libpango-1.0-0 libfribidi0 libharfbuzz0b
+
+[[install]]
+method = "pip"
+cmd = ["pip", "install", "weasyprint"]
+label = "weasyprint — orbit venv (pip)"
+
+# After installing weasyprint, install its system-level native libs.
+# Run the block that matches your Python interpreter:
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "pango"]
+label = "pango — Homebrew Python native libs (run after pip install)"
+
+[[install]]
+method = "apt"
+cmd = ["apt-get", "install", "-y", "libpango-1.0-0", "libfribidi0", "libharfbuzz0b"]
+label = "pango — system Python native libs (run after pip install)"
+
+# ── PDF renderer: wkhtmltopdf (standalone fallback) ───────────────────────────
+#
+# wkhtmltopdf is a self-contained binary — no Python or native lib deps.
+# Used automatically when weasyprint cannot load its system libs.
+# Limitation: renders CSS 2.1 only (no Flexbox, Grid, or CSS variables).
+
+[[install]]
+method = "apt"
+cmd = ["apt-get", "install", "-y", "wkhtmltopdf"]
+label = "wkhtmltopdf — standalone PDF renderer (apt)"
+
+[auth]
+hint = "No authentication required. Run `orbit plugins install document-generator` to install."
+
+[context]
+prompt = """When generating documents (PDF, HTML, DOCX, XLSX, CSV reports, specs, release notes, etc.):
+- Use `orbit document create` instead of writing files directly.
+- Pass markdown content via `--content` or `--content-file`.
+- For structured tabular data (XLSX), pass a JSON array of objects via `--content`.
+- Available formats: pdf, html, docx, xlsx, csv.
+- Use `--template technical-report` for formal reports; `--template default` for general documents.
+- Run `orbit document template list` to see all available templates.
+- Use `--var KEY=VALUE` to inject template variables (e.g. `--var project=orbit --var version=1.0`).
+- Use `--open` to open the output directory immediately after generation.
+- PDF renderer order: weasyprint (orbit venv) → wkhtmltopdf → weasyprint (system). Auto-selected.
+"""
+
+[executor]
+command = ["sh", "-c", "orbit document create --title {title} --type {format} --content-file {content_file}{output_arg}{template_arg}{extra_args}"]
+
+[[executor.params]]
+name = "title"
+description = "Document title"
+required = true
+
+[[executor.params]]
+name = "format"
+description = "Output format: pdf, html, docx, xlsx, csv"
+required = false
+default = "pdf"
+
+[[executor.params]]
+name = "content_file"
+description = "Path to the content file (markdown, JSON, or CSV)"
+required = true
+
+[[executor.params]]
+name = "output_arg"
+description = "Optional --output flag with path, e.g. ' --output /path/to/out.pdf'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "template_arg"
+description = "Optional --template flag, e.g. ' --template technical-report'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "extra_args"
+description = "Any additional flags to pass to orbit document create"
+required = false
+default = ""
