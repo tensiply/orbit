@@ -108,6 +108,16 @@ pub fn workspace_document_templates_dir() -> Option<PathBuf> {
         .map(|root| PathBuf::from(root).join("templates/document"))
 }
 
+/// Workspace-scoped document rule overrides: `$AI_CONTEXT_ROOT/document-rules/`
+///
+/// Returns `None` when `AI_CONTEXT_ROOT` is not set (outside an orbit session).
+pub fn workspace_document_rules_dir() -> Option<PathBuf> {
+    std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|root| PathBuf::from(root).join("document-rules"))
+}
+
 /// User document rule overrides: `~/.config/orbit/document-rules/`
 pub fn document_rules_dir() -> PathBuf {
     if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {

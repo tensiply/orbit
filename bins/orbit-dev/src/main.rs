@@ -11,6 +11,9 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    if std::env::args().any(|a| a == "-h" || a == "--help") {
+        orbit_cli::banner::print();
+    }
     let cli = Cli::parse_dev();
     run(cli).await
 }

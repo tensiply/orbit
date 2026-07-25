@@ -22,6 +22,8 @@ pub struct StatusArgs {
 // ── collected state ───────────────────────────────────────────────────────────
 
 struct StatusData {
+    username: String,
+    display_name: String,
     workspace_name: String,
     workspace_path: String,
     workspace_exists: bool,
@@ -62,6 +64,12 @@ pub async fn run(args: StatusArgs) -> Result<()> {
 
 async fn collect() -> StatusData {
     let user_cfg = UserConfig::load();
+    let username = user_cfg.user.name.clone();
+    let display_name = if user_cfg.user.display_name.is_empty() {
+        username.clone()
+    } else {
+        user_cfg.user.display_name.clone()
+    };
     let ai_root = user_cfg.ai_root_expanded();
 
     // Workspace
@@ -107,6 +115,8 @@ async fn collect() -> StatusData {
     let _ = WorkspaceConfig::load(&ai_root);
 
     StatusData {
+        username,
+        display_name,
         workspace_name,
         workspace_path,
         workspace_exists,
@@ -169,9 +179,17 @@ async fn daemon_status() -> (bool, usize) {
 // ── human output ──────────────────────────────────────────────────────────────
 
 fn print_human(d: &StatusData) {
-    crate::banner::print();
-
     let label_w = 12usize;
+
+    // user
+    if !d.username.is_empty() {
+        let name_detail = if d.display_name != d.username {
+            format!("  \x1b[2m{}\x1b[0m", d.display_name)
+        } else {
+            String::new()
+        };
+        row("user", label_w, &format!("{}{}", d.username, name_detail));
+    }
 
     // workspace
     let ws_detail = if !d.workspace_exists {
@@ -254,6 +272,8 @@ fn row(label: &str, label_w: usize, rest: &str) {
 
 fn print_json(d: &StatusData) {
     let obj = serde_json::json!({
+        "username": d.username,
+        "display_name": d.display_name,
         "workspace": d.workspace_name,
         "workspace_path": d.workspace_path,
         "workspace_exists": d.workspace_exists,

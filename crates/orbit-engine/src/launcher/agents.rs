@@ -102,10 +102,8 @@ pub fn build_gemini_commands(
     ];
 
     for (name, content) in orbit_core::builtin_command::all() {
-        if let Some(filter) = commands_filter {
-            if !filter.contains(*name) {
-                continue;
-            }
+        if commands_filter.is_some_and(|f| !f.contains(*name)) {
+            continue;
         }
         let text =
             apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
@@ -125,10 +123,8 @@ fn strip_front_matter(text: &str) -> &str {
         return text;
     }
     // find the closing ---
-    if let Some(rest) = t.strip_prefix("---") {
-        if let Some(idx) = rest.find("\n---") {
-            return rest[idx + 4..].trim_start();
-        }
+    if let Some(rest) = t.strip_prefix("---") && let Some(idx) = rest.find("\n---") {
+        return rest[idx + 4..].trim_start();
     }
     text
 }

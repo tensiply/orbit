@@ -54,6 +54,20 @@ pub struct InstallMethod {
     pub method: String,
     pub cmd: Vec<String>,
     pub label: String,
+    /// Binary that must be present for this step to be considered installed.
+    /// If set and the binary is missing, `orbit plugins install` will offer to run this step
+    /// even when the plugin's primary check already passes.
+    #[serde(default)]
+    pub check: Option<String>,
+}
+
+impl InstallMethod {
+    pub fn is_step_installed(&self) -> bool {
+        match &self.check {
+            Some(bin) => bin_available(bin),
+            None => true, // no per-step check → assume present
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

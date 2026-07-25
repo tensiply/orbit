@@ -48,6 +48,17 @@ method = "apt"
 cmd = ["apt-get", "install", "-y", "wkhtmltopdf"]
 label = "wkhtmltopdf — standalone PDF renderer (apt)"
 
+# ── Mermaid diagram rendering (optional) ─────────────────────────────────────
+#
+# mmdc renders ```mermaid``` code blocks to SVG before PDF/HTML generation.
+# Requires Node.js. Without it, mermaid blocks appear as code.
+
+[[install]]
+method = "npm"
+cmd = ["npm", "install", "-g", "@mermaid-js/mermaid-cli"]
+label = "mmdc — Mermaid CLI (optional, for diagram rendering in PDF/HTML)"
+check = "mmdc"
+
 [auth]
 hint = "No authentication required. Run `orbit plugins install document-generator` to install."
 

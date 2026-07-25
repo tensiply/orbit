@@ -322,9 +322,22 @@ pub fn update_stored_entry(workspace_name: &str, id: &str, updated: DocumentEntr
 
 /// Load the document rule for a format.
 ///
-/// Priority: user override (`~/.config/orbit/document-rules/{format}.yaml`) → builtin.
+/// Priority: workspace (`$AI_CONTEXT_ROOT/document-rules/`) → user (`~/.config/orbit/document-rules/`) → builtin.
 pub fn load_rule(format: &DocumentFormat) -> DocumentRule {
     let format_str = format.as_str();
+
+    // 1. workspace-scoped rule ($AI_CONTEXT_ROOT/document-rules/<format>.yaml)
+    if let Some(ws_dir) = data_paths::workspace_document_rules_dir() {
+        let ws_path = ws_dir.join(format!("{format_str}.yaml"));
+        if ws_path.exists()
+            && let Ok(content) = fs::read_to_string(&ws_path)
+            && let Ok(rule) = serde_yml::from_str::<DocumentRule>(&content)
+        {
+            return rule;
+        }
+    }
+
+    // 2. user override (~/.config/orbit/document-rules/<format>.yaml)
     let user_path = data_paths::document_rules_dir().join(format!("{format_str}.yaml"));
 
     if user_path.exists()
@@ -602,13 +615,145 @@ fn is_leap(y: u32) -> bool {
     (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
+fn render_mermaid_blocks(markdown: &str) -> String {
+    if !markdown.contains("```mermaid") {
+        return markdown.to_string();
+    }
+
+    let mmdc_path = which_binary("mmdc").or_else(|_| which_binary("mermaid")).ok();
+    if mmdc_path.is_none() {
+        eprintln!(
+            "[orbit document] warn: mermaid diagrams found but mmdc not in PATH — \
+             diagrams will appear as code blocks. \
+             Install: npm install -g @mermaid-js/mermaid-cli"
+        );
+        return markdown.to_string();
+    }
+    let mmdc = mmdc_path.unwrap();
+
+    let mut result = String::with_capacity(markdown.len());
+    let mut rest = markdown;
+    let fence_open = "```mermaid\n";
+
+    loop {
+        match rest.find(fence_open) {
+            None => {
+                result.push_str(rest);
+                break;
+            }
+            Some(pos) => {
+                result.push_str(&rest[..pos]);
+                let after_fence = &rest[pos + fence_open.len()..];
+
+                match after_fence.find("\n```") {
+                    None => {
+                        result.push_str(fence_open);
+                        result.push_str(after_fence);
+                        break;
+                    }
+                    Some(close_pos) => {
+                        let diagram = &after_fence[..close_pos];
+                        rest = &after_fence[close_pos + "\n```".len()..];
+
+                        match render_single_mermaid(diagram, &mmdc) {
+                            Ok(svg) => {
+                                result.push_str("\n<div class=\"mermaid-diagram\">\n");
+                                result.push_str(&svg);
+                                result.push_str("\n</div>\n\n");
+                            }
+                            Err(e) => {
+                                eprintln!("[orbit document] warn: mermaid render failed: {e}");
+                                result.push_str(fence_open);
+                                result.push_str(diagram);
+                                result.push_str("\n```");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Render one Mermaid diagram to a PNG and return an HTML `<img>` tag with the
+/// PNG data inlined as a base64 data URL.
+///
+/// Embedding PNG avoids weasyprint's incomplete SVG-CSS support: mermaid's
+/// generated SVGs rely on CSS class rules (e.g. `stroke: #333` for arrows)
+/// that weasyprint ignores when applied to SVG elements via `<style>` blocks.
+/// Rendering directly to raster via mmdc/puppeteer bypasses this entirely.
+fn render_single_mermaid(diagram: &str, mmdc: &Path) -> Result<String> {
+    let suffix = random_suffix();
+    let tmp_dir = std::env::temp_dir().join("orbit-mermaid");
+    fs::create_dir_all(&tmp_dir)?;
+    let mmd_file = tmp_dir.join(format!("{suffix}.mmd"));
+    let png_file = tmp_dir.join(format!("{suffix}.png"));
+
+    fs::write(&mmd_file, diagram)?;
+
+    let status = Command::new(mmdc)
+        .arg("-i").arg(&mmd_file)
+        .arg("-o").arg(&png_file)
+        .arg("--backgroundColor").arg("white")
+        .arg("-w").arg("1200")
+        .arg("-s").arg("2")
+        .status()
+        .context("failed to run mmdc")?;
+
+    let _ = fs::remove_file(&mmd_file);
+
+    if !status.success() {
+        let _ = fs::remove_file(&png_file);
+        bail!("mmdc exited with non-zero status");
+    }
+
+    // Add vertical padding inside the PNG via ImageMagick convert.
+    // 40px top+bottom at 2× scale ≈ 20px displayed ≈ 3–4mm in PDF — provides
+    // visual breathing room without relying on HTML layout around the <img>.
+    if let Ok(convert) = which_binary("convert") {
+        let _ = Command::new(convert)
+            .arg(&png_file)
+            .arg("-bordercolor").arg("white")
+            .arg("-border").arg("0x40")
+            .arg(&png_file)
+            .status();
+    }
+
+    let png_data = fs::read(&png_file)
+        .with_context(|| format!("failed to read PNG from {}", png_file.display()))?;
+    let _ = fs::remove_file(&png_file);
+
+    let encoded = base64_encode(&png_data);
+    Ok(format!(
+        "<img src=\"data:image/png;base64,{encoded}\" style=\"max-width:100%;height:auto;display:block;margin:0 auto;\">"
+    ))
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        out.push(TABLE[b0 >> 2] as char);
+        out.push(TABLE[((b0 & 0x3) << 4) | (b1 >> 4)] as char);
+        out.push(if chunk.len() > 1 { TABLE[((b1 & 0xf) << 2) | (b2 >> 6)] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TABLE[b2 & 0x3f] as char } else { '=' });
+    }
+    out
+}
+
 fn markdown_to_html(markdown: &str) -> String {
     use pulldown_cmark::{Options, Parser, html};
+    let preprocessed = render_mermaid_blocks(markdown);
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
-    let parser = Parser::new_ext(markdown, opts);
+    let parser = Parser::new_ext(&preprocessed, opts);
     let mut output = String::new();
     html::push_html(&mut output, parser);
     output
@@ -815,23 +960,21 @@ fn generate_pdf(req: &GenerateRequest, rule: &DocumentRule) -> Result<u64> {
 fn try_pdf_renderers(html: &Path, output: &Path, ctx: &PdfRenderCtx) -> Result<()> {
     // 1. weasyprint from orbit venv — probe silently; fall through on any failure.
     let weasyprint_venv = crate::venv::venv_bin("weasyprint");
-    if weasyprint_venv.exists() {
-        if Command::new(&weasyprint_venv)
+    if weasyprint_venv.exists()
+        && Command::new(&weasyprint_venv)
             .arg("--version")
             .output()
             .is_ok_and(|o| o.status.success())
-        {
-            let status = Command::new(&weasyprint_venv)
-                .arg(html)
-                .arg(output)
-                .status()
-                .context("failed to run weasyprint")?;
-            if status.success() {
-                return Ok(());
-            }
-            bail!("weasyprint failed to generate PDF");
+    {
+        let status = Command::new(&weasyprint_venv)
+            .arg(html)
+            .arg(output)
+            .status()
+            .context("failed to run weasyprint")?;
+        if status.success() {
+            return Ok(());
         }
-        // probe failed (missing system libs) — fall through silently to next renderer
+        bail!("weasyprint failed to generate PDF");
     }
 
     // 2. wkhtmltopdf — margins and footer via CLI flags (template @page CSS is ignored).

@@ -40,10 +40,14 @@ orbit document create --title "Metrics" --type xlsx --content '[{"name":"orbit",
 
 ## Default template
 
-The global default template is `befra-clean`: clean minimal PDF, no footer, pagination only, with title, optional subtitle, author, and timestamp. To override, pass `--template <name>`.
+The active template is resolved from the workspace PDF rule (`$AI_CONTEXT_ROOT/document-rules/pdf.yaml`). Do NOT guess or hardcode a template name — omit `--template` to use the workspace default. Pass `--template <name>` only when the user explicitly requests a specific template.
 
-Run `orbit document template list` to see all available templates.
+Run `orbit document template list` to see available templates.
+
+## Output location
+
+NEVER specify `--output`. Let orbit choose the path — it saves the file under `~/.orbit/documents/{workspace}/{tenant}/...` and registers it in the index so `orbit document list` and `orbit document update` work.
 
 ## When to use
 
-Use this command whenever you need to produce a formatted document. Route all document generation through `orbit document create` rather than writing files directly — this ensures consistent formatting, template support, and scope-aware metadata.
+Use this command whenever you need to produce a formatted document. NEVER use weasyprint, pandoc, or direct file writes — always route through `orbit document create`. This ensures the file is indexed, traceable, and goes to the correct scope directory.

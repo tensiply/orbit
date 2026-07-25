@@ -209,8 +209,7 @@ fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
     };
 
     if plugin.is_installed() {
-        println!("  \x1b[32m✓\x1b[0m  {name} is already installed.");
-        return Ok(());
+        return install_missing_components(&plugin, yes);
     }
 
     println!();
@@ -237,6 +236,48 @@ fn install(name: &str, method_name: Option<&str>, yes: bool) -> Result<()> {
 
     if plugin.has_mcp() {
         println!();
+        println!("  \x1b[2mRun `orbit plugins enable {name}` to activate MCP servers.\x1b[0m");
+    }
+
+    Ok(())
+}
+
+fn install_missing_components(plugin: &Plugin, yes: bool) -> Result<()> {
+    let name = &plugin.name;
+
+    let missing: Vec<&InstallMethod> = plugin
+        .install
+        .iter()
+        .filter(|m| !m.is_step_installed())
+        .collect();
+
+    if missing.is_empty() {
+        println!("  \x1b[32m✓\x1b[0m  {name} is already installed — all components present.");
+        return Ok(());
+    }
+
+    println!();
+    println!("  \x1b[32m✓\x1b[0m  {name} core is installed. Missing packages:");
+    println!();
+    for m in &missing {
+        println!("    \x1b[33m○\x1b[0m  {}  —  {}", m.label, m.cmd.join(" "));
+    }
+    println!();
+
+    let should_install = if yes {
+        true
+    } else {
+        confirm(&format!("  Install {} missing package(s)?", missing.len()), true)?
+    };
+
+    if should_install {
+        for m in &missing {
+            run_install(plugin, m)?;
+            println!();
+        }
+    }
+
+    if plugin.has_mcp() && !PluginState::load().is_enabled(name) {
         println!("  \x1b[2mRun `orbit plugins enable {name}` to activate MCP servers.\x1b[0m");
     }
 

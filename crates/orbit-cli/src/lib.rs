@@ -105,10 +105,25 @@ fn needs_setup(cmd: &Option<Commands>) -> bool {
     )
 }
 
+fn shows_banner(cmd: &Option<Commands>) -> bool {
+    // Completions and Man produce machine-readable output; Launch handles its own
+    // banner for --dry-run; None opens the TUI which manages its own display.
+    !matches!(
+        cmd,
+        Some(Commands::Completions(_))
+            | Some(Commands::Man(_))
+            | Some(Commands::Launch(_))
+            | None
+    )
+}
+
 pub async fn run(cli: Cli) -> Result<()> {
+    if shows_banner(&cli.command) {
+        banner::print();
+    }
+
     // First-run detection: guide new users before any command runs.
     if needs_setup(&cli.command) && !UserConfig::path().exists() {
-        eprintln!();
         eprintln!("  No config found. Run `orbit setup` to get started.");
         eprintln!();
         std::process::exit(1);

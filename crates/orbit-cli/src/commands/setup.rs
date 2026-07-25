@@ -72,8 +72,6 @@ pub struct SetupArgs {
 }
 
 pub async fn run(args: SetupArgs) -> Result<()> {
-    crate::banner::print();
-
     let current = UserConfig::load();
     let engines = catalog::engines();
     let engine_names: Vec<&str> = engines.iter().map(|e| e.name.as_str()).collect();

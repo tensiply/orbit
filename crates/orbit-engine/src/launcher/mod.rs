@@ -334,6 +334,12 @@ fn exec_with_tmux(
         .status()
         .ok();
 
+    // Enable mouse mode so TUI engines (Gemini, OpenCode) can receive scroll events.
+    Command::new("tmux")
+        .args(["set-option", "-t", session_name, "mouse", "on"])
+        .status()
+        .ok();
+
     let err = Command::new("tmux")
         .args(["attach-session", "-t", session_name])
         .exec();
@@ -567,6 +573,15 @@ fn set_env(
         std::env::set_var("AI_PROJECT", &scope.project);
         std::env::set_var("AI_REPOSITORY", &scope.repository);
         std::env::set_var("AI_GLOBAL_MODE", if scope.global_mode { "1" } else { "0" });
+
+        let user_cfg = orbit_core::user_config::UserConfig::load();
+        let ai_display_name = if user_cfg.user.display_name.is_empty() {
+            user_cfg.user.name.clone()
+        } else {
+            user_cfg.user.display_name.clone()
+        };
+        std::env::set_var("AI_USERNAME", &user_cfg.user.name);
+        std::env::set_var("AI_DISPLAY_NAME", &ai_display_name);
 
         match engine {
             Engine::Opencode => {
@@ -873,6 +888,12 @@ pub fn spawn_background(
     // Prevent the engine from overriding the window name via OSC sequences.
     Command::new("tmux")
         .args(["set-window-option", "-t", &tmux_name, "allow-rename", "off"])
+        .status()
+        .ok();
+
+    // Enable mouse mode so TUI engines (Gemini, OpenCode) can receive scroll events.
+    Command::new("tmux")
+        .args(["set-option", "-t", &tmux_name, "mouse", "on"])
         .status()
         .ok();
 
