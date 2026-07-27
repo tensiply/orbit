@@ -69,7 +69,11 @@ fn render_opencode(config: &MergedConfig) -> Value {
 fn mcp_opencode(s: &McpServer) -> Value {
     if let Some(url) = &s.url {
         // OpenCode remote MCP format: { "type": "remote", "url": "...", "enabled": true }
-        return json!({ "type": "remote", "url": url, "enabled": true });
+        let mut obj = json!({ "type": "remote", "url": url, "enabled": true });
+        if !s.headers.is_empty() {
+            obj["headers"] = json!(s.headers);
+        }
+        return obj;
     }
     let mut obj = json!({
         "type": s.server_type,
@@ -172,7 +176,11 @@ fn render_claude(config: &MergedConfig) -> Value {
 /// Remote servers render as `{ "type": "http", "url": "..." }`.
 fn mcp_split(s: &McpServer) -> Value {
     if let Some(url) = &s.url {
-        return json!({ "type": s.server_type, "url": url });
+        let mut obj = json!({ "type": s.server_type, "url": url });
+        if !s.headers.is_empty() {
+            obj["headers"] = json!(s.headers);
+        }
+        return obj;
     }
     let (cmd, args) = s
         .command
@@ -206,6 +214,7 @@ mod tests {
             cwd: None,
             server_type: "local".into(),
             url: None,
+            headers: HashMap::new(),
         }
     }
 
@@ -280,6 +289,7 @@ mod tests {
                 cwd: None,
                 server_type: "http".into(),
                 url: Some("https://mcp.lucid.app/mcp".into()),
+                headers: HashMap::new(),
             },
         );
         let val = render(&cfg, Engine::Claude);
@@ -302,11 +312,66 @@ mod tests {
                 cwd: None,
                 server_type: "http".into(),
                 url: Some("https://mcp.lucid.app/mcp".into()),
+                headers: HashMap::new(),
             },
         );
         let val = render(&cfg, Engine::Opencode);
         assert_eq!(val["mcp"]["lucid"]["type"], "remote");
         assert_eq!(val["mcp"]["lucid"]["url"], "https://mcp.lucid.app/mcp");
         assert_eq!(val["mcp"]["lucid"]["enabled"], true);
+    }
+
+    #[test]
+    fn remote_mcp_with_headers_renders_for_claude() {
+        let mut cfg = MergedConfig::default();
+        cfg.mcp.insert(
+            "secure".into(),
+            McpServer {
+                command: vec![],
+                environment: HashMap::new(),
+                cwd: None,
+                server_type: "http".into(),
+                url: Some("https://example.com/mcp".into()),
+                headers: HashMap::from([("Authorization".into(), "Bearer tok".into())]),
+            },
+        );
+        let val = render(&cfg, Engine::Claude);
+        assert_eq!(val["mcpServers"]["secure"]["headers"]["Authorization"], "Bearer tok");
+    }
+
+    #[test]
+    fn remote_mcp_with_headers_renders_for_opencode() {
+        let mut cfg = MergedConfig::default();
+        cfg.mcp.insert(
+            "secure".into(),
+            McpServer {
+                command: vec![],
+                environment: HashMap::new(),
+                cwd: None,
+                server_type: "http".into(),
+                url: Some("https://example.com/mcp".into()),
+                headers: HashMap::from([("Authorization".into(), "Bearer tok".into())]),
+            },
+        );
+        let val = render(&cfg, Engine::Opencode);
+        assert_eq!(val["mcp"]["secure"]["headers"]["Authorization"], "Bearer tok");
+    }
+
+    #[test]
+    fn remote_mcp_no_headers_key_when_empty() {
+        let mut cfg = MergedConfig::default();
+        cfg.mcp.insert(
+            "bare".into(),
+            McpServer {
+                command: vec![],
+                environment: HashMap::new(),
+                cwd: None,
+                server_type: "http".into(),
+                url: Some("https://example.com/mcp".into()),
+                headers: HashMap::new(),
+            },
+        );
+        let val = render(&cfg, Engine::Claude);
+        assert!(val["mcpServers"]["bare"].get("headers").is_none());
     }
 }

@@ -139,6 +139,7 @@ pub fn launch(
     }
 
     // 3. Write config file (Gemini: runtime_dir already in instructions above)
+    config.resolve_mcp_secrets();
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -811,6 +812,7 @@ pub fn spawn_background(
     }
 
     // 3. Write config file (Gemini: runtime_dir already in instructions above)
+    config.resolve_mcp_secrets();
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -969,6 +971,7 @@ pub fn spawn_plan_node(
     }
 
     // 3b. Write config + context files
+    config.resolve_mcp_secrets();
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -1213,6 +1216,7 @@ mod tests {
                 cwd: None,
                 server_type: "local".into(),
                 url: None,
+                headers: HashMap::new(),
             },
         );
         cfg.instructions.push(PathBuf::from("/fake/README.md"));

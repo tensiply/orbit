@@ -7,18 +7,23 @@ const KEYRING_SERVICE: &str = "orbit";
 /// Resolve a potentially-secret value from an `orbit.json` `env` entry.
 ///
 /// Supported forms:
-/// - `$VAR`           → value of environment variable `VAR`
-/// - `env://VAR`      → value of environment variable `VAR`
-/// - `file:///path`   → trimmed contents of the file at `/path`
-/// - `file://path`    → trimmed contents of the file at `path`
-/// - `keychain://KEY` → secret stored under `KEY` in the OS keychain
-/// - anything else    → returned as-is (literal value)
+/// - `$VAR`              → value of environment variable `VAR`
+/// - `env://VAR`         → value of environment variable `VAR`
+/// - `file:///path`      → trimmed contents of the file at `/path`
+/// - `file://path`       → trimmed contents of the file at `path`
+/// - `keychain://KEY`    → secret stored under `KEY` in the OS keychain
+/// - `"Bearer ${VAR}"`   → inline interpolation: `${VAR}` replaced with env var
+/// - anything else       → returned as-is (literal value)
 ///
-/// On resolution failure, logs a warning and returns an empty string so that
-/// a missing secret does not abort the launch.
+/// On resolution failure, logs a warning and returns an empty string (full
+/// substitution) or leaves the placeholder unchanged (inline interpolation)
+/// so that a missing secret does not abort the launch.
 pub fn resolve(value: &str) -> String {
     if let Some(var) = value.strip_prefix('$') {
-        return resolve_env(var, value);
+        // Full substitution: $VAR (no braces) — but not ${VAR} handled below
+        if !var.starts_with('{') {
+            return resolve_env(var, value);
+        }
     }
     if let Some(var) = value.strip_prefix("env://") {
         return resolve_env(var, value);
@@ -29,7 +34,40 @@ pub fn resolve(value: &str) -> String {
     if let Some(key) = value.strip_prefix("keychain://") {
         return resolve_keychain(key, value);
     }
+    // Inline interpolation: replace all ${VAR} occurrences within the string
+    if value.contains("${") {
+        return interpolate(value);
+    }
     value.to_string()
+}
+
+/// Replace every `${VAR}` occurrence in `template` with the value of env var `VAR`.
+/// Unresolved placeholders are left unchanged.
+fn interpolate(template: &str) -> String {
+    let mut result = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find("${") {
+        result.push_str(&rest[..start]);
+        rest = &rest[start + 2..];
+        if let Some(end) = rest.find('}') {
+            let var = &rest[..end];
+            match std::env::var(var) {
+                Ok(v) => result.push_str(&v),
+                Err(_) => {
+                    tracing::warn!("env var '{var}' not set (referenced as '${{{var}}}')");
+                    result.push_str("${");
+                    result.push_str(var);
+                    result.push('}');
+                }
+            }
+            rest = &rest[end + 1..];
+        } else {
+            // Unclosed ${ — emit as-is
+            result.push_str("${");
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 /// Store a secret in the OS keychain under `KEY`.
@@ -135,5 +173,35 @@ mod tests {
     #[test]
     fn missing_file_returns_empty() {
         assert_eq!(resolve("file:///nonexistent/secret.txt"), "");
+    }
+
+    #[test]
+    fn inline_interpolation_single() {
+        unsafe { env::set_var("ORBIT_TEST_INLINE", "tok123") };
+        assert_eq!(resolve("Bearer ${ORBIT_TEST_INLINE}"), "Bearer tok123");
+        unsafe { env::remove_var("ORBIT_TEST_INLINE") };
+    }
+
+    #[test]
+    fn inline_interpolation_multiple() {
+        unsafe { env::set_var("ORBIT_TEST_A", "hello") };
+        unsafe { env::set_var("ORBIT_TEST_B", "world") };
+        assert_eq!(resolve("${ORBIT_TEST_A} ${ORBIT_TEST_B}"), "hello world");
+        unsafe { env::remove_var("ORBIT_TEST_A") };
+        unsafe { env::remove_var("ORBIT_TEST_B") };
+    }
+
+    #[test]
+    fn inline_interpolation_missing_var_leaves_placeholder() {
+        unsafe { env::remove_var("ORBIT_DEFINITELY_NOT_SET_INLINE") };
+        let result = resolve("Bearer ${ORBIT_DEFINITELY_NOT_SET_INLINE}");
+        assert_eq!(result, "Bearer ${ORBIT_DEFINITELY_NOT_SET_INLINE}");
+    }
+
+    #[test]
+    fn dollar_without_braces_still_full_substitution() {
+        unsafe { env::set_var("ORBIT_TEST_FULL", "resolved") };
+        assert_eq!(resolve("$ORBIT_TEST_FULL"), "resolved");
+        unsafe { env::remove_var("ORBIT_TEST_FULL") };
     }
 }

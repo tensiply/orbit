@@ -31,6 +31,22 @@ pub struct MergedConfig {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+impl MergedConfig {
+    /// Resolve secret prefixes (`secret://`, `keychain://`, `env://`, `file://`, `$VAR`)
+    /// in every MCP server's `environment` and `headers` maps.
+    /// Call this once, right before rendering to the engine config format.
+    pub fn resolve_mcp_secrets(&mut self) {
+        for server in self.mcp.values_mut() {
+            for v in server.environment.values_mut() {
+                *v = orbit_core::secrets::resolve(v);
+            }
+            for v in server.headers.values_mut() {
+                *v = orbit_core::secrets::resolve(v);
+            }
+        }
+    }
+}
+
 // ── scope inspection (dry-run) ────────────────────────────────────────────────
 
 /// Status of a single config/MCP/overlay layer.

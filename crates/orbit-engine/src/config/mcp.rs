@@ -14,6 +14,8 @@ pub struct McpServer {
     pub server_type: String,
     /// Remote endpoint URL. When set, the server is remote (no local process).
     pub url: Option<String>,
+    /// HTTP headers forwarded to remote MCP servers. Empty for local servers.
+    pub headers: HashMap<String, String>,
 }
 
 /// Normalize a raw MCP server JSON object into a `McpServer`.
@@ -35,12 +37,22 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
     // ── remote MCP (url present, no command) ─────────────────────────────────
     let url = obj.get("url").and_then(|v| v.as_str()).map(str::to_string);
     if url.is_some() && !obj.contains_key("command") {
+        let headers = obj
+            .get("headers")
+            .and_then(|v| v.as_object())
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
         return Some(McpServer {
             command: vec![],
             environment: HashMap::new(),
             cwd: None,
             server_type,
             url,
+            headers,
         });
     }
 
@@ -95,6 +107,7 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
         cwd,
         server_type,
         url: None,
+        headers: HashMap::new(),
     })
 }
 
@@ -209,5 +222,24 @@ mod tests {
         let server = normalize(Path::new("/base"), &raw).unwrap();
         assert_eq!(server.server_type, "local");
         assert!(server.url.is_some());
+    }
+
+    #[test]
+    fn remote_server_parses_headers() {
+        let raw = json!({
+            "type": "http",
+            "url": "https://example.com/mcp",
+            "headers": { "Authorization": "Bearer tok", "X-Custom": "val" }
+        });
+        let server = normalize(Path::new("/base"), &raw).unwrap();
+        assert_eq!(server.headers["Authorization"], "Bearer tok");
+        assert_eq!(server.headers["X-Custom"], "val");
+    }
+
+    #[test]
+    fn local_server_has_empty_headers() {
+        let raw = json!({ "command": "npx", "args": ["-y", "some-mcp"] });
+        let server = normalize(Path::new("/base"), &raw).unwrap();
+        assert!(server.headers.is_empty());
     }
 }

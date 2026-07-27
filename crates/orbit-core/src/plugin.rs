@@ -178,6 +178,9 @@ pub struct PluginMcp {
     pub label: Option<String>,
     /// Remote endpoint URL. When set, the MCP is remote (no local process).
     pub url: Option<String>,
+    /// HTTP headers forwarded to remote MCP servers.
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 // ── plugin state ──────────────────────────────────────────────────────────────
@@ -385,7 +388,11 @@ pub fn add_plugin_mcps(plugin: &Plugin) -> Result<()> {
 
     for entry in &plugin.mcp {
         let server = if let Some(url) = &entry.url {
-            serde_json::json!({ "type": "http", "url": url })
+            let mut s = serde_json::json!({ "type": "http", "url": url });
+            if !entry.headers.is_empty() {
+                s["headers"] = serde_json::to_value(&entry.headers)?;
+            }
+            s
         } else {
             // Resolve MCP command to the absolute venv path so the AI engine can
             // locate the binary regardless of the user's PATH at session time.
