@@ -1,0 +1,159 @@
+name = "kubectl"
+description = "kubectl — scope-aware Kubernetes cluster isolation via per-scope kubeconfig files, namespace binding, and service account provisioning"
+category = "infra"
+url = "https://kubernetes.io/docs/tasks/tools/"
+
+[check]
+binary = "kubectl"
+
+[[install]]
+method = "curl"
+cmd = ["bash", "-c", "KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) && curl -fsSLO \"https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl\" && chmod +x kubectl && sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl"]
+label = "curl (Linux x86_64, stable release)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "kubectl"]
+label = "Homebrew (macOS)"
+
+[[install]]
+method = "apt"
+cmd = ["bash", "-c", "sudo apt-get update && sudo apt-get install -y kubectl"]
+label = "apt (Debian/Ubuntu — requires kubernetes repo configured)"
+
+[auth]
+# orbit plugins auth kubectl:
+#   1. Prompts for cloud provider (gcloud or aws)
+#   2. Lists available clusters from that provider
+#   3. Prompts for cluster selection and target orbit scope
+#   4. Fetches credentials and writes a scope-specific kubeconfig to ~/.kube/orbit-{scope}.yaml
+#   5. Sets KUBECONFIG for that scope via `orbit env set`
+#
+# Prerequisites: gcloud plugin auth'd OR aws plugin auth'd (whichever provider is chosen)
+# kubeconfigs are stored at: ~/.kube/orbit-{scope}.yaml
+hint = "Lists clusters from gcloud (GKE) or aws (EKS), lets you pick one by number, rename the context, writes a scope-specific kubeconfig to ~/.kube/orbit-{scope}.yaml, and wires it with `orbit env set KUBECONFIG ... --scope`."
+cmd = """
+set -euo pipefail
+PROVIDER="$KUBECTL_CLOUD_PROVIDER"
+SCOPE="$KUBECTL_ORBIT_SCOPE"
+KUBECONFIG_PATH="$HOME/.kube/orbit-${SCOPE}.yaml"
+
+case "$PROVIDER" in
+  gcloud)
+    echo ""
+    echo "  Fetching GKE clusters..."
+    CLUSTERS=$(gcloud container clusters list --format='csv[no-heading](name,location,project)' 2>/dev/null) || {
+      echo "  gcloud not configured — run: orbit plugins auth gcloud"
+      exit 1
+    }
+    [ -z "$CLUSTERS" ] && echo "  No GKE clusters found." && exit 1
+    echo ""
+    i=1
+    while IFS=, read -r name location project; do
+      printf "  [%d] %-35s %-20s project: %s\n" "$i" "$name" "$location" "$project"
+      i=$((i+1))
+    done <<< "$CLUSTERS"
+    echo ""
+    read -rp "  Select cluster [1-$((i-1))]: " NUM
+    SELECTED=$(echo "$CLUSTERS" | sed -n "${NUM}p")
+    IFS=, read -r CLUSTER LOCATION PROJECT <<< "$SELECTED"
+    echo "  Selected: $CLUSTER  ($LOCATION)"
+    read -rp "  Context name (default: $CLUSTER): " ALIAS
+    ALIAS=${ALIAS:-$CLUSTER}
+    KUBECONFIG="$KUBECONFIG_PATH" gcloud container clusters get-credentials "$CLUSTER" \
+      --project="$PROJECT" --zone="$LOCATION" 2>/dev/null \
+      || KUBECONFIG="$KUBECONFIG_PATH" gcloud container clusters get-credentials "$CLUSTER" \
+           --project="$PROJECT" --region="$LOCATION"
+    if [ "$ALIAS" != "$CLUSTER" ]; then
+      OLD_CTX=$(KUBECONFIG="$KUBECONFIG_PATH" kubectl config current-context)
+      KUBECONFIG="$KUBECONFIG_PATH" kubectl config rename-context "$OLD_CTX" "$ALIAS"
+    fi
+    ;;
+  aws)
+    echo ""
+    echo "  Fetching EKS clusters..."
+    CLUSTERS=$(aws eks list-clusters --query 'clusters[*]' --output text | tr '\t' '\n') || {
+      echo "  aws not configured — run: orbit plugins auth aws"
+      exit 1
+    }
+    [ -z "$CLUSTERS" ] && echo "  No EKS clusters found." && exit 1
+    echo ""
+    i=1
+    while IFS= read -r name; do
+      [ -z "$name" ] && continue
+      printf "  [%d] %s\n" "$i" "$name"
+      i=$((i+1))
+    done <<< "$CLUSTERS"
+    echo ""
+    read -rp "  Select cluster [1-$((i-1))]: " NUM
+    CLUSTER=$(echo "$CLUSTERS" | sed -n "${NUM}p")
+    echo "  Selected: $CLUSTER"
+    read -rp "  Region (e.g. us-east-1): " REGION
+    read -rp "  Profile (leave blank for default): " PROFILE
+    read -rp "  Context name (default: $CLUSTER): " ALIAS
+    ALIAS=${ALIAS:-$CLUSTER}
+    PROFILE_ARG=${PROFILE:+--profile "$PROFILE"}
+    KUBECONFIG="$KUBECONFIG_PATH" aws eks update-kubeconfig \
+      --name "$CLUSTER" --region "$REGION" --alias "$ALIAS" $PROFILE_ARG
+    ;;
+  *)
+    echo "  Unknown provider '$PROVIDER'. Use 'gcloud' or 'aws'."
+    exit 1
+    ;;
+esac
+
+chmod 600 "$KUBECONFIG_PATH"
+echo ""
+echo "  kubeconfig written : $KUBECONFIG_PATH"
+echo "  context name       : $ALIAS"
+orbit env set KUBECONFIG "$KUBECONFIG_PATH" --scope "$SCOPE"
+echo "  scope binding      : KUBECONFIG → $SCOPE"
+"""
+
+[[auth.vars]]
+name = "KUBECTL_CLOUD_PROVIDER"
+description = "Cloud provider — type 'gcloud' for GKE clusters, or 'aws' for EKS clusters"
+secret = false
+
+[[auth.vars]]
+name = "KUBECTL_ORBIT_SCOPE"
+description = "Orbit scope to bind this cluster to (workspace / tenant / project / repo)"
+secret = false
+
+[context]
+prompt = "You have access to kubectl. Each orbit scope can target a different Kubernetes cluster or namespace via KUBECONFIG and KUBECTL_CONTEXT. Run `kubectl config current-context` and `kubectl config view --minify` to see the active cluster and namespace. For service accounts created for orbit scopes, use the naming convention `orbit-{tenant}-{project}-{repo}` in the appropriate namespace and annotate with `orbit.ai/scope: {scope}` for traceability. Always specify --namespace explicitly in commands to avoid operating on the wrong namespace."
+
+[pre_launch]
+cmd = "{ [ -n \"$KUBECTL_CONTEXT\" ] && kubectl config use-context \"$KUBECTL_CONTEXT\" 2>/dev/null; true; } && kubectl config view --minify --output='yaml' 2>/dev/null | grep -E '(cluster|namespace|user|server):' | head -10 || echo 'kubectl: no active cluster for this scope'"
+output = "context"
+timeout_secs = 8
+cache_ttl_secs = 60
+
+# Executor: create a Kubernetes service account named after the orbit scope.
+# Creates the SA, a ClusterRole (or Role), and a RoleBinding for traceability.
+# Usage in orbit plan: plugin:kubectl with params scope, namespace, verbs, resources.
+[executor]
+command = ["bash", "-c", "set -euo pipefail && SA_NAME=\"orbit-{scope}\" && NAMESPACE=\"{namespace}\" && kubectl create namespace \"$NAMESPACE\" --dry-run=client -o yaml | kubectl apply -f - && kubectl create serviceaccount \"$SA_NAME\" --namespace=\"$NAMESPACE\" --dry-run=client -o yaml | kubectl apply -f - && kubectl annotate serviceaccount \"$SA_NAME\" --namespace=\"$NAMESPACE\" orbit.ai/scope={scope} orbit.ai/managed=true --overwrite && kubectl create role \"$SA_NAME\" --namespace=\"$NAMESPACE\" --verb={verbs} --resource={resources} --dry-run=client -o yaml | kubectl apply -f - && kubectl create rolebinding \"$SA_NAME\" --namespace=\"$NAMESPACE\" --role=\"$SA_NAME\" --serviceaccount=\"$NAMESPACE:$SA_NAME\" --dry-run=client -o yaml | kubectl apply -f - && echo \"\" && echo \"Service account ready: $SA_NAME (namespace: $NAMESPACE)\" && echo \"To generate a token:\" && echo \"  kubectl create token $SA_NAME --namespace=$NAMESPACE --duration=8760h\" && echo \"Or create a long-lived secret (K8s < 1.24):\" && echo \"  kubectl create secret generic $SA_NAME-token --namespace=$NAMESPACE --type=kubernetes.io/service-account-token --from-literal=metadata.annotations.kubernetes.io/service-account.name=$SA_NAME\""]
+
+[[executor.params]]
+name = "scope"
+description = "Orbit scope slug for naming the service account (e.g., aidev-ecosystem-orbit → creates orbit-aidev-ecosystem-orbit)"
+required = true
+
+[[executor.params]]
+name = "namespace"
+description = "Kubernetes namespace where the service account will be created"
+required = false
+default = "default"
+
+[[executor.params]]
+name = "verbs"
+description = "Comma-separated Kubernetes verbs to allow (e.g., get,list,watch)"
+required = false
+default = "get,list,watch"
+
+[[executor.params]]
+name = "resources"
+description = "Comma-separated Kubernetes resources to allow access to (e.g., pods,services,deployments)"
+required = false
+default = "pods,services"

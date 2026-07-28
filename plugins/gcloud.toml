@@ -1,0 +1,69 @@
+name = "gcloud"
+description = "Google Cloud SDK — scope-aware GCP project isolation, named configurations per orbit scope, and service account provisioning"
+category = "infra"
+url = "https://cloud.google.com/sdk/docs/install"
+
+[check]
+binary = "gcloud"
+
+[[install]]
+method = "curl"
+cmd = ["bash", "-c", "curl -fsSL https://sdk.cloud.google.com | bash"]
+label = "curl (official installer)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "--cask", "google-cloud-sdk"]
+label = "Homebrew (macOS)"
+
+[[install]]
+method = "apt"
+cmd = ["bash", "-c", "sudo apt-get install -y apt-transport-https ca-certificates gnupg && echo 'deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main' | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && sudo apt-get update && sudo apt-get install -y google-cloud-sdk"]
+label = "apt (Debian/Ubuntu)"
+
+[auth]
+# orbit plugins auth gcloud → opens browser OAuth flow, credentials stored by gcloud itself.
+#
+# Scope isolation is configured separately via orbit env (not auth.vars):
+#   gcloud config configurations create NAME
+#   gcloud config set project PROJECT_ID && gcloud auth login
+#   orbit env set CLOUDSDK_ACTIVE_CONFIG_NAME NAME --scope [workspace|tenant|project|repo]
+#
+# For service account / CI auth (no browser):
+#   gcloud iam service-accounts keys create /tmp/sa.json --iam-account SA@PROJECT.iam.gserviceaccount.com
+#   orbit secret set GCP_SA_KEY "$(cat /tmp/sa.json)" && rm /tmp/sa.json
+#   orbit env set GOOGLE_APPLICATION_CREDENTIALS "file:///path/to/key.json" --scope repo
+hint = "Opens a browser OAuth flow (gcloud auth login). For scope isolation, create named gcloud configurations and bind per scope: `orbit env set CLOUDSDK_ACTIVE_CONFIG_NAME NAME --scope [workspace|tenant|project|repo]`. For service accounts, store the key path with `orbit env set GOOGLE_APPLICATION_CREDENTIALS file:///path/to/key.json --scope repo`."
+cmd = "gcloud auth login --update-adc"
+# No auth.vars — gcloud manages its own OAuth tokens; scope routing vars belong in orbit.json env blocks.
+
+[context]
+prompt = "You have access to gcloud CLI. Each orbit scope can target a different GCP project via CLOUDSDK_ACTIVE_CONFIG_NAME — run `gcloud config list` to see the active project and account for the current scope. Named configurations are managed with `gcloud config configurations`. When creating service accounts for orbit scopes, use the naming convention `orbit-{tenant}-{project}-{repo}` and add labels `orbit-scope={scope}` for traceability. Keep service account permissions minimal (principle of least privilege)."
+
+[pre_launch]
+cmd = "gcloud config list --format='yaml(core)' 2>/dev/null"
+output = "context"
+timeout_secs = 5
+cache_ttl_secs = 60
+
+# Executor: create a GCP service account named after the orbit scope for traceability.
+# Usage in orbit plan: plugin:gcloud with params scope, project, roles.
+# Naming convention: orbit-{scope} → orbit-aidev-ecosystem-orbit
+[executor]
+command = ["bash", "-c", "set -euo pipefail && SA_NAME=\"orbit-{scope}\" && PROJECT=\"{project}\" && SA_EMAIL=\"$SA_NAME@$PROJECT.iam.gserviceaccount.com\" && gcloud iam service-accounts create \"$SA_NAME\" --project=\"$PROJECT\" --display-name=\"orbit: {scope}\" --description=\"Managed by orbit — scope: {scope}\" 2>/dev/null || echo \"SA already exists, continuing...\" && gcloud resource-manager tags bindings create --tag-value=orbit-managed --parent=\"//iam.googleapis.com/projects/$PROJECT/serviceAccounts/$SA_EMAIL\" 2>/dev/null || true && for ROLE in $(echo \"{roles}\" | tr ',' ' '); do gcloud projects add-iam-policy-binding \"$PROJECT\" --member=\"serviceAccount:$SA_EMAIL\" --role=\"$ROLE\" --condition=None 2>&1; done && echo \"\" && echo \"Service account ready: $SA_EMAIL\" && echo \"To create a key (store securely):\" && echo \"  gcloud iam service-accounts keys create /tmp/orbit-$SA_NAME.json --iam-account=$SA_EMAIL\" && echo \"  orbit secret set GCP_SA_KEY_$(echo {scope} | tr '-' '_' | tr '[:lower:]' '[:upper:]') \\\"\\$(cat /tmp/orbit-$SA_NAME.json)\\\"\""]
+
+[[executor.params]]
+name = "scope"
+description = "Orbit scope slug for naming the service account (e.g., aidev-ecosystem-orbit → creates orbit-aidev-ecosystem-orbit)"
+required = true
+
+[[executor.params]]
+name = "project"
+description = "GCP project ID where the service account will be created"
+required = true
+
+[[executor.params]]
+name = "roles"
+description = "Comma-separated IAM roles to assign (e.g., roles/viewer,roles/cloudsql.client)"
+required = false
+default = "roles/viewer"

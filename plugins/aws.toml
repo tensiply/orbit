@@ -1,0 +1,84 @@
+name = "aws"
+description = "AWS CLI — scope-aware profile isolation per orbit scope, assume-role support, and IAM service account provisioning"
+category = "infra"
+url = "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+
+[check]
+binary = "aws"
+
+[[install]]
+method = "curl"
+cmd = ["bash", "-c", "curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o /tmp/awscliv2.zip && unzip /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip"]
+label = "curl (Linux x86_64)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "awscli"]
+label = "Homebrew (macOS)"
+
+[[install]]
+method = "apt"
+cmd = ["bash", "-c", "curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o /tmp/awscliv2.zip && unzip /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip"]
+label = "apt (falls back to official installer on Debian/Ubuntu)"
+
+[auth]
+# orbit plugins auth aws → prompts for auth method, then handles each flow:
+#   'keys' → stores AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY in keychain, writes to ~/.aws/credentials
+#   'sso'  → runs `aws configure sso` which opens a browser OAuth flow
+#
+# After auth, wire credentials/profiles to the desired orbit scope:
+#   orbit env set AWS_ACCESS_KEY_ID "keychain://AWS_ACCESS_KEY_ID" --scope workspace   # keys method
+#   orbit env set AWS_PROFILE orbit-sso --scope tenant                                  # SSO method
+#
+# Scope routing vars (profile, role, region) belong in orbit.json env blocks, not keychain:
+#   orbit env set AWS_PROFILE my-profile --scope tenant
+#   orbit env set AWS_ROLE_ARN arn:aws:iam::123456789012:role/MyRole --scope project
+#   orbit env set AWS_DEFAULT_REGION us-east-1 --scope project
+hint = "Choose auth method: 'keys' for access key pair (stored in keychain), or 'sso' for AWS IAM Identity Center (opens browser OAuth). Scope routing vars (AWS_PROFILE, AWS_ROLE_ARN, AWS_DEFAULT_REGION) are set separately per scope with `orbit env set`."
+cmd = "case \"$AWS_AUTH_METHOD\" in sso) echo '  Starting AWS IAM Identity Center configuration (browser will open)...' && aws configure sso ;; keys) [ -z \"$AWS_ACCESS_KEY_ID\" ] && echo 'AWS_ACCESS_KEY_ID is required for keys method.' && exit 1; [ -z \"$AWS_SECRET_ACCESS_KEY\" ] && echo 'AWS_SECRET_ACCESS_KEY is required for keys method.' && exit 1; aws configure set aws_access_key_id \"$AWS_ACCESS_KEY_ID\" && aws configure set aws_secret_access_key \"$AWS_SECRET_ACCESS_KEY\" && echo 'Access keys written to default AWS profile (~/.aws/credentials).' && echo 'Wire to a scope: orbit env set AWS_ACCESS_KEY_ID keychain://AWS_ACCESS_KEY_ID --scope workspace' ;; *) echo \"Unknown method '$AWS_AUTH_METHOD'. Use 'keys' or 'sso'.\" && exit 1 ;; esac"
+
+# AWS_AUTH_METHOD is stored in keychain so re-running `orbit plugins auth aws` can
+# detect the previous method and skip the prompt (already_set → keep on blank input).
+[[auth.vars]]
+name = "AWS_AUTH_METHOD"
+description = "Auth method — type 'keys' for access key pair, or 'sso' for IAM Identity Center (browser OAuth)"
+secret = false
+
+# Only prompted if method = keys. SSO users press Enter to skip.
+[[auth.vars]]
+name = "AWS_ACCESS_KEY_ID"
+description = "[keys only] Access key ID (AKIA... — press Enter to skip if using SSO)"
+secret = false
+optional = true
+
+[[auth.vars]]
+name = "AWS_SECRET_ACCESS_KEY"
+description = "[keys only] Secret access key (press Enter to skip if using SSO)"
+secret = true
+optional = true
+
+[context]
+prompt = "You have access to AWS CLI. Each orbit scope targets a different AWS account/role via AWS_PROFILE or AWS_ROLE_ARN — run `aws sts get-caller-identity` to confirm the active identity for the current scope. For IAM resources created for orbit scopes, use the naming convention `orbit-{tenant}-{project}-{repo}` and attach tags `orbit-scope={scope}` for traceability and auditability. Follow principle of least privilege — prefer IAM roles with assume-role over long-lived access keys."
+
+[pre_launch]
+cmd = "aws sts get-caller-identity --output yaml 2>/dev/null || echo 'AWS: not configured or no credentials for this scope'"
+output = "context"
+timeout_secs = 10
+cache_ttl_secs = 60
+
+# Executor: create an IAM user named after the orbit scope for traceability.
+# Usage in orbit plan: plugin:aws with params scope, account_id (optional), policies.
+# For cross-account setups, prefer creating an IAM role instead.
+[executor]
+command = ["bash", "-c", "set -euo pipefail && IAM_NAME=\"orbit-{scope}\" && POLICIES=\"{policies}\" && aws iam create-user --user-name \"$IAM_NAME\" --tags Key=orbit-scope,Value={scope} Key=orbit-managed,Value=true 2>/dev/null || echo \"IAM user already exists, continuing...\" && for POLICY_ARN in $(echo $POLICIES | tr ',' ' '); do aws iam attach-user-policy --user-name \"$IAM_NAME\" --policy-arn \"$POLICY_ARN\" 2>&1 && echo \"Attached: $POLICY_ARN\"; done && ACCESS_KEY=$(aws iam create-access-key --user-name \"$IAM_NAME\" --output json) && KEY_ID=$(echo $ACCESS_KEY | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"AccessKey\"][\"AccessKeyId\"])') && KEY_SECRET=$(echo $ACCESS_KEY | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"AccessKey\"][\"SecretAccessKey\"])') && SCOPE_UPPER=$(echo {scope} | tr '-' '_' | tr '[:lower:]' '[:upper:]') && echo \"\" && echo \"IAM user ready: $IAM_NAME\" && echo \"Store credentials in orbit secrets:\" && echo \"  orbit secret set AWS_ACCESS_KEY_ID_$SCOPE_UPPER \\\"$KEY_ID\\\"\" && echo \"  orbit secret set AWS_SECRET_ACCESS_KEY_$SCOPE_UPPER \\\"$KEY_SECRET\\\"\" && echo \"Then bind to scope:\" && echo \"  orbit env set AWS_ACCESS_KEY_ID \\\"keychain://AWS_ACCESS_KEY_ID_$SCOPE_UPPER\\\" --scope repo\" && echo \"  orbit env set AWS_SECRET_ACCESS_KEY \\\"keychain://AWS_SECRET_ACCESS_KEY_$SCOPE_UPPER\\\" --scope repo\""]
+
+[[executor.params]]
+name = "scope"
+description = "Orbit scope slug for naming the IAM user (e.g., aidev-ecosystem-orbit → creates orbit-aidev-ecosystem-orbit)"
+required = true
+
+[[executor.params]]
+name = "policies"
+description = "Comma-separated IAM policy ARNs to attach (e.g., arn:aws:iam::aws:policy/ReadOnlyAccess)"
+required = false
+default = "arn:aws:iam::aws:policy/ReadOnlyAccess"
