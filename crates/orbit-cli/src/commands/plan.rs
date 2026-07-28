@@ -1308,8 +1308,9 @@ fn infer_scope() -> (
     }
 }
 
-/// Like `infer_scope` but falls back to the planner when scope cannot be
-/// detected from the filesystem. Prompts the user to confirm the suggestion.
+/// Semantic scope detection: tries filesystem first, then falls back to ScopeIndex
+/// keyword matching + optional LLM disambiguation. Prints the detected scope to
+/// stderr with confidence level and prompts for confirmation when not High.
 fn infer_scope_with_ai_fallback(
     intent: &str,
 ) -> (
@@ -1318,56 +1319,71 @@ fn infer_scope_with_ai_fallback(
     Option<String>,
     Option<String>,
 ) {
+    // 1. Filesystem-based detection (always preferred — fastest, most accurate)
     let tuple = infer_scope();
     if tuple != (None, None, None, None) {
         return tuple;
     }
 
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let engine = orbit_core::user_config::UserConfig::load()
-        .engine
-        .default
-        .parse::<orbit_core::engine::Engine>()
+    // 2. Semantic scope detection via ScopeIndex
+    let user_cfg = orbit_core::user_config::UserConfig::load();
+    let workspaces = orbit_core::workspace_registry::WorkspaceRegistry::load().workspaces;
+    let index = orbit_core::scope_index::build_scope_index(&workspaces);
+
+    if index.is_empty() {
+        return (None, None, None, None);
+    }
+
+    // Use the activity-configured engine for scope detection (cheap LLM preferred)
+    let detect_engine = user_cfg
+        .planner
+        .activities
+        .scope_detection
+        .as_ref()
+        .and_then(|c| c.engine.parse().ok())
         .unwrap_or(orbit_core::engine::Engine::Claude);
-    let backend = orbit_planner::backend::CliBackend::new(engine);
 
-    eprintln!("orbit: could not detect scope from {}", cwd.display());
-    eprint!("orbit: asking planner for scope suggestion... ");
+    let backend = orbit_planner::backend::CliBackend::new(detect_engine);
+    let resolution =
+        orbit_planner::scope_resolver::resolve_scope_from_intent(intent, &index, Some(&backend));
+
+    use orbit_planner::scope_resolver::Confidence;
+
+    if matches!(resolution.confidence, Confidence::Fallback) {
+        return (None, None, None, None);
+    }
+
+    let ws = resolution.workspace.clone();
+    let t = resolution.tenant.clone();
+    let p = resolution.project.clone();
+    let r = resolution.repository.clone();
+
+    eprintln!(
+        "orbit: scope → {}/{}/{}/{} (confidence: {})",
+        ws.as_deref().unwrap_or("?"),
+        t.as_deref().unwrap_or("?"),
+        p.as_deref().unwrap_or("?"),
+        r.as_deref().unwrap_or("?"),
+        resolution.confidence.as_str(),
+    );
+
+    // High confidence: auto-accept without prompting
+    if matches!(resolution.confidence, Confidence::High) {
+        return (ws, t, p, r);
+    }
+
+    // Medium/Ambiguous: ask the user to confirm
+    eprint!("  Accept? [Y/n] ");
     let _ = std::io::Write::flush(&mut std::io::stderr());
-
-    match orbit_planner::planner::suggest_scope(&cwd, intent, &backend) {
-        Some((ws, t, p, r)) => {
-            eprintln!("done.");
-            eprintln!("  Suggested scope:");
-            if let Some(ref v) = ws {
-                eprintln!("    workspace:  {v}");
-            }
-            if let Some(ref v) = t {
-                eprintln!("    tenant:     {v}");
-            }
-            if let Some(ref v) = p {
-                eprintln!("    project:    {v}");
-            }
-            if let Some(ref v) = r {
-                eprintln!("    repository: {v}");
-            }
-            eprint!("  Accept? [y/N] ");
-            let _ = std::io::Write::flush(&mut std::io::stderr());
-            let stdin = std::io::stdin();
-            let mut line = String::new();
-            if std::io::BufRead::read_line(&mut stdin.lock(), &mut line).is_ok()
-                && line.trim().eq_ignore_ascii_case("y")
-            {
-                (ws, t, p, r)
-            } else {
-                eprintln!("orbit: using global scope.");
-                (None, None, None, None)
-            }
-        }
-        None => {
-            eprintln!("failed — using global scope.");
-            (None, None, None, None)
-        }
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    if std::io::BufRead::read_line(&mut stdin.lock(), &mut line).is_ok()
+        && !line.trim().eq_ignore_ascii_case("n")
+    {
+        (ws, t, p, r)
+    } else {
+        eprintln!("orbit: using global scope.");
+        (None, None, None, None)
     }
 }
 
@@ -2047,6 +2063,23 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
                 } => {
                     let short: String = reason.chars().take(55).collect();
                     (*timestamp, format!("PolicyBlocked   {node_id}  — {short}"))
+                }
+                AuditEvent::ScopeDetected { timestamp, scope_key, confidence, .. } => {
+                    (*timestamp, format!("ScopeDetected   {scope_key}  [{confidence}]"))
+                }
+                AuditEvent::GapResolved { timestamp, gaps_found, gaps_auto_resolved, needed_user_input, .. } => {
+                    let user = if *needed_user_input { "↑user" } else { "auto" };
+                    (*timestamp, format!("GapResolved     {gaps_auto_resolved}/{gaps_found} gaps  [{user}]"))
+                }
+                AuditEvent::NodeDispatched { timestamp, node_id, executor, injection_level, .. } => {
+                    (*timestamp, format!("NodeDispatched  {node_id}  [{executor}:{injection_level}]"))
+                }
+                AuditEvent::McpCall { timestamp, server, tool, duration_ms, success, .. } => {
+                    let ok = if *success { "ok" } else { "err" };
+                    (*timestamp, format!("McpCall         {server}:{tool}  ({duration_ms}ms/{ok})"))
+                }
+                AuditEvent::ValidationRetry { timestamp, retry_count, issues_count, .. } => {
+                    (*timestamp, format!("ValidationRetry #{retry_count}  ({issues_count} issues)"))
                 }
             };
             let elapsed = ts.saturating_sub(base);

@@ -49,6 +49,23 @@ fn gen_id() -> String {
 
 // ── enums ─────────────────────────────────────────────────────────────────────
 
+/// Controls how much orbit scope context is injected when a node executes.
+/// `Auto` (default) infers the level from the node's executor type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ScopeInjection {
+    /// Inferred from executor: Full for AI, Credentials for plugins, SingleMcp for mcp, Minimal for shell.
+    #[default]
+    Auto,
+    /// Full launch context: config merge + MCP config + agent files + plugins + env vars.
+    Full,
+    /// work_dir + resolved MCP secrets + ORBIT_* env vars (adequate for plugin executors).
+    Credentials,
+    /// Only the single MCP server entry needed by this node (`ORBIT_MCP_SERVER_JSON` env var).
+    SingleMcp,
+    /// Only work_dir + env vars explicitly declared in `executor_params`.
+    Minimal,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlanNodeType {
     Code,
@@ -218,6 +235,14 @@ pub struct PlanNode {
     /// an AI engine.
     #[serde(default)]
     pub executor: Option<String>,
+    /// Named agent from the scope's command catalog (e.g. "implementation", "debug").
+    /// When set, only this agent's context is injected instead of the full catalog.
+    #[serde(default)]
+    pub agent: Option<String>,
+    /// How much scope context to inject at execution time. Defaults to `Auto`
+    /// which infers the appropriate level from the executor type.
+    #[serde(default)]
+    pub scope_injection: ScopeInjection,
     /// Parameter values for the executor plugin, keyed by param name.
     #[serde(default)]
     pub executor_params: HashMap<String, String>,
@@ -496,6 +521,8 @@ mod tests {
             approved: false,
             executor: None,
             executor_params: HashMap::new(),
+            agent: None,
+            scope_injection: ScopeInjection::default(),
         });
         p.nodes.push(PlanNode {
             id: "n1".into(),
@@ -517,6 +544,8 @@ mod tests {
             approved: false,
             executor: None,
             executor_params: HashMap::new(),
+            agent: None,
+            scope_injection: ScopeInjection::default(),
         });
         let ready = p.ready_nodes();
         assert_eq!(ready.len(), 1);

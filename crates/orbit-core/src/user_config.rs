@@ -21,6 +21,7 @@ pub struct UserConfig {
     pub notifications: NotificationsConfig,
     pub budget: BudgetConfig,
     pub plan_retention: PlanRetentionConfig,
+    pub planner: PlannerSection,
 }
 
 /// Default budget limits applied to every new plan unless overridden at creation time.
@@ -103,6 +104,62 @@ pub struct InstallSection {
     pub dir: PathBuf,
 }
 
+/// Engine + optional model override for a specific fixed activity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActivityEngineConfig {
+    /// Engine to use (e.g. "Claude", "Gemini"). Defaults to "Claude".
+    pub engine: String,
+    /// Optional model override (e.g. "gemini-2.5-flash"). None = engine default.
+    pub model: Option<String>,
+}
+
+impl Default for ActivityEngineConfig {
+    fn default() -> Self {
+        Self {
+            engine: "Claude".to_string(),
+            model: None,
+        }
+    }
+}
+
+/// Per-activity engine configuration. Controls which engine/model runs each
+/// fixed planner activity (scope detection, gap resolution, etc.).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ActivitiesConfig {
+    /// Scope detection from intent (should be cheap/fast).
+    pub scope_detection: Option<ActivityEngineConfig>,
+    /// Gap resolution before planning (should be cheap/fast).
+    pub gap_resolution: Option<ActivityEngineConfig>,
+    /// Main plan generation (benefits from a capable model).
+    pub plan_generation: Option<ActivityEngineConfig>,
+    /// Node validation after planning (balance of speed and accuracy).
+    pub node_validation: Option<ActivityEngineConfig>,
+}
+
+/// Planner behaviour settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlannerSection {
+    /// Maximum validation+retry cycles before giving up (default: 3).
+    pub validation_retries: u8,
+    /// Skip the gap-resolution phase entirely (default: false).
+    pub skip_gap_resolution: bool,
+    /// Per-activity engine overrides.
+    pub activities: ActivitiesConfig,
+}
+
+impl Default for PlannerSection {
+    fn default() -> Self {
+        Self {
+            validation_retries: 3,
+            skip_gap_resolution: false,
+            activities: ActivitiesConfig::default(),
+        }
+    }
+}
+
 // ── defaults ──────────────────────────────────────────────────────────────────
 
 impl Default for UserUpdateSection {
@@ -126,6 +183,7 @@ impl Default for UserConfig {
             notifications: NotificationsConfig::default(),
             budget: BudgetConfig::default(),
             plan_retention: PlanRetentionConfig::default(),
+            planner: PlannerSection::default(),
         }
     }
 }

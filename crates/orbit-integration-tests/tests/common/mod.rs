@@ -128,6 +128,8 @@ pub fn make_plan(id: &str, intent: &str, status: PlanStatus) -> Plan {
             approved: false,
             executor: None,
             executor_params: Default::default(),
+            agent: None,
+            scope_injection: Default::default(),
         }],
         edges: vec![],
         status,

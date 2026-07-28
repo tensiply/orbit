@@ -1,14 +1,19 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
-    plugin::{self, InstallMethod, Plugin, PluginState},
+    plugin::{
+        self, add_instance_mcps, instance_keychain_key, remove_instance_mcps, InstallMethod,
+        Plugin, PluginInstanceRecord, PluginInstances, PluginState,
+    },
     secrets,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{
     io::{self, Write},
     process::Command,
 };
+
+use crate::output::truncate_desc;
 
 #[derive(Debug, Args)]
 pub struct PluginsArgs {
@@ -79,11 +84,24 @@ pub enum PluginsCommand {
     /// Prompts for each required credential and stores it in the OS keychain.
     /// Use `orbit secret get <KEY>` to verify stored values.
     ///
-    /// Example:
+    /// For multi-instance plugins (e.g. jenkins), each run adds or updates one
+    /// named instance.  Use --list to see configured instances and --remove to
+    /// delete one.
+    ///
+    /// Examples:
     ///   orbit plugins auth sonarcloud
+    ///   orbit plugins auth jenkins          # add/update an instance
+    ///   orbit plugins auth jenkins --list   # show configured instances
+    ///   orbit plugins auth jenkins --remove prod
     Auth {
         /// Plugin name (from `orbit plugins list`)
         name: String,
+        /// List configured instances (multi-instance plugins only)
+        #[arg(long)]
+        list: bool,
+        /// Remove a named instance (multi-instance plugins only)
+        #[arg(long, value_name = "INSTANCE")]
+        remove: Option<String>,
     },
 }
 
@@ -97,7 +115,7 @@ pub fn run(args: PluginsArgs) -> Result<()> {
         PluginsCommand::Wrap { name, engine } => wrap(&name, engine.as_deref()),
         PluginsCommand::Unwrap { name, engine } => unwrap_engine(&name, engine.as_deref()),
         PluginsCommand::Run { name, params } => run_executor(&name, &params),
-        PluginsCommand::Auth { name } => auth(&name),
+        PluginsCommand::Auth { name, list, remove } => auth(&name, list, remove.as_deref()),
     }
 }
 
@@ -114,72 +132,98 @@ fn list() -> Result<()> {
     }
 
     println!("plugins\n");
+    println!("  \x1b[2mPlugins extend orbit with tools, MCP servers, and session context.\x1b[0m\n");
 
-    let name_w = plugins
-        .iter()
-        .map(|p| p.name.len())
-        .max()
-        .unwrap_or(8)
-        .max(8);
-    let cat_w = plugins
-        .iter()
-        .map(|p| p.category.len())
-        .max()
-        .unwrap_or(10)
-        .max(10);
+    let name_w = plugins.iter().map(|p| p.name.len()).max().unwrap_or(8).max(8);
+    let cat_w = plugins.iter().map(|p| p.category.len()).max().unwrap_or(10).max(10);
+    let desc_w: usize = 50;
+    let sep_w = 5 + name_w + 2 + cat_w + 2 + desc_w + 2 + 16;
 
+    // Group by category, sorted
+    let mut by_cat: BTreeMap<&str, Vec<&Plugin>> = BTreeMap::new();
     for p in &plugins {
-        let installed = p.is_installed();
-        let enabled = state.is_enabled(&p.name);
+        by_cat.entry(p.category.as_str()).or_default().push(p);
+    }
 
-        // ● = installed + MCP enabled  ✓ = installed  ○ = not installed
-        let status = match (installed, enabled && p.has_mcp()) {
-            (_, true) => "\x1b[32m●\x1b[0m",
-            (true, _) => "\x1b[32m✓\x1b[0m",
-            _ => "\x1b[33m○\x1b[0m",
-        };
+    // Header
+    println!(
+        "     \x1b[2m{name:<name_w$}  {cat:<cat_w$}  {desc:<desc_w$}  tags\x1b[0m",
+        name = "name",
+        cat = "category",
+        desc = "description",
+        name_w = name_w,
+        cat_w = cat_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
 
-        let mcp_tag = if p.has_mcp() {
-            if enabled {
-                "  \x1b[32m[mcp: active]\x1b[0m"
+    let mut pending: Vec<String> = Vec::new();
+
+    for group in by_cat.values() {
+        for p in group {
+            let installed = p.is_installed();
+            let enabled = state.is_enabled(&p.name);
+
+            let status = match (installed, enabled && p.has_mcp()) {
+                (_, true) => "\x1b[32m●\x1b[0m",
+                (true, _) => "\x1b[32m✓\x1b[0m",
+                _ => "\x1b[33m○\x1b[0m",
+            };
+
+            let desc = truncate_desc(&p.description, desc_w);
+
+            let mcp_tag = if p.has_mcp() {
+                if enabled { "\x1b[32mmcp ●\x1b[0m" } else { "\x1b[2mmcp ○\x1b[0m" }
             } else {
-                "  \x1b[2m[mcp: inactive]\x1b[0m"
-            }
-        } else {
-            ""
-        };
+                ""
+            };
+            let exec_tag = if p.executor.is_some() { "\x1b[36m⚙\x1b[0m" } else { "" };
+            let tags = match (!mcp_tag.is_empty(), !exec_tag.is_empty()) {
+                (true, true) => format!("{mcp_tag}  {exec_tag}"),
+                (true, false) => mcp_tag.to_string(),
+                (false, true) => exec_tag.to_string(),
+                (false, false) => String::new(),
+            };
 
-        let exec_tag = if p.executor.is_some() {
-            "  \x1b[36m[⚙ executor]\x1b[0m"
-        } else {
-            ""
-        };
-
-        println!(
-            "  {status}  {name:<name_w$}  \x1b[2m({cat:<cat_w$})\x1b[0m  {desc}{mcp_tag}{exec_tag}",
-            name = p.name,
-            cat = p.category,
-            desc = p.description,
-            name_w = name_w,
-            cat_w = cat_w,
-        );
-
-        if !installed {
-            if let Some(m) = p.best_install_method() {
-                println!(
-                    "     {blank:<name_w$}   install: {}",
-                    m.cmd.join(" "),
-                    blank = "",
-                    name_w = name_w,
-                );
-            }
-        } else if p.has_mcp() && !enabled {
             println!(
-                "     {blank:<name_w$}   enable:  orbit plugins enable {}",
-                p.name,
-                blank = "",
+                "  {status}  {name:<name_w$}  \x1b[2m{cat:<cat_w$}\x1b[0m  {desc:<desc_w$}  {tags}",
+                name = p.name,
+                cat = p.category,
                 name_w = name_w,
+                cat_w = cat_w,
+                desc_w = desc_w,
             );
+
+            let needs_install = !installed && p.best_install_method().is_some();
+            let needs_auth = p.auth.as_ref().is_some_and(|a| {
+                !a.vars.is_empty() && a.vars.iter().any(|v| secrets::keychain_get(&v.name).is_err())
+            });
+            let needs_enable = p.has_mcp() && !enabled;
+
+            if needs_install && let Some(m) = p.best_install_method() {
+                pending.push(format!(
+                    "  orbit plugins install {:<name_w$}  \x1b[2m# {}\x1b[0m",
+                    p.name,
+                    m.cmd.join(" "),
+                    name_w = name_w,
+                ));
+            }
+            if !needs_install && needs_auth {
+                pending.push(format!("  orbit plugins auth    {}", p.name));
+            }
+            if !needs_install && needs_enable {
+                pending.push(format!("  orbit plugins enable  {}", p.name));
+            }
+        }
+    }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m● installed+MCP active  ✓ installed  ○ not installed  ·  mcp ● active  mcp ○ inactive  ⚙ executor\x1b[0m");
+
+    if !pending.is_empty() {
+        println!("\n  \x1b[2mPending Actions:\x1b[0m");
+        for h in &pending {
+            println!("{h}");
         }
     }
 
@@ -385,9 +429,17 @@ fn enable(name: &str) -> Result<()> {
 
     if plugin.has_mcp() {
         plugin::add_plugin_mcps(&plugin)?;
-        let mcp_names: Vec<_> = plugin.mcp.iter().map(|m| m.name.as_str()).collect();
+        let instances = PluginInstances::load();
+        add_instance_mcps(&plugin, &instances)?;
+
+        let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
+        for r in instances.for_plugin(name) {
+            mcp_names.push(format!("{}-{}", name, r.name));
+        }
         println!("  \x1b[32m●\x1b[0m  {name} enabled");
-        println!("     MCP registered: {}", mcp_names.join(", "));
+        if !mcp_names.is_empty() {
+            println!("     MCP registered: {}", mcp_names.join(", "));
+        }
         println!("     Config: {}", plugin::plugins_mcp_path().display());
         println!("     Active in new orbit sessions.");
     } else {
@@ -415,12 +467,22 @@ fn disable(name: &str) -> Result<()> {
     state.save()?;
 
     if plugin.has_mcp() {
+        let instances = PluginInstances::load();
         plugin::remove_plugin_mcps(&plugin)?;
-        let mcp_names: Vec<_> = plugin.mcp.iter().map(|m| m.name.as_str()).collect();
-        println!(
-            "  \x1b[32m✓\x1b[0m  {name} disabled — MCP removed: {}",
-            mcp_names.join(", ")
-        );
+        remove_instance_mcps(&plugin, &instances)?;
+
+        let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
+        for r in instances.for_plugin(name) {
+            mcp_names.push(format!("{}-{}", name, r.name));
+        }
+        if mcp_names.is_empty() {
+            println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
+        } else {
+            println!(
+                "  \x1b[32m✓\x1b[0m  {name} disabled — MCP removed: {}",
+                mcp_names.join(", ")
+            );
+        }
     } else {
         println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
     }
@@ -430,10 +492,19 @@ fn disable(name: &str) -> Result<()> {
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 
-fn auth(name: &str) -> Result<()> {
+fn auth(name: &str, list: bool, remove: Option<&str>) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
         bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
+
+    // Multi-instance plugin — delegate to dedicated flow.
+    if plugin.instance.is_some() {
+        return auth_multi_instance(&plugin, list, remove);
+    }
+
+    if list || remove.is_some() {
+        bail!("{name} is not a multi-instance plugin — --list and --remove are not available.");
+    }
 
     let Some(auth_spec) = &plugin.auth else {
         println!("  {name} has no auth configuration.");
@@ -486,7 +557,14 @@ fn auth(name: &str) -> Result<()> {
     if let Some(cmd) = &auth_spec.cmd {
         println!();
         println!("  Running: {cmd}");
-        let status = Command::new("sh").arg("-c").arg(cmd).status()?;
+        let mut command = Command::new("sh");
+        command.arg("-c").arg(cmd);
+        for var in &auth_spec.vars {
+            if let Ok(value) = secrets::keychain_get(&var.name) {
+                command.env(&var.name, value);
+            }
+        }
+        let status = command.status()?;
         if !status.success() {
             bail!("auth command exited with failure");
         }
@@ -495,6 +573,143 @@ fn auth(name: &str) -> Result<()> {
     println!();
     println!("  \x1b[32m✓\x1b[0m  Auth configured for {}.", plugin.name);
     if plugin.has_mcp() && !PluginState::load().is_enabled(name) {
+        println!("     Run `orbit plugins enable {name}` to activate the MCP server.");
+    }
+
+    Ok(())
+}
+
+fn auth_multi_instance(plugin: &Plugin, list: bool, remove: Option<&str>) -> Result<()> {
+    let spec = plugin.instance.as_ref().expect("checked by caller");
+    let name = &plugin.name;
+    let mut instances = PluginInstances::load();
+
+    // ── --list ────────────────────────────────────────────────────────────────
+    if list {
+        let configured: Vec<_> = instances.for_plugin(name).collect();
+        if configured.is_empty() {
+            println!("  No instances configured for {name}.");
+            println!("  Run `orbit plugins auth {name}` to add one.");
+        } else {
+            println!("  Configured instances for \x1b[1m{name}\x1b[0m:");
+            for r in configured {
+                let mcp_key = format!("{name}-{}", r.name);
+                let vars_display: Vec<String> =
+                    r.vars.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                println!("    \x1b[32m●\x1b[0m  {}  (MCP: {})", r.name, mcp_key);
+                if !vars_display.is_empty() {
+                    println!("       {}", vars_display.join("  "));
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // ── --remove ──────────────────────────────────────────────────────────────
+    if let Some(instance_name) = remove {
+        if instances.remove(name, instance_name) {
+            instances.save()?;
+            // Regenerate MCP file if the plugin is currently enabled.
+            if PluginState::load().is_enabled(name) {
+                remove_instance_mcps(plugin, &instances)?;
+                add_instance_mcps(plugin, &instances)?;
+            }
+            println!("  \x1b[32m✓\x1b[0m  Instance '{instance_name}' removed from {name}.");
+        } else {
+            println!("  Instance '{instance_name}' not found in {name}.");
+        }
+        return Ok(());
+    }
+
+    // ── add / update an instance ──────────────────────────────────────────────
+    if let Some(auth_spec) = &plugin.auth {
+        println!("  \x1b[1m{name}\x1b[0m — {}", auth_spec.hint);
+        println!();
+    }
+
+    let instance_name = ask("  Instance name (e.g. prod, staging)", "")?;
+    if instance_name.is_empty() {
+        bail!("instance name cannot be blank");
+    }
+    if !instance_name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!("instance name must be alphanumeric (dashes and underscores allowed)");
+    }
+
+    println!();
+    let mut non_secret_vars: HashMap<String, String> = HashMap::new();
+
+    for var in &spec.vars {
+        let keychain_key = instance_keychain_key(name, &instance_name, &var.name);
+        let already_set = secrets::keychain_get(&keychain_key).is_ok();
+        let default_hint = if already_set { "<already set>" } else { "" };
+
+        let value = if var.secret {
+            ask_secret(
+                &format!(
+                    "  {} (secret, leave blank to keep existing)",
+                    var.description
+                ),
+                already_set,
+            )?
+        } else {
+            ask(&format!("  {}", var.description), default_hint)?
+        };
+
+        if value.is_empty() {
+            if already_set {
+                println!("    \x1b[2m↩  {} unchanged\x1b[0m", var.name);
+                if !var.secret {
+                    // Preserve existing non-secret value.
+                    if let Some(existing) = instances
+                        .for_plugin(name)
+                        .find(|r| r.name == instance_name)
+                        .and_then(|r| r.vars.get(&var.name))
+                    {
+                        non_secret_vars.insert(var.name.clone(), existing.clone());
+                    }
+                }
+                continue;
+            }
+            if var.optional {
+                println!("    \x1b[2m-  {} skipped (optional)\x1b[0m", var.name);
+                continue;
+            }
+            bail!("{} is required and cannot be blank", var.name);
+        }
+
+        if var.secret {
+            secrets::keychain_set(&keychain_key, &value)?;
+            println!("    \x1b[32m✓\x1b[0m  {} stored in keychain ({})", var.name, keychain_key);
+        } else {
+            non_secret_vars.insert(var.name.clone(), value);
+            println!("    \x1b[32m✓\x1b[0m  {} stored", var.name);
+        }
+    }
+
+    let record = PluginInstanceRecord {
+        plugin: name.clone(),
+        name: instance_name.clone(),
+        vars: non_secret_vars,
+    };
+    instances.upsert(record);
+    instances.save()?;
+
+    // Regenerate MCP entries if plugin is currently enabled.
+    if PluginState::load().is_enabled(name) {
+        remove_instance_mcps(plugin, &instances)?;
+        add_instance_mcps(plugin, &instances)?;
+        println!();
+        println!(
+            "  \x1b[32m●\x1b[0m  Instance '{instance_name}' configured — MCP '{name}-{instance_name}' updated."
+        );
+    } else {
+        println!();
+        println!(
+            "  \x1b[32m✓\x1b[0m  Instance '{instance_name}' configured."
+        );
         println!("     Run `orbit plugins enable {name}` to activate the MCP server.");
     }
 
@@ -595,6 +810,28 @@ fn info(name: &str) -> Result<()> {
         println!();
         println!("  auth");
         println!("    {}", auth.hint);
+    }
+
+    if let Some(spec) = &plugin.instance {
+        let instances = PluginInstances::load();
+        let configured: Vec<_> = instances.for_plugin(name).collect();
+        println!();
+        println!("  instances");
+        if configured.is_empty() {
+            println!("    none — run: orbit plugins auth {name}");
+        } else {
+            let var_w = spec.vars.iter().map(|v| v.name.len()).max().unwrap_or(4);
+            for record in configured {
+                println!("    \x1b[1m{}\x1b[0m", record.name);
+                for var in &spec.vars {
+                    if var.secret {
+                        println!("      {:<var_w$}  [keychain]", var.name, var_w = var_w);
+                    } else if let Some(val) = record.vars.get(&var.name) {
+                        println!("      {:<var_w$}  {val}", var.name, var_w = var_w);
+                    }
+                }
+            }
+        }
     }
 
     if !plugin.mcp.is_empty() {
@@ -792,7 +1029,7 @@ pub fn print_plugins_section() {
 
     let state = PluginState::load();
 
-    println!("\x1b[1mplugins\x1b[0m");
+    println!("plugins");
     for p in &plugins {
         let installed = p.is_installed();
         let enabled = state.is_enabled(&p.name);
@@ -832,37 +1069,87 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("  Checking plugins...");
-    println!();
+    let state = PluginState::load();
 
-    for p in &uninstalled {
-        println!("  \x1b[33m○\x1b[0m  {}  — not installed", p.name);
-        println!("      \x1b[2m{}\x1b[0m", p.description);
+    println!("plugins\n");
+    println!(
+        "  \x1b[2mPlugins extend orbit with tools, MCP servers, and session context.\x1b[0m\n"
+    );
 
-        let should_install = if yes {
-            false
+    let name_w = plugins.iter().map(|p| p.name.len()).max().unwrap_or(8).max(8);
+    let desc_w: usize = 50;
+    let sep_w = 5 + name_w + 2 + desc_w + 2 + 16;
+
+    println!(
+        "     \x1b[2m{:<name_w$}  {:<desc_w$}  tags\x1b[0m",
+        "name",
+        "description",
+        name_w = name_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
+    for p in &plugins {
+        let installed = p.is_installed();
+        let enabled = state.is_enabled(&p.name);
+
+        let status = match (installed, enabled && p.has_mcp()) {
+            (_, true) => "\x1b[32m●\x1b[0m",
+            (true, _) => "\x1b[32m✓\x1b[0m",
+            _ => "\x1b[2m○\x1b[0m",
+        };
+        let desc = truncate_desc(&p.description, desc_w);
+        let mcp_tag = if p.has_mcp() {
+            if enabled { "\x1b[32mmcp ●\x1b[0m" } else { "\x1b[2mmcp ○\x1b[0m" }
         } else {
-            confirm(&format!("    Install {}?", p.name), false)?
+            ""
         };
 
-        if should_install && let Some(m) = p.best_install_method() {
-            println!("    Installing {}...", p.name);
-            let status = Command::new(&m.cmd[0]).args(&m.cmd[1..]).status();
-            match status {
-                Ok(s) if s.success() => {
-                    println!("    \x1b[32m✓\x1b[0m done");
-                    if p.has_mcp() {
-                        println!(
-                            "      Run `orbit plugins enable {}` to activate MCP servers.",
-                            p.name
-                        );
+        println!(
+            "  {status}  {:<name_w$}  {desc:<desc_w$}  {mcp_tag}",
+            p.name,
+            name_w = name_w,
+            desc_w = desc_w,
+        );
+    }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!(
+        "  \x1b[2m● installed+MCP active  ✓ installed  ○ not installed  ·  mcp ● active  mcp ○ inactive\x1b[0m"
+    );
+
+    let installed_count = plugins.iter().filter(|p| p.is_installed()).count();
+    println!();
+    println!(
+        "  {installed_count}/{total} installed  ·  orbit plugins install/enable <name>",
+        total = plugins.len()
+    );
+
+    // Prompt to install uninstalled plugins
+    if !yes {
+        println!();
+        for p in &uninstalled {
+            let should_install = confirm(&format!("Install {}?", p.name), false)?;
+            if should_install && let Some(m) = p.best_install_method() {
+                println!("  Installing {}...", p.name);
+                let status = Command::new(&m.cmd[0]).args(&m.cmd[1..]).status();
+                match status {
+                    Ok(s) if s.success() => {
+                        println!("  \x1b[32m✓\x1b[0m  installed");
+                        if p.has_mcp() {
+                            println!(
+                                "     \x1b[2mrun `orbit plugins enable {}` to activate MCP servers\x1b[0m",
+                                p.name
+                            );
+                        }
                     }
+                    _ => println!(
+                        "  \x1b[31m✗\x1b[0m  failed — run: {}",
+                        m.cmd.join(" ")
+                    ),
                 }
-                _ => println!("    \x1b[31m✗\x1b[0m failed — run: {}", m.cmd.join(" ")),
             }
         }
-
-        println!();
     }
 
     Ok(())

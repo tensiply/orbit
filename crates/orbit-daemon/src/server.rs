@@ -351,9 +351,12 @@ impl ServerState {
                 use orbit_engine::resolver::{self, ResolveArgs};
                 use orbit_planner::{
                     backend::CliBackend,
+                    gap_resolver,
                     planner::{PlannerConfig, invoke_planner},
+                    validator::{self, McpCatalogEntry, ValidationContext},
                 };
 
+                let user_cfg = UserConfig::load();
                 let scope = PlanScope {
                     workspace,
                     tenant,
@@ -369,22 +372,130 @@ impl ServerState {
                         similar
                     }
                 };
-                let cfg = PlannerConfig::default();
 
-                match invoke_planner(
-                    &intent,
-                    &scope,
-                    &recent,
-                    &cfg,
-                    &CliBackend::new(cfg.engine),
-                    &extra_repos,
-                ) {
-                    Err(e) => Response::Error {
-                        message: format!("planner error: {e}"),
-                    },
-                    Ok((mut plan, trace)) => {
+                // ── Phase 1: Gap resolution ───────────────────────────────────────
+                let planner_intent = if !user_cfg.planner.skip_gap_resolution {
+                    let gap_backend = CliBackend::new(user_cfg.planner.activities.gap_resolution
+                        .as_ref()
+                        .and_then(|c| c.engine.parse().ok())
+                        .unwrap_or(orbit_core::engine::Engine::Claude));
+                    match gap_resolver::resolve_gaps(&intent, &scope, &recent, &gap_backend) {
+                        Ok(gap_result) => {
+                            let _ = append_event_for(
+                                scope.workspace.as_deref(),
+                                &AuditEvent::GapResolved {
+                                    plan_id: String::new(), // no plan_id yet
+                                    gaps_found: gap_result.gaps.len(),
+                                    gaps_auto_resolved: gap_result.gaps.iter().filter(|g| g.auto_resolved).count(),
+                                    needed_user_input: gap_result.needs_user_input,
+                                    timestamp: now_secs(),
+                                },
+                            );
+                            if gap_result.needs_user_input {
+                                return Response::Error {
+                                    message: format!(
+                                        "Plan creation requires clarification:\n{}",
+                                        gap_result.user_questions.join("\n")
+                                    ),
+                                };
+                            }
+                            gap_result.enriched_intent
+                        }
+                        Err(_) => intent.clone(),
+                    }
+                } else {
+                    intent.clone()
+                };
+
+                // ── Phase 2: Invoke planner + validation retry loop ───────────────
+                let plan_engine = user_cfg.planner.activities.plan_generation
+                    .as_ref()
+                    .and_then(|c| c.engine.parse().ok())
+                    .unwrap_or(orbit_core::engine::Engine::Claude);
+                let cfg = PlannerConfig {
+                    engine: plan_engine,
+                    system_prompt_path: None,
+                };
+
+                let max_retries = user_cfg.planner.validation_retries;
+                let mut current_intent = planner_intent.clone();
+                let mut last_trace = None;
+
+                let plan_result = (|| -> Result<_, String> {
+                    for retry in 0..=max_retries {
+                        let result = invoke_planner(
+                            &current_intent,
+                            &scope,
+                            &recent,
+                            &cfg,
+                            &CliBackend::new(cfg.engine),
+                            &extra_repos,
+                        );
+                        let (plan, trace) = match result {
+                            Ok(r) => r,
+                            Err(e) => return Err(format!("planner error: {e}")),
+                        };
+
+                        // Build validation context
+                        let all_plugins = orbit_core::plugin::load_all();
+                        let mcp_entries: Vec<McpCatalogEntry> = resolver::resolve(ResolveArgs {
+                            workspace: scope.workspace.clone(),
+                            tenant: scope.tenant.clone(),
+                            project: scope.project.clone(),
+                            repository: scope.repository.clone(),
+                        })
+                        .ok()
+                        .and_then(|s| orbit_engine::config::load(&s, cfg.engine).ok())
+                        .map(|m| m.mcp.keys().map(|k| McpCatalogEntry { name: k.clone() }).collect())
+                        .unwrap_or_default();
+
+                        let validation_ctx = ValidationContext {
+                            mcp_catalog: &mcp_entries,
+                            executor_catalog: &all_plugins,
+                            scope: &scope,
+                        };
+
+                        let val_result = validator::validate_plan(&plan, &validation_ctx, &validator::default_rules());
+
+                        if val_result.is_valid || retry == max_retries {
+                            last_trace = Some(trace);
+                            if !val_result.is_valid {
+                                // Return invalid plan with a warning (max retries exhausted)
+                                tracing::warn!(
+                                    "plan validation failed after {max_retries} retries: {} issues",
+                                    val_result.issues.len()
+                                );
+                            }
+                            return Ok(plan);
+                        }
+
+                        // Retry with feedback
+                        let _ = append_event_for(
+                            scope.workspace.as_deref(),
+                            &AuditEvent::ValidationRetry {
+                                plan_id: plan.id.clone(),
+                                retry_count: retry + 1,
+                                issues_count: val_result.issues.len(),
+                                timestamp: now_secs(),
+                            },
+                        );
+                        tracing::info!(
+                            "plan validation retry {}/{max_retries}: {} errors",
+                            retry + 1,
+                            val_result.issues.len()
+                        );
+                        current_intent = format!(
+                            "{planner_intent}\n\nValidation feedback (fix these issues):\n{}",
+                            val_result.feedback_prompt
+                        );
+                    }
+                    unreachable!()
+                })();
+
+                match plan_result {
+                    Err(e) => Response::Error { message: e },
+                    Ok(mut plan) => {
                         // Apply budget policy: CLI overrides take precedence over user config defaults.
-                        let user_cfg = UserConfig::load();
                         plan.policy.max_tokens = max_tokens.or(user_cfg.budget.max_tokens);
                         plan.policy.max_duration_secs =
                             max_duration_secs.or(user_cfg.budget.max_duration_secs);
@@ -411,7 +522,7 @@ impl ServerState {
                         }
 
                         let node_count = plan.nodes.len();
-                        let trace_out = if verbose { Some(trace) } else { None };
+                        let trace_out = if verbose { last_trace } else { None };
                         if dry_run {
                             plan.status = PlanStatus::Planning;
                             Response::PlanCreated {

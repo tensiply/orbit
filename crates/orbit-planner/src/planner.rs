@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::backend::PlannerBackend;
+use orbit_engine::resolver::{self, ResolveArgs};
 
 const DEFAULT_SYSTEM_PROMPT: &str = r#"You are an expert software architect. Given a user intent and workspace scope, generate a Plan IR as JSON.
 
@@ -32,8 +33,10 @@ The Plan IR must follow this schema:
       "label": "implement the feature",
       "intent": "specific task for this node",
       "engine": "Claude",
+      "agent": null,
       "depends_on": [],
       "scope_override": null,
+      "scope_injection": "Auto",
       "policy": {
         "timeout_secs": null,
         "retry_max": 1,
@@ -47,9 +50,11 @@ The Plan IR must follow this schema:
       "label": "run tests",
       "intent": "run the test suite",
       "engine": "Claude",
+      "agent": null,
       "executor": "cargo",
       "executor_params": { "subcommand": "test", "args": "--all" },
       "depends_on": ["n0"],
+      "scope_injection": "Auto",
       "policy": { "retry_max": 0, "risk_level": "Low", "verify": ["ExitCode"] }
     }
   ],
@@ -60,11 +65,18 @@ task_type values: Code | Test | Review | Verify | Pr | Command
 engine values: Claude | Opencode | Gemini
 risk_level values: Low | Medium | High
 verify values: ExitCode | LlmJudge
+scope_injection values: Auto | Full | Credentials | SingleMcp | Minimal (default: Auto — orbit infers from executor type)
 
 executor: optional — when set, the node runs an external command instead of an AI engine.
   The engine field is still required but ignored when executor is present.
-  Available executor plugins and their params are listed in the context below (if any).
-  Use executor = "shell" with executor_params = { "command": "..." } for arbitrary commands.
+  executor = "shell": executor_params = { "command": "..." } — for arbitrary shell commands.
+  executor = "mcp": executor_params = { "server": "<server-name>", "tool": "<tool-name>", "arguments": {...} }
+    MCP servers available in the current scope are listed in the context below.
+  executor = "<plugin-name>": runs a registered executor plugin. Available plugins listed below.
+
+agent: optional — when set (e.g. "implementation", "debug"), the node uses that specialist agent
+  instead of the full agent catalog. The agent must exist in the scope's command catalog.
+  Available agents are listed in the context below.
 
 scope_override: null means the node uses the plan's default scope. To target a different repo, set:
   "scope_override": { "workspace": "AI", "tenant": "AIDEV", "project": "AI-ECOSYSTEM", "repository": "orbit" }
@@ -73,7 +85,8 @@ If extra repos are listed in the context, use their exact field values.
 Rules:
 - For Phase 1, generate 1-3 nodes maximum.
 - Use ExitCode as the default verify strategy.
-- Prefer executor nodes over AI nodes for build/test/run steps when a matching plugin exists.
+- Prefer executor nodes over AI nodes for build/test/run steps when a matching plugin or MCP tool exists.
+- When an agent is listed that matches the task type, set the agent field instead of using the full engine.
 - Respond ONLY with a JSON code block. No explanation.
 "#;
 
@@ -131,6 +144,8 @@ struct NodeDraft {
     executor: Option<String>,
     #[serde(default)]
     executor_params: HashMap<String, String>,
+    #[serde(default)]
+    agent: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -250,6 +265,16 @@ pub fn create_plan_prompt(
         prompt.push_str(&catalog);
     }
 
+    let mcp_catalog = build_mcp_catalog(scope);
+    if !mcp_catalog.is_empty() {
+        prompt.push_str(&mcp_catalog);
+    }
+
+    let agent_catalog = build_agent_catalog(scope);
+    if !agent_catalog.is_empty() {
+        prompt.push_str(&agent_catalog);
+    }
+
     prompt.push_str("\nGenerate the Plan IR JSON:\n");
     prompt
 }
@@ -259,6 +284,30 @@ pub fn engine_cli_command(engine: &Engine) -> (&'static str, Vec<&'static str>) 
         Engine::Claude => ("claude", vec!["-p"]),
         Engine::Opencode => ("opencode", vec!["run"]),
         Engine::Gemini => ("gemini", vec!["-p"]),
+    }
+}
+
+/// Build the argv for an engine call with an optional model override.
+/// Returns owned Strings so the caller can build a `Command` without lifetime issues.
+pub fn engine_cli_command_with_model(engine: &Engine, model: Option<&str>) -> (String, Vec<String>) {
+    match engine {
+        Engine::Claude => {
+            let mut args = vec!["-p".to_string()];
+            if let Some(m) = model {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+            ("claude".to_string(), args)
+        }
+        Engine::Gemini => {
+            let mut args = vec!["-p".to_string()];
+            if let Some(m) = model {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+            ("gemini".to_string(), args)
+        }
+        Engine::Opencode => ("opencode".to_string(), vec!["run".to_string()]),
     }
 }
 
@@ -333,6 +382,8 @@ fn draft_to_node(d: NodeDraft) -> PlanNode {
         approved: false,
         executor: d.executor,
         executor_params: d.executor_params,
+        agent: d.agent,
+        scope_injection: Default::default(),
     }
 }
 
@@ -357,6 +408,8 @@ fn fallback_single_node(intent: &str, engine: Engine) -> PlanNode {
         approved: false,
         executor: None,
         executor_params: Default::default(),
+        agent: None,
+        scope_injection: Default::default(),
     }
 }
 
@@ -561,6 +614,109 @@ fn build_executor_catalog() -> String {
     s
 }
 
+fn build_mcp_catalog(scope: &PlanScope) -> String {
+    let orbit_scope = resolver::resolve(ResolveArgs {
+        workspace: scope.workspace.clone(),
+        tenant: scope.tenant.clone(),
+        project: scope.project.clone(),
+        repository: scope.repository.clone(),
+    });
+
+    let orbit_scope = match orbit_scope {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::debug!("build_mcp_catalog: scope resolution failed ({e}), skipping");
+            return String::new();
+        }
+    };
+
+    let merged = match orbit_engine::config::load(&orbit_scope, orbit_core::engine::Engine::Claude) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::debug!("build_mcp_catalog: config load failed ({e}), skipping");
+            return String::new();
+        }
+    };
+
+    if merged.mcp.is_empty() {
+        return String::new();
+    }
+
+    let mut s = "\n## Available MCP Servers\n\n".to_string();
+    s.push_str("Use `executor = \"mcp\"` with `executor_params = { \"server\": \"<name>\", \"tool\": \"<tool>\", \"arguments\": {...} }`.\n\n");
+    s.push_str("| Server | Type |\n|--------|------|\n");
+    for (name, cfg) in &merged.mcp {
+        s.push_str(&format!("| {} | {} |\n", name, cfg.server_type));
+    }
+    s.push('\n');
+    s
+}
+
+fn build_agent_catalog(scope: &PlanScope) -> String {
+    let orbit_scope = resolver::resolve(ResolveArgs {
+        workspace: scope.workspace.clone(),
+        tenant: scope.tenant.clone(),
+        project: scope.project.clone(),
+        repository: scope.repository.clone(),
+    });
+
+    let orbit_scope = match orbit_scope {
+        Ok(s) => s,
+        Err(_) => return String::new(),
+    };
+
+    // Read manifest.jsonc from the scope's source-of-truth/orbit directory
+    let manifest_path = orbit_scope
+        .ai_context_root
+        .join("source-of-truth/orbit/manifest.jsonc");
+
+    let content = match std::fs::read_to_string(&manifest_path) {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+
+    // Strip single-line JSONC comments and parse
+    let stripped: String = content
+        .lines()
+        .map(|line| {
+            if let Some(pos) = line.find("//") {
+                line[..pos].to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let manifest: serde_json::Value = match serde_json::from_str(&stripped) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    let agents = manifest
+        .get("agents")
+        .and_then(|v| v.as_object())
+        .map(|o| o.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    if agents.is_empty() {
+        return String::new();
+    }
+
+    let mut s = "\n## Available Specialist Agents\n\n".to_string();
+    s.push_str("Set `agent = \"<name>\"` on a node to use a specialist instead of the full catalog.\n\n");
+    s.push_str("| Agent | Description |\n|-------|-------------|\n");
+    for (name, meta) in &agents {
+        let desc = meta
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        s.push_str(&format!("| {name} | {desc} |\n"));
+    }
+    s.push('\n');
+    s
+}
+
 fn extract_json_str(raw: &str) -> &str {
     if let Some(start) = raw.find("```json") {
         let after = &raw[start + 7..];
@@ -718,6 +874,7 @@ mod tests {
             executor_params: [("target".to_string(), "build".to_string())]
                 .into_iter()
                 .collect(),
+            agent: None,
         };
         let node = draft_to_node(draft);
         assert_eq!(node.executor.as_deref(), Some("make"));

@@ -38,6 +38,9 @@ pub struct Plugin {
     /// at `~/.local/share/orbit/venv/` instead of the system Python environment.
     #[serde(default)]
     pub use_orbit_venv: bool,
+    /// Dynamic multi-instance spec.  When present, `orbit plugins auth` enters
+    /// the instance flow instead of the static var flow.
+    pub instance: Option<InstanceSpec>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -183,6 +186,109 @@ pub struct PluginMcp {
     pub headers: HashMap<String, String>,
 }
 
+// ── dynamic multi-instance spec ───────────────────────────────────────────────
+
+/// When present on a plugin, `orbit plugins auth` enters the multi-instance flow
+/// instead of the static var flow.  Each configured instance generates one MCP
+/// entry named `<plugin>-<instance>`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstanceSpec {
+    /// Vars collected interactively per instance (same structure as `AuthVar`).
+    pub vars: Vec<AuthVar>,
+    /// MCP entry template — `{var_name}` placeholders are substituted at generation time.
+    pub mcp: InstanceMcpTemplate,
+    /// Optional HTTP Basic auth derivation: combines two vars into a base64-encoded
+    /// `user:pass` secret and exposes it as a derived var for use in MCP templates.
+    #[serde(default)]
+    pub basic_auth: Option<BasicAuthSpec>,
+}
+
+/// Derives a base64-encoded `user:pass` var from two collected instance vars.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BasicAuthSpec {
+    /// Name of the derived var injected into MCP template substitution (e.g. `"auth"`).
+    pub var: String,
+    /// Instance var holding the username.
+    pub user: String,
+    /// Instance var holding the password or API token.
+    pub pass: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstanceMcpTemplate {
+    /// URL template, e.g. `"{url}/mcp"`.
+    pub url: String,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+}
+
+// ── instance state ────────────────────────────────────────────────────────────
+
+/// Persisted at `~/.config/orbit/plugin-instances.toml`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PluginInstances {
+    #[serde(default)]
+    pub instances: Vec<PluginInstanceRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginInstanceRecord {
+    pub plugin: String,
+    pub name: String,
+    /// Non-secret vars stored here; secrets live in the OS keychain.
+    #[serde(default)]
+    pub vars: HashMap<String, String>,
+}
+
+impl PluginInstances {
+    pub fn path() -> PathBuf {
+        user_config_dir().join("plugin-instances.toml")
+    }
+
+    pub fn load() -> Self {
+        let path = Self::path();
+        fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| toml::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let path = Self::path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, toml::to_string_pretty(self)?)?;
+        Ok(())
+    }
+
+    pub fn for_plugin<'a>(
+        &'a self,
+        plugin: &'a str,
+    ) -> impl Iterator<Item = &'a PluginInstanceRecord> {
+        self.instances.iter().filter(move |r| r.plugin == plugin)
+    }
+
+    pub fn upsert(&mut self, record: PluginInstanceRecord) {
+        if let Some(existing) = self
+            .instances
+            .iter_mut()
+            .find(|r| r.plugin == record.plugin && r.name == record.name)
+        {
+            *existing = record;
+        } else {
+            self.instances.push(record);
+        }
+    }
+
+    pub fn remove(&mut self, plugin: &str, name: &str) -> bool {
+        let before = self.instances.len();
+        self.instances
+            .retain(|r| !(r.plugin == plugin && r.name == name));
+        self.instances.len() < before
+    }
+}
+
 // ── plugin state ──────────────────────────────────────────────────────────────
 
 /// Tracks which plugins are enabled (MCP servers active).
@@ -249,7 +355,7 @@ impl Plugin {
     }
 
     pub fn has_mcp(&self) -> bool {
-        !self.mcp.is_empty()
+        !self.mcp.is_empty() || self.instance.is_some()
     }
 
     /// First install method whose prerequisite tool is available.
@@ -435,6 +541,84 @@ pub fn remove_plugin_mcps(plugin: &Plugin) -> Result<()> {
         }
     }
 
+    write_plugins_mcp_file(&path, &val)
+}
+
+// ── instance MCP management ───────────────────────────────────────────────────
+
+/// Keychain key for an instance secret: `PLUGIN_INSTANCE_VAR` (all uppercase, dashes → underscores).
+pub fn instance_keychain_key(plugin: &str, instance_name: &str, var: &str) -> String {
+    let normalize = |s: &str| s.to_uppercase().replace('-', "_");
+    format!("{}_{}_{}",  normalize(plugin), normalize(instance_name), normalize(var))
+}
+
+fn substitute(template: &str, vars: &HashMap<String, String>) -> String {
+    let mut result = template.to_string();
+    for (k, v) in vars {
+        result = result.replace(&format!("{{{k}}}"), v);
+    }
+    result
+}
+
+/// Write one MCP entry per configured instance of this plugin into `plugins.mcp.json`.
+/// Entry name: `<plugin>-<instance>`.
+pub fn add_instance_mcps(plugin: &Plugin, instances: &PluginInstances) -> Result<()> {
+    let Some(spec) = &plugin.instance else {
+        return Ok(());
+    };
+    let path = plugins_mcp_path();
+    let mut val = read_plugins_mcp_file(&path);
+    let servers = val["mcpServers"]
+        .as_object_mut()
+        .expect("mcpServers should be an object");
+
+    for record in instances.for_plugin(&plugin.name) {
+        let mut all_vars: HashMap<String, String> = record.vars.clone();
+        for var in &spec.vars {
+            if var.secret {
+                let key = instance_keychain_key(&plugin.name, &record.name, &var.name);
+                if let Ok(secret) = crate::secrets::keychain_get(&key) {
+                    all_vars.insert(var.name.clone(), secret);
+                }
+            }
+        }
+        if let Some(ba) = &spec.basic_auth
+            && let (Some(user), Some(pass)) = (all_vars.get(&ba.user), all_vars.get(&ba.pass))
+        {
+            use base64::Engine as _;
+            let encoded = base64::engine::general_purpose::STANDARD
+                .encode(format!("{user}:{pass}"));
+            all_vars.insert(ba.var.clone(), encoded);
+        }
+        let url = substitute(&spec.mcp.url, &all_vars);
+        let mut entry = serde_json::json!({ "type": "http", "url": url });
+        if !spec.mcp.headers.is_empty() {
+            let headers: HashMap<String, String> = spec
+                .mcp
+                .headers
+                .iter()
+                .map(|(k, v)| (k.clone(), substitute(v, &all_vars)))
+                .collect();
+            entry["headers"] = serde_json::to_value(&headers)?;
+        }
+        servers.insert(format!("{}-{}", plugin.name, record.name), entry);
+    }
+
+    write_plugins_mcp_file(&path, &val)
+}
+
+/// Remove all instance MCP entries for this plugin from `plugins.mcp.json`.
+pub fn remove_instance_mcps(plugin: &Plugin, instances: &PluginInstances) -> Result<()> {
+    let path = plugins_mcp_path();
+    if !path.is_file() {
+        return Ok(());
+    }
+    let mut val = read_plugins_mcp_file(&path);
+    if let Some(servers) = val["mcpServers"].as_object_mut() {
+        for record in instances.for_plugin(&plugin.name) {
+            servers.remove(&format!("{}-{}", plugin.name, record.name));
+        }
+    }
     write_plugins_mcp_file(&path, &val)
 }
 

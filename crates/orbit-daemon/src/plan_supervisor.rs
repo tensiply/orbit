@@ -4,7 +4,7 @@ use orbit_core::{
     hooks::{HookEvent, run_hooks},
     ipc::PlanStreamEvent,
     memory::{NodeOutcomeSummary, PlanRunRecord, append_plan_run_for, load_recent_runs},
-    plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, TokenUsage},
+    plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, ScopeInjection, TokenUsage},
     session::Session,
 };
 
@@ -335,6 +335,7 @@ fn advance_plan(
         let node_label = plan.nodes[idx].label.clone();
         let node_executor = plan.nodes[idx].executor.clone();
         let node_executor_params = plan.nodes[idx].executor_params.clone();
+        let node_scope_injection = plan.nodes[idx].scope_injection.clone();
         let dispatch_scope = plan.nodes[idx]
             .scope_override
             .clone()
@@ -365,6 +366,7 @@ fn advance_plan(
             engine,
             node_executor.as_deref(),
             &node_executor_params,
+            node_scope_injection,
         ) {
             Ok(session) => {
                 let plan_suffix = plan.id.trim_start_matches("plan_");
@@ -583,6 +585,7 @@ struct NodeInfo<'a> {
     intent: &'a str,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dispatch_node(
     plan_id: &str,
     node: NodeInfo<'_>,
@@ -591,6 +594,7 @@ fn dispatch_node(
     engine: Engine,
     executor: Option<&str>,
     executor_params: &std::collections::HashMap<String, String>,
+    scope_injection: ScopeInjection,
 ) -> anyhow::Result<Session> {
     let node_id = node.id;
     let node_label = node.label;
@@ -600,6 +604,111 @@ fn dispatch_node(
 
     // ── Executor plugin path ───────────────────────────────────────────────────
     if let Some(exec_name) = executor {
+        // ── MCP executor: synchronous JSON-RPC call over stdio ────────────────
+        if exec_name == "mcp" {
+            let server_name = executor_params
+                .get("server")
+                .ok_or_else(|| anyhow::anyhow!("mcp executor requires 'server' in executor_params"))?;
+            let tool = executor_params
+                .get("tool")
+                .ok_or_else(|| anyhow::anyhow!("mcp executor requires 'tool' in executor_params"))?;
+            let arguments: serde_json::Value = executor_params
+                .get("arguments")
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+
+            let orbit_scope = resolver::resolve(ResolveArgs {
+                workspace: scope.workspace.clone(),
+                tenant: scope.tenant.clone(),
+                project: scope.project.clone(),
+                repository: scope.repository.clone(),
+            })?;
+
+            // Find the rendered mcp.json for this scope
+            let mcp_config_path = orbit_scope
+                .work_dir
+                .join(".local/share/orbit")
+                .join(format!("mcp-{node_id}.json"));
+
+            // Try scope-rendered config first, fall back to the runtime config dir
+            let mcp_config_path = if mcp_config_path.exists() {
+                mcp_config_path
+            } else {
+                // Build mcp.json on the fly from the merged config
+                let merged = config::load(&orbit_scope, engine)?;
+                let rendered = orbit_engine::launcher::render::render(&merged, engine);
+                let tmp_dir = std::env::temp_dir().join("orbit-plan-nodes");
+                let _ = std::fs::create_dir_all(&tmp_dir);
+                let cfg_path = tmp_dir.join(format!("{session_name}.mcp.json"));
+                std::fs::write(&cfg_path, serde_json::to_string_pretty(&rendered)?)?;
+                cfg_path
+            };
+
+            let result = orbit_core::mcp_client::call_mcp_tool(
+                server_name,
+                tool,
+                arguments,
+                &mcp_config_path,
+                None,
+            );
+
+            // Write result to the expected log path so the supervisor captures it
+            let log_dir = std::env::temp_dir().join("orbit-plan-nodes");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_path = log_dir.join(format!("{session_name}.log"));
+            match &result {
+                Ok(val) => {
+                    let _ = std::fs::write(&log_path, serde_json::to_string_pretty(val).unwrap_or_default());
+                }
+                Err(e) => {
+                    let _ = std::fs::write(&log_path, format!("MCP error: {e}"));
+                }
+            }
+            result?; // Propagate errors so the supervisor marks node failed
+
+            // Return a pre-completed synthetic session (no tmux, supervisor detects it's done)
+            let session = orbit_core::session::Session::new(
+                std::process::id(),
+                "mcp",
+                &orbit_scope.tenant,
+                &orbit_scope.project,
+                &orbit_scope.repository,
+                orbit_scope.work_dir.clone(),
+                orbit_scope.global_mode,
+                None,
+            );
+            return Ok(session);
+        }
+
+        // ── orbit-context executor: expose repo context as JSON ───────────────
+        if exec_name == "orbit-context" {
+            let orbit_scope = resolver::resolve(ResolveArgs {
+                workspace: scope.workspace.clone(),
+                tenant: scope.tenant.clone(),
+                project: scope.project.clone(),
+                repository: scope.repository.clone(),
+            })?;
+            // Run `orbit context show --json` in a shell session so the output
+            // lands in the supervisor's log capture pipeline.
+            let cmd = vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "orbit context show --json 2>&1".to_string(),
+            ];
+            let orbit_env = std::collections::HashMap::from([
+                ("ORBIT_PLAN_ID".to_string(), plan_id.to_string()),
+                ("ORBIT_NODE_ID".to_string(), node_id.to_string()),
+                ("ORBIT_NODE_LABEL".to_string(), node_label.to_string()),
+                ("ORBIT_NODE_INTENT".to_string(), node_intent.to_string()),
+            ]);
+            return launcher::spawn_plugin_executor(
+                &session_name,
+                &cmd,
+                &orbit_scope.work_dir,
+                &orbit_env,
+            );
+        }
+
         let rendered_cmd = if exec_name == "shell" {
             let command = executor_params.get("command").ok_or_else(|| {
                 anyhow::anyhow!("shell executor requires 'command' in executor_params")
@@ -622,11 +731,54 @@ fn dispatch_node(
             repository: scope.repository.clone(),
         })?;
 
+        // Resolve Auto → concrete injection level from executor type
+        let effective_injection = match scope_injection {
+            ScopeInjection::Auto => {
+                orbit_planner::validator::infer_scope_injection(&Some(exec_name.to_string()))
+            }
+            other => other,
+        };
+
         let mut orbit_env = std::collections::HashMap::new();
         orbit_env.insert("ORBIT_PLAN_ID".to_string(), plan_id.to_string());
         orbit_env.insert("ORBIT_NODE_ID".to_string(), node_id.to_string());
         orbit_env.insert("ORBIT_NODE_LABEL".to_string(), node_label.to_string());
         orbit_env.insert("ORBIT_NODE_INTENT".to_string(), node_intent.to_string());
+
+        // Credentials level: add MCP secrets and ORBIT_* scope vars
+        if matches!(effective_injection, ScopeInjection::Full | ScopeInjection::Credentials)
+            && let Ok(merged) = config::load(&orbit_scope, engine)
+        {
+            for (k, v) in &merged.env {
+                orbit_env.insert(k.clone(), v.clone());
+            }
+            orbit_env.insert(
+                "ORBIT_WORKSPACE".to_string(),
+                orbit_scope.workspace_root.to_string_lossy().into_owned(),
+            );
+            orbit_env.insert("ORBIT_TENANT".to_string(), orbit_scope.tenant.clone());
+            orbit_env.insert("ORBIT_PROJECT".to_string(), orbit_scope.project.clone());
+            orbit_env.insert("ORBIT_REPOSITORY".to_string(), orbit_scope.repository.clone());
+        }
+
+        // SingleMcp level: expose only the specific MCP server JSON
+        if matches!(effective_injection, ScopeInjection::SingleMcp)
+            && let Some(server_name) = executor_params.get("server")
+            && let Ok(merged) = config::load(&orbit_scope, engine)
+            && let Some(server_cfg) = merged.mcp.get(server_name)
+        {
+            // Build a portable JSON representation without requiring Serialize on McpServer
+            let json_val = serde_json::json!({
+                "command": server_cfg.command,
+                "environment": server_cfg.environment,
+                "server_type": server_cfg.server_type,
+                "url": server_cfg.url,
+            });
+            if let Ok(json) = serde_json::to_string(&json_val) {
+                orbit_env.insert("ORBIT_MCP_SERVER_JSON".to_string(), json);
+                orbit_env.insert("ORBIT_MCP_SERVER_NAME".to_string(), server_name.clone());
+            }
+        }
 
         return launcher::spawn_plugin_executor(
             &session_name,

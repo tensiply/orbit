@@ -64,6 +64,48 @@ pub enum AuditEvent {
         reason: String,
         timestamp: u64,
     },
+    /// Emitted when the scope router resolves the target workspace/repo from the intent.
+    ScopeDetected {
+        plan_id: String,
+        scope_key: String,
+        confidence: String,
+        timestamp: u64,
+    },
+    /// Emitted when the gap resolver finishes its pre-planning phase.
+    GapResolved {
+        plan_id: String,
+        gaps_found: usize,
+        gaps_auto_resolved: usize,
+        needed_user_input: bool,
+        timestamp: u64,
+    },
+    /// Emitted when a node is dispatched to its executor, capturing scope and context level.
+    NodeDispatched {
+        plan_id: String,
+        node_id: String,
+        scope_key: String,
+        executor: String,
+        agent: Option<String>,
+        injection_level: String,
+        timestamp: u64,
+    },
+    /// Emitted for each MCP tool call made by the built-in MCP executor.
+    McpCall {
+        plan_id: String,
+        node_id: String,
+        server: String,
+        tool: String,
+        duration_ms: u64,
+        success: bool,
+        timestamp: u64,
+    },
+    /// Emitted when the node validator fails and triggers a planner retry.
+    ValidationRetry {
+        plan_id: String,
+        retry_count: u8,
+        issues_count: usize,
+        timestamp: u64,
+    },
 }
 
 impl AuditEvent {
@@ -76,6 +118,11 @@ impl AuditEvent {
             AuditEvent::ReplanTriggered { plan_id, .. } => plan_id,
             AuditEvent::PlanCompleted { plan_id, .. } => plan_id,
             AuditEvent::PolicyBlocked { plan_id, .. } => plan_id,
+            AuditEvent::ScopeDetected { plan_id, .. } => plan_id,
+            AuditEvent::GapResolved { plan_id, .. } => plan_id,
+            AuditEvent::NodeDispatched { plan_id, .. } => plan_id,
+            AuditEvent::McpCall { plan_id, .. } => plan_id,
+            AuditEvent::ValidationRetry { plan_id, .. } => plan_id,
         }
     }
 
@@ -157,6 +204,75 @@ impl AuditEvent {
                 plan_id,
                 node_id,
                 reason,
+                timestamp: ts,
+            },
+            AuditEvent::ScopeDetected {
+                plan_id,
+                scope_key,
+                confidence,
+                ..
+            } => AuditEvent::ScopeDetected {
+                plan_id,
+                scope_key,
+                confidence,
+                timestamp: ts,
+            },
+            AuditEvent::GapResolved {
+                plan_id,
+                gaps_found,
+                gaps_auto_resolved,
+                needed_user_input,
+                ..
+            } => AuditEvent::GapResolved {
+                plan_id,
+                gaps_found,
+                gaps_auto_resolved,
+                needed_user_input,
+                timestamp: ts,
+            },
+            AuditEvent::NodeDispatched {
+                plan_id,
+                node_id,
+                scope_key,
+                executor,
+                agent,
+                injection_level,
+                ..
+            } => AuditEvent::NodeDispatched {
+                plan_id,
+                node_id,
+                scope_key,
+                executor,
+                agent,
+                injection_level,
+                timestamp: ts,
+            },
+            AuditEvent::McpCall {
+                plan_id,
+                node_id,
+                server,
+                tool,
+                duration_ms,
+                success,
+                ..
+            } => AuditEvent::McpCall {
+                plan_id,
+                node_id,
+                server,
+                tool,
+                duration_ms,
+                success,
+                timestamp: ts,
+            },
+            AuditEvent::ValidationRetry {
+                plan_id,
+                retry_count,
+                issues_count,
+                ..
+            } => AuditEvent::ValidationRetry {
+                plan_id,
+                retry_count,
+                issues_count,
                 timestamp: ts,
             },
         }

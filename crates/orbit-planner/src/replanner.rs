@@ -78,6 +78,8 @@ mod tests {
             approved: false,
             executor: None,
             executor_params: Default::default(),
+            agent: None,
+            scope_injection: Default::default(),
         }
     }
 

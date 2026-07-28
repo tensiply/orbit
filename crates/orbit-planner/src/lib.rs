@@ -1,8 +1,11 @@
 pub mod backend;
+pub mod gap_resolver;
 pub mod intent;
 pub mod planner;
 pub mod policy;
 pub mod replanner;
+pub mod scope_resolver;
 pub mod selector;
 pub mod templates;
+pub mod validator;
 pub mod verifier;
