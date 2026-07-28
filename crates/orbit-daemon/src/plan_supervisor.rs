@@ -313,20 +313,27 @@ fn advance_plan(
         let risk = plan.nodes[idx].policy.risk_level.clone();
         if !plan.nodes[idx].approved && plan.policy.require_approval_for.contains(&risk) {
             let node = &mut plan.nodes[idx];
-            node.status = NodeStatus::AwaitingApproval;
-            info!(
-                "node {node_id} requires approval ({risk:?}) in plan {}",
-                plan.id
-            );
-            let _ = append_event_for(
-                workspace.as_deref(),
-                &AuditEvent::PolicyBlocked {
+            if node.status != NodeStatus::AwaitingApproval {
+                node.status = NodeStatus::AwaitingApproval;
+                info!(
+                    "node {node_id} requires approval ({risk:?}) in plan {}",
+                    plan.id
+                );
+                let _ = append_event_for(
+                    workspace.as_deref(),
+                    &AuditEvent::PolicyBlocked {
+                        plan_id: plan.id.clone(),
+                        node_id: node_id.clone(),
+                        reason: format!("{risk:?} risk requires approval"),
+                        timestamp: now_secs(),
+                    },
+                );
+                let _ = event_tx.send(PlanStreamEvent::NodeAwaitingApproval {
                     plan_id: plan.id.clone(),
                     node_id: node_id.clone(),
-                    reason: format!("{risk:?} risk requires approval"),
-                    timestamp: now_secs(),
-                },
-            );
+                    label: node.label.clone(),
+                });
+            }
             continue;
         }
 

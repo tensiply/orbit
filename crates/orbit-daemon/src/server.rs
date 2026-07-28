@@ -522,12 +522,15 @@ impl ServerState {
                         }
 
                         let node_count = plan.nodes.len();
+                        let nodes = plan.node_summaries();
                         let trace_out = if verbose { last_trace } else { None };
                         if dry_run {
                             plan.status = PlanStatus::Planning;
                             Response::PlanCreated {
                                 id: plan.id,
                                 node_count,
+                                nodes,
+                                scope_confidence: None,
                                 trace: trace_out,
                             }
                         } else {
@@ -557,6 +560,8 @@ impl ServerState {
                                     Response::PlanCreated {
                                         id: plan.id,
                                         node_count,
+                                        nodes,
+                                        scope_confidence: None,
                                         trace: trace_out,
                                     }
                                 }

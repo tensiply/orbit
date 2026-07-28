@@ -1,3 +1,4 @@
+pub mod chat;
 mod adf;
 mod launch;
 mod peers;
@@ -37,6 +38,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     render_tab_bar(f, app, chunks[1]);
 
     match app.tab {
+        Tab::Chat => chat::render(app, f, chunks[3]),
         Tab::Sessions => sessions::render(f, app, chunks[3]),
         Tab::Launch => launch::render(f, app, chunks[3]),
         Tab::Plans => plans::render(f, app, chunks[3]),
@@ -80,6 +82,8 @@ fn render_tab_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     let mut spans = vec![
         Span::raw(" "),
+        tab_span("[0]", app.tab == Tab::Chat, accent, dim),
+        Span::styled(" Chat  ", tab_label_style(app.tab == Tab::Chat, dim)),
         tab_span("[1]", app.tab == Tab::Sessions, accent, dim),
         Span::styled(
             " Sessions  ",
@@ -162,6 +166,20 @@ fn render_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         ])
     } else {
         match app.tab {
+            Tab::Chat => Line::from(vec![
+                hint(" [Tab]", accent),
+                Span::raw(" switch  "),
+                hint("[Enter]", accent),
+                Span::raw(" send  "),
+                hint("[Esc]", accent),
+                Span::raw(" scroll  "),
+                hint("[i]", accent),
+                Span::raw(" input  "),
+                hint("[jk]", accent),
+                Span::raw(" nav  "),
+                hint("[q]", accent),
+                Span::raw(" quit"),
+            ]),
             Tab::Sessions => Line::from(vec![
                 hint(" [Tab]", accent),
                 Span::raw(" switch  "),

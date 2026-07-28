@@ -207,6 +207,16 @@ pub struct PlanEdge {
     pub to: String,
 }
 
+/// Minimal node representation for TUI chat inline widgets and IPC responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    pub id: String,
+    pub label: String,
+    pub executor: Option<String>,
+    pub agent: Option<String>,
+    pub status: NodeStatus,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanNode {
     pub id: String,
@@ -269,6 +279,19 @@ pub struct Plan {
 // ── impl Plan ─────────────────────────────────────────────────────────────────
 
 impl Plan {
+    pub fn node_summaries(&self) -> Vec<NodeSummary> {
+        self.nodes
+            .iter()
+            .map(|n| NodeSummary {
+                id: n.id.clone(),
+                label: n.label.clone(),
+                executor: n.executor.clone(),
+                agent: n.agent.clone(),
+                status: n.status.clone(),
+            })
+            .collect()
+    }
+
     pub fn new(intent: &str, scope: PlanScope, engine: Engine) -> Plan {
         Plan {
             id: gen_id(),

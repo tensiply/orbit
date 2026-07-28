@@ -47,6 +47,12 @@ pub enum PlanStreamEvent {
         node_id: String,
         error: String,
     },
+    /// A node entered AwaitingApproval — the TUI can render an inline approve gate.
+    NodeAwaitingApproval {
+        plan_id: String,
+        node_id: String,
+        label: String,
+    },
     /// A single line of live output from a running node's tmux pane.
     NodeOutput {
         plan_id: String,
@@ -71,6 +77,7 @@ impl PlanStreamEvent {
             Self::NodeStarted { plan_id, .. }
             | Self::NodeCompleted { plan_id, .. }
             | Self::NodeFailed { plan_id, .. }
+            | Self::NodeAwaitingApproval { plan_id, .. }
             | Self::NodeOutput { plan_id, .. }
             | Self::PlanCompleted { plan_id }
             | Self::PlanFailed { plan_id }
@@ -265,6 +272,12 @@ pub enum Response {
     PlanCreated {
         id: String,
         node_count: usize,
+        /// Minimal node list for TUI inline widget — avoids a GetPlan roundtrip.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        nodes: Vec<crate::plan::NodeSummary>,
+        /// Confidence level of scope detection: "High" | "Medium" | "Ambiguous" | "Fallback".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope_confidence: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         trace: Option<PlannerTrace>,
     },

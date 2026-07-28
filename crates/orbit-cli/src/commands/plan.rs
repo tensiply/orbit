@@ -516,6 +516,9 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
                         println!("[replan] → {child_plan_id}");
                     }
+                    PlanStreamEvent::NodeAwaitingApproval { node_id, label, .. } => {
+                        println!("[approve] node '{node_id}' ({label}) — run: orbit plan approve {id} {node_id}");
+                    }
                 }
             }
         }
@@ -1029,6 +1032,7 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                     id,
                     node_count,
                     trace,
+                    ..
                 } => {
                     if let Some(t) = trace {
                         println!("── system prompt ────────────────────────────────────");
@@ -1104,6 +1108,9 @@ async fn stream_until_done(id: &str) {
                     }
                     PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
                         println!("[replan] → {child_plan_id}");
+                    }
+                    PlanStreamEvent::NodeAwaitingApproval { node_id, label, plan_id } => {
+                        println!("[approve] node '{node_id}' ({label}) — run: orbit plan approve {plan_id} {node_id}");
                     }
                 }
             }
@@ -1731,7 +1738,7 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
                 Response::PlanCreated {
                     id,
                     node_count,
-                    trace: _,
+                    ..
                 } => {
                     println!("Plan created: {id} ({node_count} node(s))");
                     if !dry_run {
