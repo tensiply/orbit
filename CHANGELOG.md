@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-28
+
+### Features
+
+- **Warp terminal integration** — New `warp` engine hook emits OSC 777 `warp://cli-agent` events to set pane badges and update the tab title with the orbit scope. Badges reflect session state: `in_progress` on prompt submit, `tool_complete` during tool use, `done` on notification or stop. No-op outside Warp (guards on `WARP_CLI_AGENT_PROTOCOL_VERSION`). Enable with `orbit hooks enable warp`.
+- **gcloud, aws, and kubectl built-in plugins** — Three new infrastructure plugins in the catalog. Each handles auth isolation via `orbit-{scope}` service accounts / profiles / kubeconfigs, install/update commands, and MCP server wiring.
+- **Remote MCP headers** — `[mcp]` entries in `orbit.json` and `plugins/*.toml` now support a `headers` map for remote MCP servers, enabling Bearer token and custom header auth without exposing secrets in the config.
+
 ## [0.17.0] - 2026-07-25
 
 ### Features
