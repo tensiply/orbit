@@ -1,0 +1,151 @@
+name = "warp"
+description = "Warp terminal integration — session badges (in_progress / done / blocked) and tab title from orbit scope"
+category = "productivity"
+
+# UserPromptSubmit → badge in_progress + tab title with scope
+[[events]]
+event = "UserPromptSubmit"
+command = "$HOME/.claude/hooks/warp-prompt-submit.sh"
+is_async = true
+
+# PostToolUse → keeps badge as in_progress (tool_complete) while working
+[[events]]
+event = "PostToolUse"
+command = "$HOME/.claude/hooks/warp-tool-complete.sh"
+is_async = true
+
+# Notification → badge done (Claude notified user = task complete or waiting)
+[[events]]
+event = "Notification"
+command = "$HOME/.claude/hooks/warp-notification.sh"
+is_async = true
+
+# Stop → badge done + reset tab title
+[[events]]
+event = "Stop"
+command = "$HOME/.claude/hooks/warp-stop.sh"
+is_async = true
+
+# ── scripts ───────────────────────────────────────────────────────────────────
+
+[[scripts]]
+path = "$HOME/.claude/hooks/warp-prompt-submit.sh"
+executable = true
+content = '''
+#!/bin/bash
+# Fires when the user submits a prompt.
+# Sets Warp pane badge to in_progress and updates the tab title with the orbit scope.
+# JSON stdin: { "session_id": "...", "prompt": "..." }
+[ -z "$WARP_CLI_AGENT_PROTOCOL_VERSION" ] && exit 0
+
+INPUT=$(cat)
+export SESSION_ID
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+
+SCOPE="${AI_TENANT:-}${AI_PROJECT:+/${AI_PROJECT}}${AI_REPOSITORY:+/${AI_REPOSITORY}}"
+export WARP_MSG="orbit${SCOPE:+ — ${SCOPE}}"
+
+PAYLOAD=$(python3 -c "
+import json, os
+print(json.dumps({
+    'type': 'prompt_submit',
+    'properties': {
+        'session_id': os.environ.get('SESSION_ID', 'unknown'),
+        'message': os.environ.get('WARP_MSG', 'orbit')
+    }
+}))
+" 2>/dev/null) || exit 0
+
+printf '\033]777;notify;warp://cli-agent;%s\007' "$PAYLOAD" > /dev/tty 2>/dev/null || true
+printf '\033]0;%s\007' "$WARP_MSG" > /dev/tty 2>/dev/null || true
+'''
+
+[[scripts]]
+path = "$HOME/.claude/hooks/warp-tool-complete.sh"
+executable = true
+content = '''
+#!/bin/bash
+# Fires after each tool use — keeps Warp pane badge as in_progress (tool_complete).
+# JSON stdin: { "session_id": "...", "tool_name": "...", "tool_input": {...}, ... }
+[ -z "$WARP_CLI_AGENT_PROTOCOL_VERSION" ] && exit 0
+
+INPUT=$(cat)
+export SESSION_ID
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+
+PAYLOAD=$(python3 -c "
+import json, os
+print(json.dumps({
+    'type': 'tool_complete',
+    'properties': {
+        'session_id': os.environ.get('SESSION_ID', 'unknown'),
+        'message': 'working'
+    }
+}))
+" 2>/dev/null) || exit 0
+
+printf '\033]777;notify;warp://cli-agent;%s\007' "$PAYLOAD" > /dev/tty 2>/dev/null || true
+'''
+
+[[scripts]]
+path = "$HOME/.claude/hooks/warp-notification.sh"
+executable = true
+content = '''
+#!/bin/bash
+# Fires when Claude emits a notification (task complete, waiting for input, etc.)
+# Sets Warp pane badge to done.
+# JSON stdin: { "session_id": "...", "message": "...", "title": "..." }
+[ -z "$WARP_CLI_AGENT_PROTOCOL_VERSION" ] && exit 0
+
+INPUT=$(cat)
+export SESSION_ID
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+export NOTIFY_MSG
+NOTIFY_MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message','Task complete')[:120])" 2>/dev/null || echo "Task complete")
+
+PAYLOAD=$(python3 -c "
+import json, os
+print(json.dumps({
+    'type': 'stop',
+    'properties': {
+        'session_id': os.environ.get('SESSION_ID', 'unknown'),
+        'message': os.environ.get('NOTIFY_MSG', 'Task complete')
+    }
+}))
+" 2>/dev/null) || exit 0
+
+printf '\033]777;notify;warp://cli-agent;%s\007' "$PAYLOAD" > /dev/tty 2>/dev/null || true
+'''
+
+[[scripts]]
+path = "$HOME/.claude/hooks/warp-stop.sh"
+executable = true
+content = '''
+#!/bin/bash
+# Fires when the Claude Code session ends.
+# Sets Warp pane badge to done and restores tab title to scope — idle.
+# JSON stdin: { "session_id": "...", "stop_hook_active": bool }
+[ -z "$WARP_CLI_AGENT_PROTOCOL_VERSION" ] && exit 0
+
+INPUT=$(cat)
+export SESSION_ID
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id','unknown'))" 2>/dev/null || echo "unknown")
+
+SCOPE="${AI_TENANT:-}${AI_PROJECT:+/${AI_PROJECT}}${AI_REPOSITORY:+/${AI_REPOSITORY}}"
+export WARP_MSG="orbit${SCOPE:+ — ${SCOPE}}"
+
+PAYLOAD=$(python3 -c "
+import json, os
+print(json.dumps({
+    'type': 'stop',
+    'properties': {
+        'session_id': os.environ.get('SESSION_ID', 'unknown'),
+        'message': os.environ.get('WARP_MSG', 'orbit'),
+        'stop_reason': 'complete'
+    }
+}))
+" 2>/dev/null) || exit 0
+
+printf '\033]777;notify;warp://cli-agent;%s\007' "$PAYLOAD" > /dev/tty 2>/dev/null || true
+printf '\033]0;%s — idle\007' "$WARP_MSG" > /dev/tty 2>/dev/null || true
+'''
