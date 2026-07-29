@@ -6,6 +6,8 @@ use orbit_core::{
 };
 use std::path::Path;
 
+use crate::output::truncate_desc;
+
 #[derive(Debug, Parser)]
 pub struct ActivityArgs {
     #[command(subcommand)]
@@ -66,6 +68,8 @@ pub enum ActivitySubcommand {
     },
 }
 
+// ── scope resolution ──────────────────────────────────────────────────────────
+
 fn resolve_workspace(arg: Option<String>) -> Option<String> {
     if let Some(ws) = arg {
         return Some(ws);
@@ -87,23 +91,58 @@ fn resolve_scope(arg: Option<String>) -> String {
     let project = std::env::var("AI_PROJECT").unwrap_or_default();
     let repository = std::env::var("AI_REPOSITORY").unwrap_or_default();
     activity::scope_key(
-        if tenant.is_empty() {
-            None
-        } else {
-            Some(tenant.as_str())
-        },
-        if project.is_empty() {
-            None
-        } else {
-            Some(project.as_str())
-        },
-        if repository.is_empty() {
-            None
-        } else {
-            Some(repository.as_str())
-        },
+        if tenant.is_empty() { None } else { Some(tenant.as_str()) },
+        if project.is_empty() { None } else { Some(project.as_str()) },
+        if repository.is_empty() { None } else { Some(repository.as_str()) },
     )
 }
+
+// ── display ───────────────────────────────────────────────────────────────────
+
+fn print_activity_table(entries: &[ActivityEntry]) {
+    println!("activity\n");
+    println!("  \x1b[2mSession activity history per scope.\x1b[0m\n");
+
+    if entries.is_empty() {
+        println!("  No activity recorded yet.");
+        return;
+    }
+
+    let ts_w = 16usize;
+    let scope_w = entries.iter().map(|e| e.scope.len()).max().unwrap_or(20).max(5);
+    let summary_w: usize = 55;
+    let sep_w = 2 + ts_w + 2 + scope_w + 2 + summary_w;
+
+    println!(
+        "  \x1b[2m{ts:<ts_w$}  {sc:<scope_w$}  summary\x1b[0m",
+        ts = "timestamp",
+        sc = "scope",
+        ts_w = ts_w,
+        scope_w = scope_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
+    for e in entries {
+        let first_line = e.summary.lines().next().unwrap_or(&e.summary);
+        let summary = truncate_desc(first_line, summary_w);
+        println!(
+            "  {ts:<ts_w$}  {sc:<scope_w$}  {summary}",
+            ts = activity::format_ts(e.ts),
+            sc = e.scope,
+            ts_w = ts_w,
+            scope_w = scope_w,
+        );
+    }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!();
+
+    let n = entries.len();
+    let plural = if n == 1 { "entry" } else { "entries" };
+    println!("  {n} {plural}  ·  orbit activity append --scope <scope>");
+}
+
+// ── run ───────────────────────────────────────────────────────────────────────
 
 pub fn run(args: ActivityArgs) -> Result<()> {
     match args.subcommand {
@@ -123,17 +162,8 @@ pub fn run(args: ActivityArgs) -> Result<()> {
             )?;
             if md {
                 print!("{}", activity::format_for_context(&entries));
-            } else if entries.is_empty() {
-                println!("No activity recorded yet.");
             } else {
-                for e in &entries {
-                    println!(
-                        "[{}] {} — {}",
-                        activity::format_ts(e.ts),
-                        e.scope,
-                        e.summary.lines().next().unwrap_or(&e.summary)
-                    );
-                }
+                print_activity_table(&entries);
             }
         }
 
@@ -151,11 +181,12 @@ pub fn run(args: ActivityArgs) -> Result<()> {
                 );
             }
             let summary = summary.unwrap_or_else(|| "Session ended".into());
-            let mut entry = ActivityEntry::new(scope_key, summary);
+            let mut entry = ActivityEntry::new(scope_key.clone(), summary);
             if let Some(sid) = session_id {
                 entry = entry.with_session(sid);
             }
             activity::append(ws.as_deref(), &entry)?;
+            println!("Appended entry to {scope_key}");
         }
 
         ActivitySubcommand::Has {

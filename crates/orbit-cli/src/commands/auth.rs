@@ -97,7 +97,7 @@ fn cmd_status_all(check_mode: bool) -> Result<()> {
                 any_missing = true;
                 if !check_mode {
                     println!(
-                        "  \x1b[33m○\x1b[0m  {name:<name_w$}  not configured — run: orbit auth {name}",
+                        "  \x1b[33m○\x1b[0m  {name:<name_w$}  not configured — run: orbit engines auth {name}",
                         name = engine.name,
                         name_w = name_w,
                     );
@@ -118,7 +118,7 @@ fn cmd_status_all(check_mode: bool) -> Result<()> {
 
     if !check_mode {
         println!();
-        println!("  \x1b[2morbit auth <engine>  to start the engine's auth flow\x1b[0m");
+        println!("  \x1b[2morbit engines auth <engine>  to start the engine's auth flow\x1b[0m");
     } else if any_missing {
         std::process::exit(1);
     }
@@ -152,7 +152,7 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
         bail!(
-            "orbit auth {name} requires an interactive terminal.\n  In CI or scripts, use: orbit auth --check"
+            "orbit engines auth {name} requires an interactive terminal.\n  In CI or scripts, use: orbit engines auth --check"
         );
     }
 

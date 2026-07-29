@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use crate::output::truncate_desc;
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{catalog, catalog::McpEntry, context::OrbitScope};
 use orbit_engine::resolver;
@@ -74,32 +75,22 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     let catalog_names: std::collections::HashSet<&str> =
         catalog_mcps.iter().map(|m| m.name.as_str()).collect();
 
-    // Build unified list: (name, description, scope_label_if_enabled, vars_hint)
     struct Row {
         name: String,
         desc: String,
         enabled_at: Option<String>,
-        vars_hint: String,
+        has_vars: bool,
     }
 
     let mut rows: Vec<Row> = Vec::new();
 
     for m in &catalog_mcps {
         let enabled_at = find_enabled_scope(&m.name, &scope, scope_override);
-        let vars_hint = if !m.required_vars.is_empty() {
-            format!(
-                "  \x1b[33m({} var{})\x1b[0m",
-                m.required_vars.len(),
-                if m.required_vars.len() == 1 { "" } else { "s" }
-            )
-        } else {
-            String::new()
-        };
         rows.push(Row {
             name: m.name.clone(),
             desc: m.description.clone(),
             enabled_at,
-            vars_hint,
+            has_vars: !m.required_vars.is_empty(),
         });
     }
 
@@ -115,7 +106,7 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
             name: name.clone(),
             desc: String::new(),
             enabled_at: Some(scope_mcps[name].clone()),
-            vars_hint: String::new(),
+            has_vars: false,
         });
     }
 
@@ -129,26 +120,48 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     }
 
     let scope_label = scope_description(&scope, scope_override);
-    println!("mcps  \x1b[2m(scope: {scope_label})\x1b[0m\n");
+    println!("mcps\n");
+    println!("  \x1b[2mMCPs extend orbit sessions with external tools and data sources.  (scope: {scope_label})\x1b[0m\n");
 
     let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(8).max(8);
+    let desc_w: usize = 48;
+    let sep_w = 5 + name_w + 2 + desc_w + 2 + 20;
+
+    println!(
+        "     \x1b[2m{name:<name_w$}  {desc:<desc_w$}  status\x1b[0m",
+        name = "name",
+        desc = "description",
+        name_w = name_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
 
     for r in &rows {
         let (status, tag) = match &r.enabled_at {
-            Some(lvl) => ("\x1b[32m●\x1b[0m", format!("  \x1b[32m[{lvl}]\x1b[0m")),
-            None => ("\x1b[2m○\x1b[0m", "\x1b[2m  [disabled]\x1b[0m".to_string()),
+            Some(lvl) => ("\x1b[32m●\x1b[0m", format!("\x1b[32m[{lvl}]\x1b[0m")),
+            None => ("\x1b[2m○\x1b[0m", "\x1b[2m[disabled]\x1b[0m".to_string()),
         };
-        let desc = if r.desc.is_empty() {
-            "\x1b[2m(custom)\x1b[0m".to_string()
+        let desc_raw = if r.desc.is_empty() {
+            "(custom)".to_string()
         } else {
             r.desc.clone()
         };
+        let desc = truncate_desc(&desc_raw, desc_w);
+        let vars_tag = if r.has_vars {
+            "  \x1b[33m⚙\x1b[0m"
+        } else {
+            ""
+        };
         println!(
-            "  {status}  {name:<name_w$}  {desc}{tag}{vars_hint}",
+            "  {status}  {name:<name_w$}  {desc:<desc_w$}  {tag}{vars_tag}",
             name = r.name,
-            vars_hint = r.vars_hint,
+            name_w = name_w,
+            desc_w = desc_w,
         );
     }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m● enabled  ○ disabled  ·  ⚙ requires variables\x1b[0m");
 
     println!();
     let enabled = rows.iter().filter(|r| r.enabled_at.is_some()).count();
@@ -167,30 +180,25 @@ fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     let (scope, level) = resolve_write_scope(scope_override)?;
     let path = mcp_json_path(scope.as_ref(), level);
 
-    // Check already enabled
     if mcp_in_file(name, &path) {
         println!("  \x1b[32m●\x1b[0m  {name} is already enabled at {level}.");
         return Ok(());
     }
 
-    println!("Enabling \x1b[1m{name}\x1b[0m at {level}");
-    println!("  {}", entry.description);
+    println!();
+    println!("  {name}  —  {}", entry.description);
     println!();
 
-    // Collect vars
     let env = collect_vars(&entry)?;
-
-    // Build server entry
     let server = build_server_entry(&entry.command, &env);
-
-    // Write to mcp.json
     write_mcp_entry(&path, name, server)?;
 
     println!();
-    println!("  \x1b[32m✓\x1b[0m  {name} enabled at {level}");
+    println!("  \x1b[32m●\x1b[0m  {name} enabled at {level}");
     if !env.is_empty() {
-        println!("       Config written to: {}", path.display());
+        println!("     Config: {}", path.display());
     }
+    println!("     Active in new orbit sessions.");
 
     Ok(())
 }
@@ -198,7 +206,6 @@ fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── disable ───────────────────────────────────────────────────────────────────
 
 fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    // Verify it exists in catalog
     if catalog::mcp_by_name(name).is_none() {
         bail!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.");
     }
@@ -226,14 +233,22 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 
     let scope = detect_scope_required(scope_override)?;
 
-    println!("\x1b[1m{name}\x1b[0m");
-    println!("  {}", entry.description);
+    let enabled_at = find_enabled_scope(name, &scope, scope_override);
+    let status_str = match &enabled_at {
+        Some(lvl) => format!("\x1b[32m● enabled at {lvl}\x1b[0m"),
+        None => "\x1b[2m○ disabled\x1b[0m".to_string(),
+    };
+
     println!();
-    println!("  command: {}", entry.command.join(" "));
+    println!("  \x1b[1m{name}\x1b[0m");
     println!();
+    println!("  description   {}", entry.description);
+    println!("  command       {}", entry.command.join(" "));
+    println!("  status        {status_str}");
 
     if !entry.required_vars.is_empty() {
-        println!("  Required variables:");
+        println!();
+        println!("  required variables");
         for v in &entry.required_vars {
             let secret_tag = if v.secret {
                 "  \x1b[33m[secret]\x1b[0m"
@@ -241,30 +256,30 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
                 ""
             };
             println!("    {}{secret_tag}", v.name);
-            println!("      {}", v.description);
+            println!("      \x1b[2m{}\x1b[0m", v.description);
         }
-        println!();
     }
 
     if !entry.optional_vars.is_empty() {
-        println!("  Optional variables:");
+        println!();
+        println!("  optional variables");
         for v in &entry.optional_vars {
             let default_tag = v
                 .default
                 .as_deref()
-                .map(|d| format!("  (default: {d})"))
+                .map(|d| format!("  \x1b[2m(default: {d})\x1b[0m"))
                 .unwrap_or_default();
             println!("    {}{default_tag}", v.name);
-            println!("      {}", v.description);
+            println!("      \x1b[2m{}\x1b[0m", v.description);
         }
-        println!();
     }
 
     // Status per scope layer
-    println!("  Status:");
+    println!();
+    println!("  status by scope");
     let global_path = global_config_dir().join("orbit/mcps.json");
     let marker = if mcp_in_file(name, &global_path) {
-        "\x1b[32m● enabled\x1b[0m"
+        "\x1b[32m● enabled\x1b[0m "
     } else {
         "\x1b[2m○ disabled\x1b[0m"
     };
@@ -278,11 +293,11 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
                 .join(&scope.tenant)
                 .join("mcp.json");
             let marker = if mcp_in_file(name, &p) {
-                "\x1b[32m● enabled\x1b[0m"
+                "\x1b[32m● enabled\x1b[0m "
             } else {
                 "\x1b[2m○ disabled\x1b[0m"
             };
-            println!("    tenant      {marker}  ({})", scope.tenant);
+            println!("    tenant      {marker}  \x1b[2m({})\x1b[0m", scope.tenant);
         }
         if !scope.project.is_empty() {
             let p = scope
@@ -293,11 +308,11 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
                 .join(&scope.project)
                 .join("mcp.json");
             let marker = if mcp_in_file(name, &p) {
-                "\x1b[32m● enabled\x1b[0m"
+                "\x1b[32m● enabled\x1b[0m "
             } else {
                 "\x1b[2m○ disabled\x1b[0m"
             };
-            println!("    project     {marker}  ({})", scope.project);
+            println!("    project     {marker}  \x1b[2m({})\x1b[0m", scope.project);
         }
         if !scope.repository.is_empty() {
             let p = scope
@@ -310,14 +325,18 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
                 .join(&scope.repository)
                 .join("mcp.json");
             let marker = if mcp_in_file(name, &p) {
-                "\x1b[32m● enabled\x1b[0m"
+                "\x1b[32m● enabled\x1b[0m "
             } else {
                 "\x1b[2m○ disabled\x1b[0m"
             };
-            println!("    repo        {marker}  ({})", scope.repository);
+            println!(
+                "    repo        {marker}  \x1b[2m({})\x1b[0m",
+                scope.repository
+            );
         }
     }
 
+    println!();
     Ok(())
 }
 

@@ -31,6 +31,10 @@ pub mod venv;
 pub mod workspace_config;
 pub mod workspace_registry;
 
+pub fn hello() -> String {
+    "Hello World".to_string()
+}
+
 /// Serialises tests that mutate XDG_DATA_HOME so they don't race in parallel.
 #[cfg(test)]
 pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

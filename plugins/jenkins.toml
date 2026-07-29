@@ -1,0 +1,50 @@
+name = "jenkins"
+description = "Jenkins CI/CD integration — pipeline status, build triggers, and job management via MCP"
+category = "dev"
+url = "https://plugins.jenkins.io/mcp-server/"
+
+[check]
+binary = "jcli"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "jenkins-cli"]
+label = "Homebrew (jenkins-cli / jcli)"
+check = "jcli"
+
+[[install]]
+method = "curl"
+cmd = ["jenkins-plugin-cli", "--plugins", "mcp-server:0.178.vffe5a_e770f3b_"]
+label = "Jenkins Plugin CLI — install MCP server plugin on the Jenkins server"
+
+[auth]
+hint = "Install the MCP server plugin on the Jenkins server:\n  jenkins-plugin-cli --plugins mcp-server:0.178.vffe5a_e770f3b_\n\nCreate an API token at: <JENKINS_URL>/user/<username>/configure > Add new Token\nCompute the auth header value:\n  echo -n \"<user>:<api-token>\" | base64"
+
+[instance]
+
+[[instance.vars]]
+name = "url"
+description = "Jenkins MCP endpoint URL (e.g. https://jenkins.example.com/mcp-server/mcp)"
+secret = false
+
+[[instance.vars]]
+name = "username"
+description = "Jenkins username"
+secret = false
+
+[[instance.vars]]
+name = "api_token"
+description = "Jenkins API token (from <JENKINS_URL>/user/<username>/configure → Add new Token)"
+secret = true
+
+[instance.basic_auth]
+var = "auth"
+user = "username"
+pass = "api_token"
+
+[instance.mcp]
+url = "{url}"
+headers = { Authorization = "Basic {auth}" }
+
+[context]
+prompt = "You have access to Jenkins CI/CD via MCP. You can query pipeline status, build history, trigger builds, and manage jobs. When the user asks about CI/CD builds, pipelines, or deployments, use Jenkins MCP tools."

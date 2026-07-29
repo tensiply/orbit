@@ -7,6 +7,7 @@ use std::process::Command;
 
 use super::auth::{AuthStatus, detect_auth};
 use super::plugins::print_plugins_section;
+use crate::output::{check, dim, section};
 
 #[derive(Debug, Args)]
 pub struct DoctorArgs;
@@ -15,6 +16,9 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     let user_cfg = UserConfig::load();
     let ai_root = user_cfg.ai_root_expanded();
     let ws_cfg = WorkspaceConfig::load(&ai_root);
+
+    println!("doctor\n");
+    println!("  {}\n", dim("Environment diagnostics: engines, dependencies, plugins, workspace, daemon, and binary."));
 
     // ── engines ───────────────────────────────────────────────────────────────
     section("engines");
@@ -201,26 +205,6 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     println!();
 
     Ok(())
-}
-
-fn section(title: &str) {
-    println!("\x1b[1m{title}\x1b[0m");
-}
-
-fn dim(s: &str) -> String {
-    format!("\x1b[2m{s}\x1b[0m")
-}
-
-fn check<E: std::fmt::Display>(label: &str, result: Result<(), E>, hint: Option<&str>) {
-    match result {
-        Ok(()) => println!("  \x1b[32m✓\x1b[0m  {label}"),
-        Err(e) => {
-            println!("  \x1b[31m✗\x1b[0m  {label}  — {e}");
-            if let Some(h) = hint {
-                println!("      \x1b[2m{h}\x1b[0m");
-            }
-        }
-    }
 }
 
 fn check_engine_full(engine: &orbit_core::catalog::EngineEntry) {

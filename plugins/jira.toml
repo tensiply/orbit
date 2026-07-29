@@ -18,7 +18,22 @@ label = "curl (Linux amd64)"
 
 [auth]
 hint = "Atlassian API token: https://id.atlassian.com/manage-profile/security/api-tokens"
-cmd = "acli jira auth login"
+cmd = "echo \"$JIRA_API_TOKEN\" | acli jira auth login --site \"$JIRA_SITE\" --email \"$JIRA_EMAIL\" --token"
+
+[[auth.vars]]
+name = "JIRA_SITE"
+description = "Jira site (e.g. mycompany.atlassian.net)"
+secret = false
+
+[[auth.vars]]
+name = "JIRA_EMAIL"
+description = "Your Atlassian account email"
+secret = false
+
+[[auth.vars]]
+name = "JIRA_API_TOKEN"
+description = "Atlassian API token (id.atlassian.com/manage-profile/security/api-tokens)"
+secret = true
 
 [tui]
 tab_title = "Tasks"

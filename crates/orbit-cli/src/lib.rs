@@ -5,6 +5,7 @@ use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
 pub mod auto_update;
 pub mod banner;
 pub mod commands;
+pub mod output;
 mod update_check;
 
 #[derive(Debug, Parser)]
@@ -22,9 +23,7 @@ pub struct Cli {
 pub enum Commands {
     /// Track and query session activity history
     Activity(commands::activity::ActivityArgs),
-    /// Check and manage engine authentication
-    Auth(commands::auth::AuthArgs),
-    /// Manage AI engines: list, install, update, info
+    /// Manage AI engines: list, install, update, auth
     Engines(commands::engines::EnginesArgs),
     /// First-time setup: write config and install the binary
     Setup(commands::setup::SetupArgs),
@@ -143,7 +142,6 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Some(Commands::Activity(args)) => commands::activity::run(args),
-        Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Engines(args)) => commands::engines::run(args),
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
         Some(Commands::Config(args)) => commands::config::run(args),

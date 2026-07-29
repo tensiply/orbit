@@ -9,7 +9,8 @@ use std::{
     time::Duration,
 };
 
-use super::auth::{AuthStatus, detect_auth};
+use super::auth::{self, AuthStatus, detect_auth};
+use crate::output::truncate_desc;
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,14 @@ pub enum EnginesCommand {
         /// Engine name
         name: String,
     },
+    /// Check or run engine authentication
+    Auth {
+        /// Engine name (omit to show auth status for all engines)
+        engine: Option<String>,
+        /// Only verify status — exit code 1 if any engine is not configured
+        #[arg(long, short = 'c')]
+        check: bool,
+    },
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -51,6 +60,7 @@ pub fn run(args: EnginesArgs) -> Result<()> {
         EnginesCommand::Install { name, yes } => cmd_install(&name, yes),
         EnginesCommand::Update { name } => cmd_update(name.as_deref()),
         EnginesCommand::Info { name } => cmd_info(&name),
+        EnginesCommand::Auth { engine, check } => auth::run(auth::AuthArgs { engine, check }),
     }
 }
 
@@ -59,16 +69,27 @@ pub fn run(args: EnginesArgs) -> Result<()> {
 fn cmd_list() -> Result<()> {
     let engines = catalog::engines();
     println!("engines\n");
+    println!("  \x1b[2mAI engines bring different AI assistants to your orbit sessions.\x1b[0m\n");
 
-    let name_w = engines
-        .iter()
-        .map(|e| e.name.len())
-        .max()
-        .unwrap_or(8)
-        .max(8);
+    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let desc_w: usize = 48;
+    let ver_w: usize = 16;
+    let sep_w = 5 + name_w + 2 + desc_w + 2 + ver_w + 2 + 20;
+
+    println!(
+        "     \x1b[2m{name:<name_w$}  {desc:<desc_w$}  {ver:<ver_w$}  auth\x1b[0m",
+        name = "name",
+        desc = "description",
+        ver = "version",
+        name_w = name_w,
+        desc_w = desc_w,
+        ver_w = ver_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
 
     for engine in &engines {
         let installed = bin_available(&engine.bin);
+        let desc = truncate_desc(&engine.description, desc_w);
 
         if installed {
             let installed_ver = installed_version(&engine.bin).unwrap_or_else(|| "?".to_string());
@@ -78,34 +99,53 @@ fn cmd_list() -> Result<()> {
                 cached_npm_version(&engine.npm_package)
             };
 
+            let ver_col = match &cached_latest {
+                Some(latest) if latest != &installed_ver && !installed_ver.starts_with('?') => {
+                    format!("v{installed_ver}")
+                }
+                _ => format!("v{installed_ver}"),
+            };
             let update_tag = match &cached_latest {
                 Some(latest) if latest != &installed_ver && !installed_ver.starts_with('?') => {
-                    format!("  \x1b[33m→ {latest} available\x1b[0m")
+                    format!("  \x1b[33m→ v{latest}\x1b[0m")
                 }
-                Some(_) => "  \x1b[32mup to date\x1b[0m".to_string(),
-                None if engine.npm_package.is_empty() => String::new(),
-                None => "  \x1b[2mrun orbit engines info for latest\x1b[0m".to_string(),
+                _ => String::new(),
+            };
+
+            let auth_col = match detect_auth(engine) {
+                AuthStatus::Configured(signal) => {
+                    format!("\x1b[32m✓\x1b[0m  {signal}")
+                }
+                AuthStatus::NotConfigured => "\x1b[33m○\x1b[0m  not configured".to_string(),
             };
 
             println!(
-                "  \x1b[32m✓\x1b[0m  {name:<name_w$}  \x1b[2mv{installed_ver}\x1b[0m{update_tag}",
+                "  \x1b[32m✓\x1b[0m  {name:<name_w$}  {desc:<desc_w$}  {ver:<ver_w$}  {auth_col}{update_tag}",
                 name = engine.name,
                 name_w = name_w,
+                desc_w = desc_w,
+                ver = ver_col,
+                ver_w = ver_w,
             );
         } else {
             println!(
-                "  \x1b[2m○\x1b[0m  {name:<name_w$}  not installed  \x1b[2mnpm install -g {}\x1b[0m",
-                engine.npm_package,
+                "  \x1b[2m○\x1b[0m  {name:<name_w$}  {desc:<desc_w$}  \x1b[2m{ver:<ver_w$}\x1b[0m",
                 name = engine.name,
                 name_w = name_w,
+                desc_w = desc_w,
+                ver = "not installed",
+                ver_w = ver_w,
             );
         }
     }
 
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m✓ installed  ○ not installed  ·  auth ✓ configured  auth ○ not configured\x1b[0m");
     println!();
+
     let installed_count = engines.iter().filter(|e| bin_available(&e.bin)).count();
     println!(
-        "  {installed_count}/{total} installed  ·  orbit engines install/update <name>",
+        "  {installed_count}/{total} installed  ·  orbit engines install/update <name>  ·  orbit engines auth <name>",
         total = engines.len()
     );
 
@@ -307,7 +347,7 @@ fn cmd_info(name: &str) -> Result<()> {
     let auth_str = match detect_auth(&engine) {
         AuthStatus::Configured(s) => format!("\x1b[32mconfigured\x1b[0m  {s}"),
         AuthStatus::NotConfigured => {
-            format!("\x1b[33mnot configured\x1b[0m  orbit auth {}", engine.name)
+            format!("\x1b[33mnot configured\x1b[0m  orbit engines auth {}", engine.name)
         }
     };
     info_row("auth", info_w, &auth_str);
@@ -430,7 +470,7 @@ fn print_auth_hint(engine: &EngineEntry) {
         AuthStatus::NotConfigured => {
             println!("  \x1b[33m○ auth\x1b[0m  not configured");
             println!("  \x1b[2m{}\x1b[0m", engine.auth_hint);
-            println!("  Run: orbit auth {}", engine.name);
+            println!("  Run: orbit engines auth {}", engine.name);
         }
     }
 }

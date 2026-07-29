@@ -59,17 +59,34 @@ fn cmd_set(key: &str, value: &str) -> Result<()> {
     let mut cfg = UserConfig::load();
     set_value(&mut cfg, key, value)?;
     cfg.save()?;
-    println!("  {} = {}", key, value);
+    println!("  \x1b[32m✓\x1b[0m  {key} = {value}");
+    println!("     \x1b[2m{}\x1b[0m", UserConfig::path().display());
     Ok(())
 }
 
 fn cmd_list() -> Result<()> {
     let cfg = UserConfig::load();
-    println!("# {}", UserConfig::path().display());
-    println!();
+    let path = UserConfig::path();
+
+    println!("config\n");
+    println!("  \x1b[2mOrbit global configuration. Set with `orbit config set <key> <value>`.\x1b[0m\n");
+    println!("  \x1b[2m{}\x1b[0m\n", path.display());
+
+    let key_w = VALID_KEYS.iter().map(|k| k.len()).max().unwrap_or(20);
+    let sep_w = 2 + key_w + 2 + 40;
+
+    println!("  \x1b[2m{key:<key_w$}  value\x1b[0m", key = "key", key_w = key_w);
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
     for key in VALID_KEYS {
-        println!("  {} = {}", key, get_value(&cfg, key).unwrap_or_default());
+        let val = get_value(&cfg, key).unwrap_or_default();
+        println!("  {key:<key_w$}  {val}", key_w = key_w);
     }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!();
+    println!("  orbit config set <key> <value>  ·  orbit config edit");
+
     Ok(())
 }
 

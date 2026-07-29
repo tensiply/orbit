@@ -3,6 +3,9 @@ description = "SonarCloud integration — quality gate, issues, hotspots, covera
 category = "dev"
 url = "https://github.com/SonarSource/sonarqube-mcp-server"
 
+[check]
+# Remote MCP — no local binary required
+
 [auth]
 hint = "Generate a user token at https://sonarcloud.io/account/security. Your org slug is in the SonarCloud URL: sonarcloud.io/organizations/<slug>"
 

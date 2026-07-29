@@ -15,6 +15,7 @@ use std::{
 
 use super::auth::{AuthStatus, detect_auth};
 use super::plugins::setup_plugins;
+use crate::output::truncate_desc;
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
@@ -76,6 +77,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let engines = catalog::engines();
     let engine_names: Vec<&str> = engines.iter().map(|e| e.name.as_str()).collect();
     let engine_names_str = engine_names.join(" / ");
+
+    println!("setup\n");
+    println!("  \x1b[2mConfigure your orbit installation — profile, engines, plugins, and MCPs.\x1b[0m\n");
 
     // ── collect values (flags → interactive → default) ────────────────────────
     let username = match args.username {
@@ -207,16 +211,14 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     cfg.install.dir = install_dir.clone();
 
     if args.dry_run {
-        println!();
-        println!("  [dry-run] would write {}:", UserConfig::path().display());
+        println!("\n  \x1b[2m[dry-run] would write {}:\x1b[0m\n", UserConfig::path().display());
         println!("{}", toml::to_string_pretty(&cfg)?);
         return Ok(());
     }
 
     // ── save config ───────────────────────────────────────────────────────────
     cfg.save()?;
-    println!();
-    println!("  Config saved → {}", UserConfig::path().display());
+    println!("  \x1b[32m✓\x1b[0m  config saved    {}", UserConfig::path().display());
 
     // ── self-install binary ───────────────────────────────────────────────────
     let install_dir_expanded = orbit_core::user_config::expand_tilde(&install_dir);
@@ -224,7 +226,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let target = install_dir_expanded.join("orbit");
 
     if current_exe == target {
-        println!("  Binary already at {} — skipping copy", target.display());
+        println!("  \x1b[32m✓\x1b[0m  binary          {} (unchanged)", target.display());
     } else {
         fs::create_dir_all(&install_dir_expanded)?;
         // Write to a temp file first then rename — avoids ETXTBSY (error 26)
@@ -237,7 +239,7 @@ pub async fn run(args: SetupArgs) -> Result<()> {
             fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
         }
         fs::rename(&tmp, &target)?;
-        println!("  Binary installed → {}", target.display());
+        println!("  \x1b[32m✓\x1b[0m  binary          {}", target.display());
     }
 
     // ── PATH hint ─────────────────────────────────────────────────────────────
@@ -245,8 +247,8 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let path_env = std::env::var("PATH").unwrap_or_default();
     if !path_env.split(':').any(|p| p == install_dir_str.as_ref()) {
         println!();
-        println!("  Add to your shell profile:");
-        println!("    export PATH=\"{install_dir_str}:$PATH\"");
+        println!("  \x1b[33m!\x1b[0m  add to your shell profile:");
+        println!("     export PATH=\"{install_dir_str}:$PATH\"");
     }
 
     // ── engine install & auth ─────────────────────────────────────────────────
@@ -276,10 +278,10 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     // ── next steps ────────────────────────────────────────────────────────────
     println!();
     if !ai_root.exists() {
-        println!("  AI root does not exist yet. To clone a governance repo:");
-        println!("    orbit init <governance-url>");
+        println!("  \x1b[33m!\x1b[0m  AI root does not exist yet — to clone a governance repo:");
+        println!("     orbit init <governance-url>");
     } else {
-        println!("  Ready. Run `orbit launch` to start a session.");
+        println!("  \x1b[32m✓\x1b[0m  ready  ·  run `orbit launch` to start a session");
     }
     println!();
 
@@ -289,56 +291,110 @@ pub async fn run(args: SetupArgs) -> Result<()> {
 // ── engine setup ─────────────────────────────────────────────────────────────
 
 async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
-    println!("  Checking engines...");
-    println!();
-
     let engines = catalog::engines();
     let has_npm = bin_available("npm");
 
+    println!("engines\n");
+    println!(
+        "  \x1b[2mAI engines bring different AI assistants to your orbit sessions.\x1b[0m\n"
+    );
+
+    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let desc_w: usize = 40;
+    let sep_w = 5 + name_w + 2 + desc_w + 2 + 32;
+
+    println!(
+        "     \x1b[2m{:<name_w$}  {:<desc_w$}  auth\x1b[0m",
+        "name",
+        "description",
+        name_w = name_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
     for engine in &engines {
         let installed = bin_available(&engine.bin);
+        let desc = truncate_desc(&engine.description, desc_w);
 
         if installed {
-            println!("  \x1b[32m✓\x1b[0m  {}", engine.name);
+            let auth_col = match detect_auth(engine) {
+                AuthStatus::Configured(signal) => format!("\x1b[32m✓\x1b[0m  {signal}"),
+                AuthStatus::NotConfigured => "\x1b[33m○\x1b[0m  not configured".to_string(),
+            };
+            println!(
+                "  \x1b[32m✓\x1b[0m  {:<name_w$}  {:<desc_w$}  {auth_col}",
+                engine.name,
+                desc,
+                name_w = name_w,
+                desc_w = desc_w,
+            );
         } else {
-            println!("  \x1b[33m○\x1b[0m  {} — not installed", engine.name);
+            println!(
+                "  \x1b[2m○\x1b[0m  {:<name_w$}  {:<desc_w$}  \x1b[2mnot installed\x1b[0m",
+                engine.name,
+                desc,
+                name_w = name_w,
+                desc_w = desc_w,
+            );
+        }
+    }
 
-            if !has_npm {
-                println!("      install Node.js first: https://nodejs.org");
-            } else {
-                let should_install = yes
-                    || engine.name == default_engine
-                    || confirm(&format!("    Install {}?", engine.name), false)?;
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!(
+        "  \x1b[2m✓ installed  ○ not installed  ·  auth ✓ configured  auth ○ not configured\x1b[0m"
+    );
 
+    let installed_count = engines.iter().filter(|e| bin_available(&e.bin)).count();
+    println!();
+    println!(
+        "  {installed_count}/{total} installed  ·  orbit engines install/auth <name>",
+        total = engines.len()
+    );
+
+    // Prompt to install uninstalled engines
+    let uninstalled: Vec<_> = engines.iter().filter(|e| !bin_available(&e.bin)).collect();
+    if !uninstalled.is_empty() {
+        println!();
+        if !has_npm {
+            println!("  \x1b[33m!\x1b[0m  install Node.js first: https://nodejs.org");
+        } else {
+            for engine in &uninstalled {
+                let should_install = if yes {
+                    engine.name == default_engine
+                } else {
+                    confirm(
+                        &format!("Install {}?", engine.name),
+                        engine.name == default_engine,
+                    )?
+                };
                 if should_install {
-                    print!("    Installing {}...", engine.name);
+                    print!("  Installing {}...", engine.name);
                     io::stdout().flush()?;
-                    let install_cmd: Vec<&str> = {
-                        let mut v = vec!["npm", "install", "-g"];
-                        v.push(engine.npm_package.as_str());
-                        v
-                    };
-                    let status = Command::new(install_cmd[0])
-                        .args(&install_cmd[1..])
+                    let status = Command::new("npm")
+                        .args(["install", "-g", engine.npm_package.as_str()])
                         .status();
                     match status {
-                        Ok(s) if s.success() => println!(" done"),
+                        Ok(s) if s.success() => {
+                            println!(" \x1b[32mdone\x1b[0m");
+                            match detect_auth(engine) {
+                                AuthStatus::Configured(signal) => {
+                                    println!("     \x1b[32m✓ auth\x1b[0m  {signal}");
+                                }
+                                AuthStatus::NotConfigured => {
+                                    println!("     \x1b[33m○ auth\x1b[0m  not configured");
+                                    println!(
+                                        "     \x1b[2mrun: orbit auth {}\x1b[0m",
+                                        engine.name
+                                    );
+                                }
+                            }
+                        }
                         _ => println!(
-                            " \x1b[31mfailed\x1b[0m — run manually: npm install -g {}",
+                            " \x1b[31mfailed\x1b[0m — run: npm install -g {}",
                             engine.npm_package
                         ),
                     }
                 }
-            }
-        }
-
-        match detect_auth(engine) {
-            AuthStatus::Configured(signal) => {
-                println!("      \x1b[32m✓ auth\x1b[0m  {signal}");
-            }
-            AuthStatus::NotConfigured => {
-                println!("      \x1b[33m○ auth\x1b[0m  not configured");
-                println!("      \x1b[2mrun: orbit auth {}\x1b[0m", engine.name);
             }
         }
     }
@@ -351,27 +407,63 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
 fn setup_mcps() -> Result<()> {
     let mcps = catalog::mcps();
 
-    println!("  Available MCPs:");
-    println!();
-    for (i, mcp) in mcps.iter().enumerate() {
-        println!("  {}. {}  —  {}", i + 1, mcp.name, mcp.description);
+    if mcps.is_empty() {
+        return Ok(());
     }
+
+    println!("mcps\n");
+    println!(
+        "  \x1b[2mMCPs extend orbit sessions with external tools and data sources.\x1b[0m\n"
+    );
+
+    let name_w = mcps.iter().map(|m| m.name.len()).max().unwrap_or(8).max(8);
+    let desc_w: usize = 48;
+    let sep_w = 5 + name_w + 2 + desc_w + 2 + 16;
+
+    println!(
+        "     \x1b[2m{:<name_w$}  {:<desc_w$}\x1b[0m",
+        "name",
+        "description",
+        name_w = name_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
+    for mcp in &mcps {
+        let desc = truncate_desc(&mcp.description, desc_w);
+        let vars_tag = if !mcp.required_vars.is_empty() {
+            "  \x1b[33m⚙\x1b[0m"
+        } else {
+            ""
+        };
+        println!(
+            "  \x1b[2m○\x1b[0m  {:<name_w$}  {desc:<desc_w$}{vars_tag}",
+            mcp.name,
+            name_w = name_w,
+            desc_w = desc_w,
+        );
+    }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m○ disabled  ·  ⚙ requires variables  ·  orbit mcp enable <name>\x1b[0m");
+    println!();
+    println!("  0/{} enabled", mcps.len());
     println!();
 
-    if !confirm("  Configure any MCPs now?", false)? {
-        println!("  Skipped. Use `orbit mcp <name> enable` to configure later.");
+    if !confirm("Configure any MCPs now?", false)? {
+        println!("  \x1b[2mSkipped. Use `orbit mcp enable <name>` to configure later.\x1b[0m");
         return Ok(());
     }
 
     let mut selected: Vec<&McpEntry> = Vec::new();
     for mcp in &mcps {
-        if confirm(&format!("    Enable {}?", mcp.name), false)? {
+        if confirm(&format!("Enable {}?", mcp.name), false)? {
             selected.push(mcp);
         }
     }
 
     if selected.is_empty() {
-        println!("  No MCPs selected.");
+        println!("  \x1b[2mNo MCPs selected.\x1b[0m");
         return Ok(());
     }
 
@@ -430,7 +522,7 @@ fn setup_mcps() -> Result<()> {
 
     fs::write(&mcps_path, serde_json::to_string_pretty(&merged)?)?;
     println!();
-    println!("  MCPs saved → {}", mcps_path.display());
+    println!("  \x1b[32m✓\x1b[0m  MCPs saved  {}", mcps_path.display());
 
     Ok(())
 }
@@ -442,14 +534,27 @@ fn setup_commands() {
     if cmds.is_empty() {
         return;
     }
-    println!("  Built-in commands ({} available):", cmds.len());
-    println!();
+
+    println!("commands\n");
+    println!(
+        "  \x1b[2mBuilt-in commands are materialized at session launch for every AI engine.\x1b[0m\n"
+    );
+
+    let count = cmds.len();
+    let name_w = cmds.iter().map(|(n, _)| n.len()).max().unwrap_or(8).max(8);
+    let sep_w = 5 + name_w + 2 + 30;
+
+    println!("     \x1b[2m{:<name_w$}\x1b[0m", "name", name_w = name_w);
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
     for (name, _content) in cmds {
         println!("  \x1b[32m✓\x1b[0m  {name}");
     }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m✓ active  ·  orbit command enable/disable <name>\x1b[0m");
     println!();
-    println!("  Commands are materialized automatically at session launch.");
-    println!("  Use `orbit command enable/disable <name>` to filter per scope.");
+    println!("  {count} commands  ·  orbit command enable/disable <name>");
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
