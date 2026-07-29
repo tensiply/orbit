@@ -85,6 +85,7 @@ fn close_replanning_plan(
     let terminal_status = match child.status {
         PlanStatus::Completed => Some(PlanStatus::Completed),
         PlanStatus::Failed => Some(PlanStatus::Failed),
+        PlanStatus::Cancelled => Some(PlanStatus::Cancelled),
         _ => None,
     };
 
@@ -130,6 +131,14 @@ fn advance_plan(
     plan: &mut Plan,
     event_tx: &broadcast::Sender<PlanStreamEvent>,
 ) -> anyhow::Result<()> {
+    // Re-read from disk to catch CancelPlan requests that arrived since the tick snapshot.
+    if let Ok(fresh) = Plan::load(&plan.id) {
+        if fresh.status == PlanStatus::Cancelled {
+            return Ok(());
+        }
+        *plan = fresh;
+    }
+
     // Snapshot workspace before any mutable borrow of plan.nodes.
     let workspace = plan.scope.workspace.clone();
     let all_sessions = Session::load_all();

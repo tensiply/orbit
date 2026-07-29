@@ -327,23 +327,31 @@ impl Plan {
 
     /// Load all plans from all workspaces (legacy flat + every registered workspace).
     pub fn load_all() -> Vec<Plan> {
-        let mut plans: Vec<Plan> = crate::data_paths::all_plans_dirs()
-            .into_iter()
-            .filter_map(|dir| fs::read_dir(&dir).ok())
-            .flat_map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.file_type().is_ok_and(|t| t.is_file())
-                            && e.path().extension().is_some_and(|x| x == "json")
-                    })
-                    .filter_map(|e| {
-                        fs::read_to_string(e.path())
-                            .ok()
-                            .and_then(|text| serde_json::from_str(&text).ok())
-                    })
-            })
-            .collect();
+        // Iterate flat dir first, then workspace dirs. Later entries overwrite earlier ones
+        // so workspace-scoped copies (canonical write target of Plan::save) take precedence
+        // over any stale legacy flat-dir copies of the same plan ID.
+        let mut by_id: std::collections::HashMap<String, Plan> =
+            std::collections::HashMap::new();
+        for dir in crate::data_paths::all_plans_dirs() {
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.filter_map(|e| e.ok()) {
+                if !entry.file_type().is_ok_and(|t| t.is_file()) {
+                    continue;
+                }
+                if entry.path().extension().is_none_or(|x| x != "json") {
+                    continue;
+                }
+                if let Some(plan) = fs::read_to_string(entry.path())
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<Plan>(&text).ok())
+                {
+                    by_id.insert(plan.id.clone(), plan);
+                }
+            }
+        }
+        let mut plans: Vec<Plan> = by_id.into_values().collect();
         plans.sort_by_key(|p| p.created_at);
         plans
     }
@@ -388,9 +396,15 @@ impl Plan {
     }
 
     pub fn delete(&self) -> Result<()> {
-        let path = plans_dir_for_scope(&self.scope).join(format!("{}.json", self.id));
-        if path.exists() {
-            fs::remove_file(path)?;
+        let filename = format!("{}.json", self.id);
+        let scoped = plans_dir_for_scope(&self.scope).join(&filename);
+        if scoped.exists() {
+            fs::remove_file(&scoped)?;
+        }
+        // Also remove any stale flat-dir copy left over from before workspace scoping.
+        let flat = crate::data_paths::plans_dir_for(None).join(&filename);
+        if flat.exists() && flat != scoped {
+            let _ = fs::remove_file(flat);
         }
         Ok(())
     }
@@ -436,15 +450,20 @@ impl Plan {
 
     /// Move this plan's JSON file to `plans/archive/{id}.json` within its workspace.
     pub fn archive(&self) -> Result<()> {
+        let filename = format!("{}.json", self.id);
         let plans_dir = plans_dir_for_scope(&self.scope);
-        let src = plans_dir.join(format!("{}.json", self.id));
-        if !src.exists() {
-            return Ok(());
+        let src = plans_dir.join(&filename);
+        if src.exists() {
+            let archive_dir = plans_dir.join("archive");
+            fs::create_dir_all(&archive_dir)?;
+            let dst = archive_dir.join(&filename);
+            fs::rename(&src, &dst)?;
         }
-        let archive_dir = plans_dir.join("archive");
-        fs::create_dir_all(&archive_dir)?;
-        let dst = archive_dir.join(format!("{}.json", self.id));
-        fs::rename(&src, &dst)?;
+        // Remove any stale flat-dir copy.
+        let flat = crate::data_paths::plans_dir_for(None).join(&filename);
+        if flat.exists() && flat != src {
+            let _ = fs::remove_file(flat);
+        }
         Ok(())
     }
 

@@ -596,6 +596,9 @@ impl ServerState {
                 Ok(mut plan) => {
                     plan.status = orbit_core::plan::PlanStatus::Cancelled;
                     let _ = plan.save();
+                    // Recursively cancel child plans spawned by replanning.
+                    let all_plans = orbit_core::plan::Plan::load_all();
+                    cancel_plan_children(&id, &all_plans);
                     Response::PlanCancelled { id }
                 }
             },
@@ -1395,4 +1398,23 @@ fn send_sigterm(pid: u32) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+}
+
+/// Recursively cancel all child plans (spawned by replanning) for a given parent plan ID.
+fn cancel_plan_children(parent_id: &str, all_plans: &[orbit_core::plan::Plan]) {
+    use orbit_core::plan::PlanStatus;
+    for mut child in all_plans
+        .iter()
+        .filter(|p| p.parent_plan_id.as_deref() == Some(parent_id))
+        .cloned()
+    {
+        if !matches!(
+            child.status,
+            PlanStatus::Completed | PlanStatus::Failed | PlanStatus::Cancelled
+        ) {
+            child.status = PlanStatus::Cancelled;
+            let _ = child.save();
+        }
+        cancel_plan_children(&child.id.clone(), all_plans);
+    }
 }
