@@ -35,7 +35,15 @@ async fn send_on(sock: &std::path::Path, req: &Request) -> Result<Response> {
         );
     }
 
-    let stream = UnixStream::connect(sock).await?;
+    let stream = match UnixStream::connect(sock).await {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+            // Stale socket — remove it so the daemon can rebind after restart
+            let _ = std::fs::remove_file(sock);
+            bail!("Daemon is not running (stale socket removed).");
+        }
+        Err(e) => return Err(e.into()),
+    };
     let (reader, mut writer) = stream.into_split();
 
     let mut line = serde_json::to_string(req)?;

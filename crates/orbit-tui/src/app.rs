@@ -1870,12 +1870,34 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                         max_nodes: None,
                     };
 
-                    match tokio::time::timeout(
+                    let mut send_result = tokio::time::timeout(
                         Duration::from_secs(30),
                         orbit_client::ipc::send_raw(&req),
                     )
-                    .await
-                    {
+                    .await;
+
+                    // Auto-start daemon on connection failure, then retry once
+                    if matches!(&send_result, Ok(Err(_)) | Err(_)) {
+                        app.chat.messages.push(chat::ChatMessage::System {
+                            text: "Daemon not running — starting…".into(),
+                        });
+                        if let Ok(exe) = std::env::current_exe() {
+                            let _ = std::process::Command::new(&exe)
+                                .args(["daemon", "serve"])
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .stdin(std::process::Stdio::null())
+                                .spawn();
+                        }
+                        tokio::time::sleep(Duration::from_millis(800)).await;
+                        send_result = tokio::time::timeout(
+                            Duration::from_secs(30),
+                            orbit_client::ipc::send_raw(&req),
+                        )
+                        .await;
+                    }
+
+                    match send_result {
                         Ok(Ok(Response::PlanCreated { id, nodes, .. })) => {
                             let stream_rx = if !dry_run {
                                 orbit_client::ipc::stream_plan(&id).await.ok()
