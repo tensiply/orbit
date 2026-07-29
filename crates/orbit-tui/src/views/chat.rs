@@ -36,6 +36,8 @@ pub enum ChatMessage {
     User { text: String },
     System { text: String },
     Orbit { content: OrbitContent },
+    /// Animated "orbiting…" spinner shown while waiting for plan/node response.
+    Orbiting,
 }
 
 #[allow(dead_code)]
@@ -51,6 +53,12 @@ pub struct ChatState {
     pub input: TextInput,
     pub mode: ChatMode,
     pub active_plan: Option<ActivePlan>,
+    /// Index of the current `Orbiting` message, if any.
+    pub orbiting_idx: Option<usize>,
+    /// Frame counter for the orbiting spinner animation.
+    pub spin_tick: u64,
+    /// Accumulates `NodeOutput { line }` chunks until `NodeCompleted`.
+    current_node_output: String,
 }
 
 impl ChatState {
@@ -63,6 +71,9 @@ impl ChatState {
             input: TextInput::new("chat", "Describe a goal or /help…"),
             mode: ChatMode::Input,
             active_plan: None,
+            orbiting_idx: None,
+            spin_tick: 0,
+            current_node_output: String::new(),
         }
     }
 
@@ -76,13 +87,27 @@ impl ChatState {
         self.scroll = u16::MAX;
     }
 
-    pub fn push_plan_inline(&mut self, plan_id: String, nodes: Vec<NodeSummary>) -> usize {
+    /// Appends an `Orbiting` spinner message and records its index.
+    pub fn push_orbiting(&mut self) {
         let idx = self.messages.len();
-        self.messages.push(ChatMessage::Orbit {
-            content: OrbitContent::PlanInline { plan_id, nodes, done: false, failed: false },
-        });
+        self.messages.push(ChatMessage::Orbiting);
+        self.orbiting_idx = Some(idx);
         self.scroll = u16::MAX;
-        idx
+    }
+
+    /// Replaces the current `Orbiting` message with `msg` and clears the index.
+    pub fn replace_orbiting_with(&mut self, msg: ChatMessage) {
+        if let Some(idx) = self.orbiting_idx.take() && idx < self.messages.len() {
+            self.messages[idx] = msg;
+        }
+        self.scroll = u16::MAX;
+    }
+
+    /// Removes the `Orbiting` message (only if it is the last one).
+    pub fn pop_orbiting(&mut self) {
+        if let Some(idx) = self.orbiting_idx.take() && idx + 1 == self.messages.len() {
+            self.messages.pop();
+        }
     }
 
     pub fn update_node_status(&mut self, msg_idx: usize, node_id: &str, status: NodeStatus) {
@@ -134,58 +159,107 @@ impl ChatState {
             }
         }
 
-        let changed = !events.is_empty() || disconnected;
-        if changed {
-            let msg_idx = self.active_plan.as_ref().map_or(0, |ap| ap.msg_idx);
-            let plan_id = self
-                .active_plan
-                .as_ref()
-                .map(|ap| ap.plan_id.clone())
-                .unwrap_or_default();
+        if events.is_empty() && !disconnected {
+            return false;
+        }
 
-            let mut terminal_seen = false;
-            for evt in events {
-                match evt {
-                    PlanStreamEvent::NodeStarted { node_id, .. } => {
-                        self.update_node_status(msg_idx, &node_id, NodeStatus::Running);
+        let msg_idx = self.active_plan.as_ref().map_or(0, |ap| ap.msg_idx);
+        let plan_id = self.active_plan.as_ref().map(|ap| ap.plan_id.clone()).unwrap_or_default();
+        let mut terminal_seen = false;
+
+        for evt in events {
+            match evt {
+                PlanStreamEvent::NodeStarted { node_id, .. } => {
+                    self.update_node_status(msg_idx, &node_id, NodeStatus::Running);
+                    if self.orbiting_idx.is_none() {
+                        self.push_orbiting();
                     }
-                    PlanStreamEvent::NodeCompleted { node_id, .. } => {
-                        self.update_node_status(msg_idx, &node_id, NodeStatus::Completed);
-                    }
-                    PlanStreamEvent::NodeFailed { node_id, error, .. } => {
-                        self.update_node_status(msg_idx, &node_id, NodeStatus::Failed);
-                        self.push_orbit(OrbitContent::Error(format!("{node_id}: {error}")));
-                    }
-                    PlanStreamEvent::NodeAwaitingApproval { node_id, label, .. } => {
-                        self.update_node_status(msg_idx, &node_id, NodeStatus::AwaitingApproval);
-                        self.push_orbit(OrbitContent::ApprovalNeeded {
-                            plan_id: plan_id.clone(),
-                            node_id,
-                            label,
-                        });
-                    }
-                    PlanStreamEvent::PlanCompleted { .. } => {
-                        self.mark_plan_done(msg_idx, false);
-                        terminal_seen = true;
-                    }
-                    PlanStreamEvent::PlanFailed { .. } => {
-                        self.mark_plan_done(msg_idx, true);
-                        self.push_orbit(OrbitContent::Error("Plan failed.".into()));
-                        terminal_seen = true;
-                    }
-                    PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
-                        self.push_orbit(OrbitContent::Text(format!("Replanning → {child_plan_id}")));
-                    }
-                    PlanStreamEvent::NodeOutput { .. } => {}
                 }
-            }
-
-            if terminal_seen || disconnected {
-                self.active_plan = None;
+                PlanStreamEvent::NodeOutput { line, .. } => {
+                    let clean = strip_ansi(line.trim_end());
+                    if !clean.is_empty() {
+                        if !self.current_node_output.is_empty() {
+                            self.current_node_output.push('\n');
+                        }
+                        self.current_node_output.push_str(&clean);
+                    }
+                }
+                PlanStreamEvent::NodeCompleted { node_id, .. } => {
+                    self.update_node_status(msg_idx, &node_id, NodeStatus::Completed);
+                    // Always show a response message — use accumulated output or fallback
+                    let raw = std::mem::take(&mut self.current_node_output);
+                    let text = if raw.trim().is_empty() {
+                        format!("Node `{node_id}` completed.")
+                    } else {
+                        raw.trim().to_string()
+                    };
+                    let msg = ChatMessage::Orbit { content: OrbitContent::Text(text) };
+                    if self.orbiting_idx.is_some() {
+                        self.replace_orbiting_with(msg);
+                    } else {
+                        self.messages.push(msg);
+                        self.scroll = u16::MAX;
+                    }
+                    // Orbiting resumes for the next node (removed by PlanCompleted)
+                    self.push_orbiting();
+                }
+                PlanStreamEvent::NodeFailed { node_id, error, .. } => {
+                    self.update_node_status(msg_idx, &node_id, NodeStatus::Failed);
+                    self.current_node_output.clear();
+                    let msg = ChatMessage::Orbit { content: OrbitContent::Error(format!("{node_id}: {error}")) };
+                    if self.orbiting_idx.is_some() {
+                        self.replace_orbiting_with(msg);
+                    } else {
+                        self.messages.push(msg);
+                        self.scroll = u16::MAX;
+                    }
+                }
+                PlanStreamEvent::NodeAwaitingApproval { node_id, label, .. } => {
+                    self.update_node_status(msg_idx, &node_id, NodeStatus::AwaitingApproval);
+                    let msg = ChatMessage::Orbit {
+                        content: OrbitContent::ApprovalNeeded { plan_id: plan_id.clone(), node_id, label },
+                    };
+                    if self.orbiting_idx.is_some() {
+                        self.replace_orbiting_with(msg);
+                    } else {
+                        self.messages.push(msg);
+                        self.scroll = u16::MAX;
+                    }
+                }
+                PlanStreamEvent::PlanCompleted { .. } => {
+                    self.mark_plan_done(msg_idx, false);
+                    self.pop_orbiting();
+                    terminal_seen = true;
+                }
+                PlanStreamEvent::PlanFailed { .. } => {
+                    self.mark_plan_done(msg_idx, true);
+                    let msg = ChatMessage::Orbit { content: OrbitContent::Error("Plan failed.".into()) };
+                    if self.orbiting_idx.is_some() {
+                        self.replace_orbiting_with(msg);
+                    } else {
+                        self.messages.push(msg);
+                        self.scroll = u16::MAX;
+                    }
+                    terminal_seen = true;
+                }
+                PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
+                    let msg = ChatMessage::Orbit { content: OrbitContent::Text(format!("Replanning → {child_plan_id}")) };
+                    if self.orbiting_idx.is_some() {
+                        self.replace_orbiting_with(msg);
+                    } else {
+                        self.messages.push(msg);
+                        self.scroll = u16::MAX;
+                    }
+                }
             }
         }
 
-        changed
+        if terminal_seen || disconnected {
+            self.active_plan = None;
+            self.pop_orbiting();
+        }
+
+        true
     }
 }
 
@@ -247,6 +321,18 @@ pub enum ChatAsyncAction {
     ListPlans,
 }
 
+/// Result sent back from the background plan-creation task.
+pub enum ChatTaskResult {
+    System(String),
+    PlanCreated {
+        id: String,
+        nodes: Vec<orbit_core::plan::NodeSummary>,
+        dry_run: bool,
+        stream_rx: Option<tokio::sync::mpsc::Receiver<orbit_core::ipc::PlanStreamEvent>>,
+    },
+    PlanError(String),
+}
+
 /// Takes text from the input and clears it. Returns `None` if empty.
 pub fn take_input(state: &mut ChatState) -> Option<String> {
     let text = state.input.value.trim().to_string();
@@ -291,7 +377,7 @@ pub fn handle_submit(state: &mut ChatState, text: String) -> Option<ChatAsyncAct
             }
         }
     } else {
-        state.push_orbit(OrbitContent::Text("Detecting scope…".into()));
+        state.push_orbiting();
         Some(ChatAsyncAction::CreatePlan { goal: text, dry_run: false })
     }
 }
@@ -304,35 +390,42 @@ pub fn apply_plan_created(
     dry_run: bool,
     stream_rx: Option<tokio::sync::mpsc::Receiver<PlanStreamEvent>>,
 ) {
-    let is_placeholder = matches!(
-        state.messages.last(),
-        Some(ChatMessage::Orbit { content: OrbitContent::Text(t) })
-        if t.contains("Detecting scope") || t.contains("Generating plan")
-    );
-    if is_placeholder {
-        state.messages.pop();
-    }
-    let msg_idx = state.push_plan_inline(id.clone(), nodes);
+    // Replace the Orbiting spinner with the PlanInline message
+    let plan_msg = ChatMessage::Orbit {
+        content: OrbitContent::PlanInline { plan_id: id.clone(), nodes, done: false, failed: false },
+    };
+    let plan_msg_idx = if state.orbiting_idx.is_some() {
+        let idx = state.orbiting_idx.unwrap_or(state.messages.len());
+        state.replace_orbiting_with(plan_msg);
+        idx
+    } else {
+        state.messages.push(plan_msg);
+        state.scroll = u16::MAX;
+        state.messages.len() - 1
+    };
+
     if dry_run {
-        state.mark_plan_done(msg_idx, false);
+        state.mark_plan_done(plan_msg_idx, false);
         return;
     }
+
+    // Push a new Orbiting spinner for the execution phase
+    state.push_orbiting();
+
     if let Some(rx) = stream_rx {
-        state.active_plan = Some(ActivePlan { plan_id: id, msg_idx, rx });
+        state.active_plan = Some(ActivePlan { plan_id: id, msg_idx: plan_msg_idx, rx });
     }
 }
 
 /// Applies an error response.
 pub fn apply_plan_error(state: &mut ChatState, msg: String) {
-    let is_placeholder = matches!(
-        state.messages.last(),
-        Some(ChatMessage::Orbit { content: OrbitContent::Text(t) })
-        if t.contains("Detecting scope") || t.contains("Generating plan")
-    );
-    if is_placeholder {
-        state.messages.pop();
+    let err_msg = ChatMessage::Orbit { content: OrbitContent::Error(msg) };
+    if state.orbiting_idx.is_some() {
+        state.replace_orbiting_with(err_msg);
+    } else {
+        state.messages.push(err_msg);
+        state.scroll = u16::MAX;
     }
-    state.push_orbit(OrbitContent::Error(msg));
 }
 
 /// Formats a plan list as readable text.
@@ -350,10 +443,12 @@ pub fn format_plan_list(plans: &[orbit_core::plan::Plan]) -> String {
 
 // ── layout constants ─────────────────────────────────────────────────────────
 
-/// Horizontal padding from the panel edge, applied to both history and input.
+/// Horizontal padding from the panel edge, applied to history only (not input).
 const H_PAD: u16 = 3;
 /// Top padding inside the chat history (breathing room before the first message).
 const V_PAD: u16 = 1;
+/// Empty lines added inside each message box (before and after content).
+const BOX_V_PAD: usize = 1;
 
 // ── render ────────────────────────────────────────────────────────────────────
 
@@ -363,9 +458,13 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
     let history_area = chunks[0];
-    let input_area = chunks[1];
+    let input_area = Rect {
+        x: chunks[1].x + H_PAD,
+        width: chunks[1].width.saturating_sub(H_PAD * 2),
+        ..chunks[1]
+    };
 
-    // Apply uniform H_PAD + V_PAD to history
+    // Apply H_PAD + V_PAD to history; input also has H_PAD so boxes align
     let inner_history = Rect {
         x: history_area.x + H_PAD,
         y: history_area.y + V_PAD,
@@ -374,9 +473,15 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
     };
     let box_width = inner_history.width as usize;
 
+    // Advance animation tick when an Orbiting message is visible
+    if app.chat.orbiting_idx.is_some() {
+        app.chat.spin_tick = app.chat.spin_tick.wrapping_add(1);
+    }
+    let tick = app.chat.spin_tick;
+
     let mut all_lines: Vec<Line<'static>> = Vec::new();
     for msg in &app.chat.messages {
-        render_message(msg, box_width, &p, &mut all_lines);
+        render_message(msg, box_width, tick, &p, &mut all_lines);
     }
 
     let total_lines = all_lines.len() as u16;
@@ -413,14 +518,7 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         }
     }
 
-    // Input box — same H_PAD as history
-    let inner_input = Rect {
-        x: input_area.x + H_PAD,
-        y: input_area.y,
-        width: input_area.width.saturating_sub(H_PAD * 2),
-        height: input_area.height,
-    };
-
+    // Input box — full width, no H_PAD
     let border_style = if app.chat.mode == ChatMode::Input {
         Style::default().fg(p.accent)
     } else {
@@ -433,8 +531,8 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         .border_style(border_style)
         .title(Span::styled(mode_label, border_style.add_modifier(Modifier::BOLD)));
 
-    let inner = input_block.inner(inner_input);
-    f.render_widget(input_block, inner_input);
+    let inner = input_block.inner(input_area);
+    f.render_widget(input_block, input_area);
 
     let display_text = app.chat.input.display(app.chat.mode == ChatMode::Input);
     let is_placeholder = app.chat.input.value.is_empty();
@@ -443,21 +541,28 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
     } else {
         Style::default().fg(p.text)
     };
+    // Add 1 char of left padding to match the footer hints indentation
+    let text_area = Rect {
+        x: inner.x + 1,
+        width: inner.width.saturating_sub(1),
+        ..inner
+    };
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(display_text, text_style))),
-        inner,
+        text_area,
     );
 }
 
 fn render_message(
     msg: &ChatMessage,
     width: usize,
+    tick: u64,
     p: &crate::theme::Palette,
     lines: &mut Vec<Line<'static>>,
 ) {
     match msg {
         ChatMessage::System { text } => {
-            // System: no box, just dimmed italic with left indent
+            // System: no box, just dimmed italic
             lines.push(Line::from(Span::styled(
                 format!(" {text}"),
                 Style::default().fg(p.dim).add_modifier(Modifier::ITALIC),
@@ -466,15 +571,36 @@ fn render_message(
         }
         ChatMessage::User { text } => {
             box_top(lines, " you ", width, p.accent, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             for l in text.lines() {
                 box_line(lines, l, width, p.text, p.dim);
             }
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
-            lines.push(Line::raw("")); // gap between messages
+            lines.push(Line::raw(""));
         }
         ChatMessage::Orbit { content } => {
             render_orbit_box(content, width, p, lines);
-            lines.push(Line::raw("")); // gap between messages
+            lines.push(Line::raw(""));
+        }
+        ChatMessage::Orbiting => {
+            // Rotating quarter-circle: simulates a dot orbiting a center point
+            let frames = ["◐", "◓", "◑", "◒"];
+            let spinner = frames[(tick as usize / 4) % frames.len()];
+            box_top(lines, " orbit ", width, Color::Magenta, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
+            box_spans(
+                lines,
+                vec![
+                    Span::styled(format!("{spinner} "), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Span::styled("orbiting…", Style::default().fg(p.dim).add_modifier(Modifier::ITALIC)),
+                ],
+                width,
+                p.dim,
+            );
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
+            box_bottom(lines, width, p.dim);
+            lines.push(Line::raw(""));
         }
     }
 }
@@ -488,13 +614,16 @@ fn render_orbit_box(
     match content {
         OrbitContent::Text(text) => {
             box_top(lines, " orbit ", width, Color::Magenta, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             for l in text.lines() {
                 box_line(lines, l, width, p.text, p.dim);
             }
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
         }
         OrbitContent::Error(msg) => {
             box_top(lines, " orbit ", width, Color::Magenta, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_spans(
                 lines,
                 vec![
@@ -504,6 +633,7 @@ fn render_orbit_box(
                 width,
                 p.dim,
             );
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
         }
         OrbitContent::ScopeDetected { path, confidence } => {
@@ -513,6 +643,7 @@ fn render_orbit_box(
                 _ => p.dim,
             };
             box_top(lines, " orbit — scope ", width, Color::Magenta, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_spans(
                 lines,
                 vec![
@@ -523,10 +654,10 @@ fn render_orbit_box(
                 width,
                 p.dim,
             );
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
         }
         OrbitContent::PlanInline { plan_id: _, nodes, done, failed } => {
-            // Status determines the header label color, keeping the standard orbit message shape
             let (label, label_color) = if *failed {
                 (" orbit — failed ", p.danger)
             } else if *done {
@@ -535,10 +666,10 @@ fn render_orbit_box(
                 (" orbit ", Color::Magenta)
             };
             box_top(lines, label, width, label_color, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             for node in nodes {
                 let (icon, icon_style) = node_icon(&node.status, p);
                 let exec = node.agent.as_deref().or(node.executor.as_deref()).unwrap_or("ai");
-                // label area: width − 2(borders) − 2(indent) − 3(icon+gap) − 2(gap) − exec.len()
                 let label_avail = width.saturating_sub(2 + 2 + 3 + 2 + exec.len());
                 let node_label = trunc(&node.label, label_avail);
                 let pad = label_avail.saturating_sub(node_label.chars().count());
@@ -555,10 +686,12 @@ fn render_orbit_box(
                     p.dim,
                 );
             }
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
         }
         OrbitContent::ApprovalNeeded { plan_id, node_id, label } => {
             box_top(lines, " orbit — approval needed ", width, Color::Magenta, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_spans(
                 lines,
                 vec![
@@ -569,6 +702,7 @@ fn render_orbit_box(
                 p.dim,
             );
             box_line(lines, &format!("   /approve {plan_id} {node_id}"), width, p.dim, p.dim);
+            for _ in 0..BOX_V_PAD { box_blank(lines, width, p.dim); }
             box_bottom(lines, width, p.dim);
         }
     }
@@ -591,6 +725,15 @@ fn box_top(
         Span::styled("╭─", Style::default().fg(border_color)),
         Span::styled(label.to_string(), Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
         Span::styled(format!("{}╮", "─".repeat(fill)), Style::default().fg(border_color)),
+    ]));
+}
+
+/// │  (empty padding line)  │
+fn box_blank(lines: &mut Vec<Line<'static>>, width: usize, border_color: Color) {
+    lines.push(Line::from(vec![
+        Span::styled("│", Style::default().fg(border_color)),
+        Span::raw(" ".repeat(width.saturating_sub(2))),
+        Span::styled("│", Style::default().fg(border_color)),
     ]));
 }
 
@@ -641,6 +784,21 @@ fn box_spans(
     spans.push(Span::raw(" ".repeat(pad)));
     spans.push(Span::styled("│", Style::default().fg(border_color)));
     lines.push(Line::from(spans));
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            for c2 in chars.by_ref() {
+                if c2.is_ascii_alphabetic() { break; }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn trunc(text: &str, max: usize) -> String {

@@ -889,7 +889,9 @@ fn is_dev_mode(install_dir: &Path) -> bool {
 // ── async actions ─────────────────────────────────────────────────────────────
 
 pub enum AsyncAction {
-    ChatSubmit(String),
+    /// Carries the already-dispatched chat action so the user message renders
+    /// before we block on the IPC call.
+    ChatAction(chat::ChatAsyncAction),
     ChatApprove { plan_id: String, node_id: String },
     ChatCancel(Option<String>),
     ChatListPlans,
@@ -947,6 +949,8 @@ pub struct App {
     pub jira_enabled: bool,
     pub status_msg: Option<String>,
     pub pending_async: Option<AsyncAction>,
+    /// Receiver for background chat plan-creation task results.
+    pub chat_task_rx: Option<tokio::sync::mpsc::Receiver<chat::ChatTaskResult>>,
     pub workspaces: Vec<PathBuf>,
     pub workspace_idx: usize,
     pub palette: crate::theme::Palette,
@@ -995,6 +999,7 @@ impl App {
             jira_enabled,
             status_msg: None,
             pending_async: None,
+            chat_task_rx: None,
             workspaces,
             workspace_idx,
             palette: crate::theme::Palette::detect(),
@@ -1276,7 +1281,11 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(text) = chat::take_input(&mut self.chat) {
-                        self.pending_async = Some(AsyncAction::ChatSubmit(text));
+                        // Call handle_submit synchronously so the user message is pushed
+                        // before the next render — the IPC call happens later in the async action.
+                        if let Some(action) = chat::handle_submit(&mut self.chat, text) {
+                            self.pending_async = Some(AsyncAction::ChatAction(action));
+                        }
                     }
                 }
                 other => {
@@ -1847,78 +1856,76 @@ pub fn load_field_options(field: LaunchField, launch: &LaunchState, ai_root: &Pa
 
 async fn handle_async_action(action: AsyncAction, app: &mut App) {
     match action {
-        AsyncAction::ChatSubmit(text) => {
+        AsyncAction::ChatAction(a) => {
             use orbit_core::ipc::{Request, Response};
-
-            let action = chat::handle_submit(&mut app.chat, text);
-            let Some(a) = action else { return; };
 
             match a {
                 chat::ChatAsyncAction::CreatePlan { goal, dry_run } => {
-                    let req = Request::CreatePlan {
-                        intent: goal,
-                        workspace: None,
-                        tenant: None,
-                        project: None,
-                        repository: None,
-                        dry_run,
-                        verbose: false,
-                        extra_repos: vec![],
-                        max_tokens: None,
-                        max_duration_secs: None,
-                        max_cost_usd: None,
-                        max_nodes: None,
-                    };
-
-                    let mut send_result = tokio::time::timeout(
-                        Duration::from_secs(30),
-                        orbit_client::ipc::send_raw(&req),
-                    )
-                    .await;
-
-                    // Auto-start daemon on connection failure, then retry once
-                    if matches!(&send_result, Ok(Err(_)) | Err(_)) {
-                        app.chat.messages.push(chat::ChatMessage::System {
-                            text: "Daemon not running — starting…".into(),
-                        });
-                        if let Ok(exe) = std::env::current_exe() {
-                            let _ = std::process::Command::new(&exe)
-                                .args(["daemon", "serve"])
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .stdin(std::process::Stdio::null())
-                                .spawn();
-                        }
-                        tokio::time::sleep(Duration::from_millis(800)).await;
-                        send_result = tokio::time::timeout(
+                    let (tx, rx) = tokio::sync::mpsc::channel::<chat::ChatTaskResult>(8);
+                    app.chat_task_rx = Some(rx);
+                    tokio::spawn(async move {
+                        let req = Request::CreatePlan {
+                            intent: goal,
+                            workspace: None,
+                            tenant: None,
+                            project: None,
+                            repository: None,
+                            dry_run,
+                            verbose: false,
+                            extra_repos: vec![],
+                            max_tokens: None,
+                            max_duration_secs: None,
+                            max_cost_usd: None,
+                            max_nodes: None,
+                        };
+                        let mut send_result = tokio::time::timeout(
                             Duration::from_secs(30),
                             orbit_client::ipc::send_raw(&req),
                         )
                         .await;
-                    }
-
-                    match send_result {
-                        Ok(Ok(Response::PlanCreated { id, nodes, .. })) => {
-                            let stream_rx = if !dry_run {
-                                orbit_client::ipc::stream_plan(&id).await.ok()
-                            } else {
-                                None
-                            };
-                            chat::apply_plan_created(&mut app.chat, id, nodes, dry_run, stream_rx);
+                        if matches!(&send_result, Ok(Err(_)) | Err(_)) {
+                            let _ = tx
+                                .send(chat::ChatTaskResult::System(
+                                    "Daemon not running — starting…".into(),
+                                ))
+                                .await;
+                            if let Ok(exe) = std::env::current_exe() {
+                                let _ = std::process::Command::new(&exe)
+                                    .args(["daemon", "serve"])
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .stdin(std::process::Stdio::null())
+                                    .spawn();
+                            }
+                            tokio::time::sleep(Duration::from_millis(800)).await;
+                            send_result = tokio::time::timeout(
+                                Duration::from_secs(30),
+                                orbit_client::ipc::send_raw(&req),
+                            )
+                            .await;
                         }
-                        Ok(Ok(Response::Error { message })) => {
-                            chat::apply_plan_error(&mut app.chat, message);
-                        }
-                        Ok(Err(e)) => {
-                            chat::apply_plan_error(&mut app.chat, format!("IPC error: {e}"));
-                        }
-                        Err(_) => {
-                            chat::apply_plan_error(&mut app.chat, "Plan creation timed out.".into());
-                        }
-                        _ => {
-                            chat::apply_plan_error(&mut app.chat, "Unexpected response.".into());
-                        }
-                    }
+                        let result = match send_result {
+                            Ok(Ok(Response::PlanCreated { id, nodes, .. })) => {
+                                let stream_rx = if !dry_run {
+                                    orbit_client::ipc::stream_plan(&id).await.ok()
+                                } else {
+                                    None
+                                };
+                                chat::ChatTaskResult::PlanCreated { id, nodes, dry_run, stream_rx }
+                            }
+                            Ok(Ok(Response::Error { message })) => {
+                                chat::ChatTaskResult::PlanError(message)
+                            }
+                            Ok(Err(e)) => {
+                                chat::ChatTaskResult::PlanError(format!("IPC error: {e}"))
+                            }
+                            Err(_) => {
+                                chat::ChatTaskResult::PlanError("Plan creation timed out.".into())
+                            }
+                            _ => chat::ChatTaskResult::PlanError("Unexpected response.".into()),
+                        };
+                        let _ = tx.send(result).await;
+                    });
                 }
                 chat::ChatAsyncAction::ApprovePlanNode { plan_id, node_id } => {
                     app.pending_async = Some(AsyncAction::ChatApprove { plan_id, node_id });
@@ -2320,13 +2327,43 @@ where
         // Drain chat stream events before rendering so the frame shows latest state.
         app.chat.drain_stream();
 
+        // Drain background plan-creation task results
+        if let Some(ref mut rx) = app.chat_task_rx {
+            let mut done = false;
+            while let Ok(result) = rx.try_recv() {
+                match result {
+                    chat::ChatTaskResult::System(msg) => {
+                        app.chat.messages.push(chat::ChatMessage::System { text: msg });
+                    }
+                    chat::ChatTaskResult::PlanCreated { id, nodes, dry_run, stream_rx } => {
+                        chat::apply_plan_created(&mut app.chat, id, nodes, dry_run, stream_rx);
+                        done = true;
+                        break;
+                    }
+                    chat::ChatTaskResult::PlanError(msg) => {
+                        chat::apply_plan_error(&mut app.chat, msg);
+                        done = true;
+                        break;
+                    }
+                }
+            }
+            if done {
+                app.chat_task_rx = None;
+            }
+        }
+
         terminal.draw(|f| crate::views::render(f, app))?;
 
         if let Some(action) = app.pending_async.take() {
             handle_async_action(action, app).await;
         }
 
-        if event::poll(Duration::from_millis(200))?
+        let poll_ms = if app.chat.orbiting_idx.is_some() || app.chat_task_rx.is_some() {
+            50 // ~20fps when animating or waiting for plan creation
+        } else {
+            200
+        };
+        if event::poll(Duration::from_millis(poll_ms))?
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
