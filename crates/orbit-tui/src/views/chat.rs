@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use crate::app::App;
@@ -353,36 +353,37 @@ pub fn format_plan_list(plans: &[orbit_core::plan::Plan]) -> String {
 pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
     let p = app.palette.clone();
 
-    let chunks = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(3),
-    ])
-    .split(area);
+    let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
     let history_area = chunks[0];
     let input_area = chunks[1];
 
-    // Build message lines
-    let available_width = history_area.width.saturating_sub(2) as usize;
+    // 1-char horizontal margin on each side so boxes don't touch the edge
+    let inner_history = Rect {
+        x: history_area.x + 1,
+        y: history_area.y,
+        width: history_area.width.saturating_sub(2),
+        height: history_area.height,
+    };
+    let box_width = inner_history.width as usize;
+
     let mut all_lines: Vec<Line<'static>> = Vec::new();
     for msg in &app.chat.messages {
-        render_message(msg, available_width, &p, &mut all_lines);
+        render_message(msg, box_width, &p, &mut all_lines);
     }
 
     let total_lines = all_lines.len() as u16;
-    let max_scroll = total_lines.saturating_sub(history_area.height);
+    let max_scroll = total_lines.saturating_sub(inner_history.height);
     if app.chat.scroll > max_scroll {
         app.chat.scroll = max_scroll;
     }
 
     f.render_widget(
-        Paragraph::new(all_lines)
-            .wrap(Wrap { trim: false })
-            .scroll((app.chat.scroll, 0)),
-        history_area,
+        Paragraph::new(all_lines).scroll((app.chat.scroll, 0)),
+        inner_history,
     );
 
-    // Scroll hint (bottom-right of history area)
+    // Scroll hint (bottom-right corner)
     if max_scroll > 0 {
         let hint = if app.chat.mode == ChatMode::Scroll { "↑j k↓" } else { "Esc:scroll" };
         let hint_style = if app.chat.mode == ChatMode::Scroll {
@@ -394,7 +395,7 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         if area.right() >= hint_w {
             let hint_area = Rect {
                 x: area.right() - hint_w,
-                y: history_area.bottom().saturating_sub(1),
+                y: inner_history.bottom().saturating_sub(1),
                 width: hint_w,
                 height: 1,
             };
@@ -436,52 +437,60 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
 
 fn render_message(
     msg: &ChatMessage,
-    _width: usize,
+    width: usize,
     p: &crate::theme::Palette,
     lines: &mut Vec<Line<'static>>,
 ) {
     match msg {
         ChatMessage::System { text } => {
+            // System: no box, just dimmed italic with left indent
             lines.push(Line::from(Span::styled(
-                format!("  {text}"),
+                format!(" {text}"),
                 Style::default().fg(p.dim).add_modifier(Modifier::ITALIC),
             )));
             lines.push(Line::raw(""));
         }
         ChatMessage::User { text } => {
-            lines.push(Line::from(vec![
-                Span::styled("  you  ", Style::default().fg(p.accent).add_modifier(Modifier::BOLD)),
-                Span::styled("────────────────────────────────", Style::default().fg(p.dim)),
-            ]));
+            box_top(lines, " you ", width, p.accent, p.dim);
             for l in text.lines() {
-                lines.push(Line::from(vec![Span::raw("  "), Span::raw(l.to_string())]));
+                box_line(lines, l, width, p.text, p.dim);
             }
-            lines.push(Line::raw(""));
+            box_bottom(lines, width, p.dim);
+            lines.push(Line::raw("")); // gap between messages
         }
         ChatMessage::Orbit { content } => {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    " orbit ",
-                    Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("────────────────────────────────", Style::default().fg(p.dim)),
-            ]));
-            render_orbit_content(content, p, lines);
-            lines.push(Line::raw(""));
+            render_orbit_box(content, width, p, lines);
+            lines.push(Line::raw("")); // gap between messages
         }
     }
 }
 
-fn render_orbit_content(
+fn render_orbit_box(
     content: &OrbitContent,
+    width: usize,
     p: &crate::theme::Palette,
     lines: &mut Vec<Line<'static>>,
 ) {
     match content {
         OrbitContent::Text(text) => {
+            box_top(lines, " orbit ", width, Color::Magenta, p.dim);
             for l in text.lines() {
-                lines.push(Line::from(vec![Span::raw("  "), Span::raw(l.to_string())]));
+                box_line(lines, l, width, p.text, p.dim);
             }
+            box_bottom(lines, width, p.dim);
+        }
+        OrbitContent::Error(msg) => {
+            box_top(lines, " orbit ", width, Color::Magenta, p.dim);
+            box_spans(
+                lines,
+                vec![
+                    Span::styled("✗  ", Style::default().fg(p.danger)),
+                    Span::styled(msg.clone(), Style::default().fg(p.danger)),
+                ],
+                width,
+                p.dim,
+            );
+            box_bottom(lines, width, p.dim);
         }
         OrbitContent::ScopeDetected { path, confidence } => {
             let conf_color = match confidence.as_str() {
@@ -489,87 +498,167 @@ fn render_orbit_content(
                 "Medium" => p.warning,
                 _ => p.dim,
             };
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("Scope → ", Style::default().fg(p.label)),
-                Span::styled(
-                    path.clone(),
-                    Style::default().fg(p.text).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(format!("  ({confidence})"), Style::default().fg(conf_color)),
-            ]));
+            box_top(lines, " orbit — scope ", width, Color::Magenta, p.dim);
+            box_spans(
+                lines,
+                vec![
+                    Span::styled("→  ", Style::default().fg(p.label)),
+                    Span::styled(path.clone(), Style::default().fg(p.text).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("  ({confidence})"), Style::default().fg(conf_color)),
+                ],
+                width,
+                p.dim,
+            );
+            box_bottom(lines, width, p.dim);
         }
         OrbitContent::PlanInline { plan_id, nodes, done, failed } => {
-            let status_span = if *failed {
-                Span::styled(" FAILED ", Style::default().fg(p.danger).add_modifier(Modifier::BOLD))
+            let (status_str, status_style) = if *failed {
+                (" FAILED", Style::default().fg(p.danger).add_modifier(Modifier::BOLD))
             } else if *done {
-                Span::styled("  DONE  ", Style::default().fg(p.success).add_modifier(Modifier::BOLD))
+                (" DONE", Style::default().fg(p.success).add_modifier(Modifier::BOLD))
             } else {
-                Span::styled(" RUNNING", Style::default().fg(p.warning))
+                (" RUNNING", Style::default().fg(p.warning))
             };
-
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("╔═ ", Style::default().fg(p.dim)),
-                Span::styled(plan_id.clone(), Style::default().fg(p.label)),
-                Span::styled(" ══", Style::default().fg(p.dim)),
-                status_span,
-                Span::styled("══╗", Style::default().fg(p.dim)),
-            ]));
-
+            box_top_plan(lines, plan_id, status_str, status_style, width, p.dim);
             for node in nodes {
                 let (icon, icon_style) = node_icon(&node.status, p);
-                let exec_label = node
-                    .agent
-                    .as_deref()
-                    .or(node.executor.as_deref())
-                    .unwrap_or("ai")
-                    .to_string();
-                let label = if node.label.len() > 32 {
-                    format!("{}…", &node.label[..31])
-                } else {
-                    format!("{:<32}", node.label)
-                };
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled("║ ", Style::default().fg(p.dim)),
-                    Span::styled(icon, icon_style),
-                    Span::raw("  "),
-                    Span::styled(label, Style::default().fg(p.text)),
-                    Span::styled(format!("{exec_label:<14}"), Style::default().fg(p.dim)),
-                    Span::styled("║", Style::default().fg(p.dim)),
-                ]));
+                let exec = node.agent.as_deref().or(node.executor.as_deref()).unwrap_or("ai");
+                // Available for label: width − 2(borders) − 2(indent) − 3(icon+gap) − 2(gap) − exec.len()
+                let label_avail = width.saturating_sub(2 + 2 + 3 + 2 + exec.len());
+                let label = trunc(&node.label, label_avail);
+                let label_len = label.chars().count();
+                let pad = label_avail.saturating_sub(label_len);
+                box_spans(
+                    lines,
+                    vec![
+                        Span::styled(icon, icon_style),
+                        Span::raw("  "),
+                        Span::styled(label, Style::default().fg(p.text)),
+                        Span::raw(format!("{}  ", " ".repeat(pad))),
+                        Span::styled(exec.to_string(), Style::default().fg(p.dim)),
+                    ],
+                    width,
+                    p.dim,
+                );
             }
-
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    "╚══════════════════════════════════════════════════════╝",
-                    Style::default().fg(p.dim),
-                ),
-            ]));
+            box_bottom(lines, width, p.dim);
         }
         OrbitContent::ApprovalNeeded { plan_id, node_id, label } => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    "▶ APPROVAL  ",
-                    Style::default().fg(p.warning).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(label.clone(), Style::default().fg(p.warning)),
-            ]));
-            lines.push(Line::from(vec![
-                Span::raw("    "),
-                Span::styled(format!("/approve {plan_id} {node_id}"), Style::default().fg(p.dim)),
-            ]));
+            box_top(lines, " orbit — approval needed ", width, Color::Magenta, p.dim);
+            box_spans(
+                lines,
+                vec![
+                    Span::styled("▶  ", Style::default().fg(p.warning).add_modifier(Modifier::BOLD)),
+                    Span::styled(label.clone(), Style::default().fg(p.warning)),
+                ],
+                width,
+                p.dim,
+            );
+            box_line(lines, &format!("   /approve {plan_id} {node_id}"), width, p.dim, p.dim);
+            box_bottom(lines, width, p.dim);
         }
-        OrbitContent::Error(msg) => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("✗ ", Style::default().fg(p.danger)),
-                Span::styled(msg.clone(), Style::default().fg(p.danger)),
-            ]));
-        }
+    }
+}
+
+// ── box drawing helpers ──────────────────────────────────────────────────────
+
+/// ╭─ label ──────────────────────╮
+fn box_top(
+    lines: &mut Vec<Line<'static>>,
+    label: &str,
+    width: usize,
+    label_color: Color,
+    border_color: Color,
+) {
+    // "╭─" (2) + label + fill*"─" + "╮" (1)  = width
+    let label_len = label.chars().count();
+    let fill = width.saturating_sub(2 + label_len + 1);
+    lines.push(Line::from(vec![
+        Span::styled("╭─", Style::default().fg(border_color)),
+        Span::styled(label.to_string(), Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}╮", "─".repeat(fill)), Style::default().fg(border_color)),
+    ]));
+}
+
+/// ╭─ orbit — plan_id ─────── STATUS ─╮
+fn box_top_plan(
+    lines: &mut Vec<Line<'static>>,
+    plan_id: &str,
+    status: &str,
+    status_style: Style,
+    width: usize,
+    border_color: Color,
+) {
+    // left: "╭─ orbit — {pid} "  right: "{status} ─╮"
+    let right_static = status.chars().count() + 3; // " ─╮"
+    let left_prefix = "╭─ orbit — ".len() + 1; // +1 for trailing space
+    let pid_max = width.saturating_sub(left_prefix + right_static + 1);
+    let pid = trunc(plan_id, pid_max);
+    let used = "╭─ orbit — ".len() + pid.chars().count() + 1 + right_static;
+    let fill = width.saturating_sub(used);
+    lines.push(Line::from(vec![
+        Span::styled(format!("╭─ orbit — {pid} "), Style::default().fg(border_color)),
+        Span::styled("─".repeat(fill), Style::default().fg(border_color)),
+        Span::styled(status.to_string(), status_style),
+        Span::styled(" ─╮", Style::default().fg(border_color)),
+    ]));
+}
+
+/// ╰──────────────────────────────╯
+fn box_bottom(lines: &mut Vec<Line<'static>>, width: usize, border_color: Color) {
+    lines.push(Line::from(Span::styled(
+        format!("╰{}╯", "─".repeat(width.saturating_sub(2))),
+        Style::default().fg(border_color),
+    )));
+}
+
+/// │  text (padded to fill width)  │
+fn box_line(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    width: usize,
+    text_color: Color,
+    border_color: Color,
+) {
+    // │(1) + "  "(2) + text + padding + │(1) = width  →  text+pad = width−4
+    let content_w = width.saturating_sub(4);
+    let display = trunc(text, content_w);
+    let pad = content_w.saturating_sub(display.chars().count());
+    lines.push(Line::from(vec![
+        Span::styled("│", Style::default().fg(border_color)),
+        Span::raw("  "),
+        Span::styled(display, Style::default().fg(text_color)),
+        Span::raw(" ".repeat(pad)),
+        Span::styled("│", Style::default().fg(border_color)),
+    ]));
+}
+
+/// │  [multiple styled spans] (padded) │
+fn box_spans(
+    lines: &mut Vec<Line<'static>>,
+    content: Vec<Span<'static>>,
+    width: usize,
+    border_color: Color,
+) {
+    let content_w = width.saturating_sub(4); // │ + "  " + content + │
+    let span_w: usize = content.iter().map(|s| s.content.chars().count()).sum();
+    let pad = content_w.saturating_sub(span_w);
+    let mut spans = vec![
+        Span::styled("│", Style::default().fg(border_color)),
+        Span::raw("  "),
+    ];
+    spans.extend(content);
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled("│", Style::default().fg(border_color)));
+    lines.push(Line::from(spans));
+}
+
+fn trunc(text: &str, max: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() > max && max > 0 {
+        format!("{}…", chars[..max.saturating_sub(1)].iter().collect::<String>())
+    } else {
+        text.to_string()
     }
 }
 
@@ -580,6 +669,8 @@ fn node_icon(status: &NodeStatus, p: &crate::theme::Palette) -> (String, Style) 
         NodeStatus::Completed => ("✓".into(), Style::default().fg(p.success)),
         NodeStatus::Failed => ("✗".into(), Style::default().fg(p.danger)),
         NodeStatus::Skipped => ("⊘".into(), Style::default().fg(p.dim)),
-        NodeStatus::AwaitingApproval => ("▶".into(), Style::default().fg(p.warning).add_modifier(Modifier::BOLD)),
+        NodeStatus::AwaitingApproval => {
+            ("▶".into(), Style::default().fg(p.warning).add_modifier(Modifier::BOLD))
+        }
     }
 }
