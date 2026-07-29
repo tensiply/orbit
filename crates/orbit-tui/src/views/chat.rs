@@ -348,6 +348,13 @@ pub fn format_plan_list(plans: &[orbit_core::plan::Plan]) -> String {
         .join("\n")
 }
 
+// ── layout constants ─────────────────────────────────────────────────────────
+
+/// Horizontal padding from the panel edge, applied to both history and input.
+const H_PAD: u16 = 3;
+/// Top padding inside the chat history (breathing room before the first message).
+const V_PAD: u16 = 1;
+
 // ── render ────────────────────────────────────────────────────────────────────
 
 pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
@@ -358,12 +365,12 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
     let history_area = chunks[0];
     let input_area = chunks[1];
 
-    // 1-char horizontal margin on each side so boxes don't touch the edge
+    // Apply uniform H_PAD + V_PAD to history
     let inner_history = Rect {
-        x: history_area.x + 1,
-        y: history_area.y,
-        width: history_area.width.saturating_sub(2),
-        height: history_area.height,
+        x: history_area.x + H_PAD,
+        y: history_area.y + V_PAD,
+        width: history_area.width.saturating_sub(H_PAD * 2),
+        height: history_area.height.saturating_sub(V_PAD),
     };
     let box_width = inner_history.width as usize;
 
@@ -383,7 +390,7 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         inner_history,
     );
 
-    // Scroll hint (bottom-right corner)
+    // Scroll hint (bottom-right corner of inner_history)
     if max_scroll > 0 {
         let hint = if app.chat.mode == ChatMode::Scroll { "↑j k↓" } else { "Esc:scroll" };
         let hint_style = if app.chat.mode == ChatMode::Scroll {
@@ -392,9 +399,9 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
             Style::default().fg(p.dim)
         };
         let hint_w = hint.len() as u16 + 2;
-        if area.right() >= hint_w {
+        if inner_history.right() >= hint_w {
             let hint_area = Rect {
-                x: area.right() - hint_w,
+                x: inner_history.right() - hint_w,
                 y: inner_history.bottom().saturating_sub(1),
                 width: hint_w,
                 height: 1,
@@ -406,7 +413,14 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         }
     }
 
-    // Input box
+    // Input box — same H_PAD as history
+    let inner_input = Rect {
+        x: input_area.x + H_PAD,
+        y: input_area.y,
+        width: input_area.width.saturating_sub(H_PAD * 2),
+        height: input_area.height,
+    };
+
     let border_style = if app.chat.mode == ChatMode::Input {
         Style::default().fg(p.accent)
     } else {
@@ -419,8 +433,8 @@ pub fn render(app: &mut App, f: &mut Frame, area: Rect) {
         .border_style(border_style)
         .title(Span::styled(mode_label, border_style.add_modifier(Modifier::BOLD)));
 
-    let inner = input_block.inner(input_area);
-    f.render_widget(input_block, input_area);
+    let inner = input_block.inner(inner_input);
+    f.render_widget(input_block, inner_input);
 
     let display_text = app.chat.input.display(app.chat.mode == ChatMode::Input);
     let is_placeholder = app.chat.input.value.is_empty();
@@ -511,29 +525,29 @@ fn render_orbit_box(
             );
             box_bottom(lines, width, p.dim);
         }
-        OrbitContent::PlanInline { plan_id, nodes, done, failed } => {
-            let (status_str, status_style) = if *failed {
-                (" FAILED", Style::default().fg(p.danger).add_modifier(Modifier::BOLD))
+        OrbitContent::PlanInline { plan_id: _, nodes, done, failed } => {
+            // Status determines the header label color, keeping the standard orbit message shape
+            let (label, label_color) = if *failed {
+                (" orbit — failed ", p.danger)
             } else if *done {
-                (" DONE", Style::default().fg(p.success).add_modifier(Modifier::BOLD))
+                (" orbit — done ", p.success)
             } else {
-                (" RUNNING", Style::default().fg(p.warning))
+                (" orbit ", Color::Magenta)
             };
-            box_top_plan(lines, plan_id, status_str, status_style, width, p.dim);
+            box_top(lines, label, width, label_color, p.dim);
             for node in nodes {
                 let (icon, icon_style) = node_icon(&node.status, p);
                 let exec = node.agent.as_deref().or(node.executor.as_deref()).unwrap_or("ai");
-                // Available for label: width − 2(borders) − 2(indent) − 3(icon+gap) − 2(gap) − exec.len()
+                // label area: width − 2(borders) − 2(indent) − 3(icon+gap) − 2(gap) − exec.len()
                 let label_avail = width.saturating_sub(2 + 2 + 3 + 2 + exec.len());
-                let label = trunc(&node.label, label_avail);
-                let label_len = label.chars().count();
-                let pad = label_avail.saturating_sub(label_len);
+                let node_label = trunc(&node.label, label_avail);
+                let pad = label_avail.saturating_sub(node_label.chars().count());
                 box_spans(
                     lines,
                     vec![
                         Span::styled(icon, icon_style),
                         Span::raw("  "),
-                        Span::styled(label, Style::default().fg(p.text)),
+                        Span::styled(node_label, Style::default().fg(p.text)),
                         Span::raw(format!("{}  ", " ".repeat(pad))),
                         Span::styled(exec.to_string(), Style::default().fg(p.dim)),
                     ],
@@ -577,30 +591,6 @@ fn box_top(
         Span::styled("╭─", Style::default().fg(border_color)),
         Span::styled(label.to_string(), Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
         Span::styled(format!("{}╮", "─".repeat(fill)), Style::default().fg(border_color)),
-    ]));
-}
-
-/// ╭─ orbit — plan_id ─────── STATUS ─╮
-fn box_top_plan(
-    lines: &mut Vec<Line<'static>>,
-    plan_id: &str,
-    status: &str,
-    status_style: Style,
-    width: usize,
-    border_color: Color,
-) {
-    // left: "╭─ orbit — {pid} "  right: "{status} ─╮"
-    let right_static = status.chars().count() + 3; // " ─╮"
-    let left_prefix = "╭─ orbit — ".len() + 1; // +1 for trailing space
-    let pid_max = width.saturating_sub(left_prefix + right_static + 1);
-    let pid = trunc(plan_id, pid_max);
-    let used = "╭─ orbit — ".len() + pid.chars().count() + 1 + right_static;
-    let fill = width.saturating_sub(used);
-    lines.push(Line::from(vec![
-        Span::styled(format!("╭─ orbit — {pid} "), Style::default().fg(border_color)),
-        Span::styled("─".repeat(fill), Style::default().fg(border_color)),
-        Span::styled(status.to_string(), status_style),
-        Span::styled(" ─╮", Style::default().fg(border_color)),
     ]));
 }
 
