@@ -15,9 +15,8 @@ build-release:
 ## Install release binary to INSTALL_DIR (default: ~/.local/bin)
 install: build-release
 	@mkdir -p $(INSTALL_DIR)
-	cp $(TARGET_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	cp $(TARGET_DIR)/orbit-dev $(INSTALL_DIR)/orbit-dev
-	chmod +x $(INSTALL_DIR)/$(BINARY) $(INSTALL_DIR)/orbit-dev
+	install -m 755 $(TARGET_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
+	install -m 755 $(TARGET_DIR)/orbit-dev $(INSTALL_DIR)/orbit-dev
 	@echo "Installed to $(INSTALL_DIR)/$(BINARY)"
 	@echo "Installed to $(INSTALL_DIR)/orbit-dev"
 
