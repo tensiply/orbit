@@ -199,6 +199,7 @@ pub fn launch(
             &tmux_name,
             &title,
             opts.new_session,
+            &scope.work_dir,
         )
     } else {
         exec_engine(
@@ -256,6 +257,7 @@ fn exec_with_tmux(
     session_name: &str,
     window_name: &str,
     force_new: bool,
+    work_dir: &Path,
 ) -> Result<()> {
     // Resolve the final session name — unique suffix when forcing a new session.
     let session_name = if force_new {
@@ -285,7 +287,9 @@ fn exec_with_tmux(
         .arg("-s")
         .arg(session_name)
         .arg("-n")
-        .arg(window_name);
+        .arg(window_name)
+        .arg("-c")
+        .arg(work_dir);
 
     // Inject orbit env vars into the tmux SESSION via -e flags.
     // tmux update-environment does not include custom vars like XDG_CONFIG_HOME
@@ -323,23 +327,7 @@ fn exec_with_tmux(
         bail!("failed to create tmux session '{session_name}'");
     }
 
-    // Prevent the engine from overriding the window name via terminal title OSC sequences.
-    Command::new("tmux")
-        .args([
-            "set-window-option",
-            "-t",
-            session_name,
-            "allow-rename",
-            "off",
-        ])
-        .status()
-        .ok();
-
-    // Enable mouse mode so TUI engines (Gemini, OpenCode) can receive scroll events.
-    Command::new("tmux")
-        .args(["set-option", "-t", session_name, "mouse", "on"])
-        .status()
-        .ok();
+    configure_tmux_session(session_name);
 
     let err = Command::new("tmux")
         .args(["attach-session", "-t", session_name])
@@ -868,8 +856,16 @@ pub fn spawn_background(
         hooks_settings_path.as_deref(),
     );
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
+    let title = window_title(scope, engine);
     let mut cmd = Command::new("tmux");
-    cmd.arg("new-session").arg("-d").arg("-s").arg(&tmux_name);
+    cmd.arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(&tmux_name)
+        .arg("-n")
+        .arg(&title)
+        .arg("-c")
+        .arg(&scope.work_dir);
     for (k, v) in &session_env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
@@ -887,17 +883,7 @@ pub fn spawn_background(
         bail!("failed to spawn tmux session '{tmux_name}'");
     }
 
-    // Prevent the engine from overriding the window name via OSC sequences.
-    Command::new("tmux")
-        .args(["set-window-option", "-t", &tmux_name, "allow-rename", "off"])
-        .status()
-        .ok();
-
-    // Enable mouse mode so TUI engines (Gemini, OpenCode) can receive scroll events.
-    Command::new("tmux")
-        .args(["set-option", "-t", &tmux_name, "mouse", "on"])
-        .status()
-        .ok();
+    configure_tmux_session(&tmux_name);
 
     // 6. Get pane PID
     let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
@@ -992,9 +978,22 @@ pub fn spawn_plan_node(
         plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
 
     // 5. Launch in a dedicated detached tmux session
+    let node_title = {
+        let base = window_title(scope, engine);
+        // Strip the engine tag and re-insert with :node marker so the status bar
+        // makes it obvious this is a headless plan node, not an interactive session.
+        base.replacen(&format!("[{}]", engine.as_str()), &format!("[{}:node]", engine.as_str()), 1)
+    };
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
-    cmd.arg("new-session").arg("-d").arg("-s").arg(session_name);
+    cmd.arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(session_name)
+        .arg("-n")
+        .arg(&node_title)
+        .arg("-c")
+        .arg(&scope.work_dir);
     for (k, v) in &session_env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
@@ -1011,6 +1010,7 @@ pub fn spawn_plan_node(
     if !status.success() {
         anyhow::bail!("failed to create plan-node tmux session '{session_name}'");
     }
+    configure_tmux_session(session_name);
 
     // 6. Register session
     let pid = tmux_pane_pid(session_name).unwrap_or(std::process::id());
@@ -1137,6 +1137,36 @@ fn tmux_pane_pid(session_name: &str) -> Option<u32> {
 
 // ── terminal title ────────────────────────────────────────────────────────────
 
+/// Apply post-creation options to a new tmux session:
+/// - Lock the window name so engine OSC sequences cannot override it.
+/// - Forward the window name to the outer terminal emulator's title bar.
+/// - Enable mouse mode for TUI engines.
+fn configure_tmux_session(session_name: &str) {
+    // Lock the window name: prevent both application OSC sequences and tmux's
+    // own automatic-rename from overriding the title we set via -n.
+    Command::new("tmux")
+        .args(["set-window-option", "-t", session_name, "allow-rename", "off"])
+        .status()
+        .ok();
+    Command::new("tmux")
+        .args(["set-window-option", "-t", session_name, "automatic-rename", "off"])
+        .status()
+        .ok();
+    // Forward the window name to the outer terminal emulator's title bar.
+    Command::new("tmux")
+        .args(["set-option", "-t", session_name, "set-titles", "on"])
+        .status()
+        .ok();
+    Command::new("tmux")
+        .args(["set-option", "-t", session_name, "set-titles-string", "#{window_name}"])
+        .status()
+        .ok();
+    Command::new("tmux")
+        .args(["set-option", "-t", session_name, "mouse", "on"])
+        .status()
+        .ok();
+}
+
 /// Build a human-readable window title.
 /// Format: `[orbit][<engine>] - <last_scope> - <workspace>/<parent_scopes>`
 /// Example: `[orbit][claude] - orbit - AI/AIDEV/AI-ECOSYSTEM`
@@ -1170,6 +1200,16 @@ fn window_title(scope: &OrbitScope, engine: Engine) -> String {
     };
 
     format!("[orbit][{}] - {} - {}", engine.as_str(), last, path)
+}
+
+/// Public alias used by the CLI to set the terminal title before attaching to tmux.
+pub fn set_terminal_title_pub(title: &str) {
+    set_terminal_title(title);
+}
+
+/// Public alias used by the CLI to compute the window title for a scope+engine.
+pub fn tmux_session_window_title(scope: &OrbitScope, engine: Engine) -> String {
+    window_title(scope, engine)
 }
 
 /// Emit an xterm OSC escape to set the terminal window/tab title.

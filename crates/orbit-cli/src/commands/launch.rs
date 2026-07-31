@@ -156,7 +156,11 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
             .await
             {
                 Ok(info) => {
-                    // Session spawned in background — attach to the tmux window
+                    // Set Warp/terminal title before exec-ing into tmux so the
+                    // title appears immediately rather than waiting for the first
+                    // tmux status-interval tick (default: 15 s).
+                    let title = orbit_engine::launcher::tmux_session_window_title(&scope, engine);
+                    orbit_engine::launcher::set_terminal_title_pub(&title);
                     return attach_tmux(&info.tmux_name);
                 }
                 Err(e) => {
