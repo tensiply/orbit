@@ -515,6 +515,32 @@ fn auth(name: &str, list: bool, remove: Option<&str>) -> Result<()> {
     println!("  {}", auth_spec.hint);
     println!();
 
+    // OAuth 2.1 PKCE flow — takes priority over static vars
+    if let Some(oauth_spec) = &auth_spec.oauth {
+        let already_set = orbit_core::secrets::keychain_get(&oauth_spec.token_key).is_ok();
+        if already_set {
+            print!("  Token already stored. Re-authorize? [y/N]: ");
+            use std::io::Write;
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+                println!("  Keeping existing token.");
+                return Ok(());
+            }
+        }
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(super::oauth::run_oauth_flow(name, oauth_spec))
+        })?;
+        println!();
+        println!("  \x1b[32m✓\x1b[0m  Auth configured for {}.", plugin.name);
+        if plugin.has_mcp() && !PluginState::load().is_enabled(name) {
+            println!("     Run `orbit plugins enable {name}` to activate the MCP server.");
+        }
+        return Ok(());
+    }
+
     if auth_spec.vars.is_empty() && auth_spec.cmd.is_none() {
         println!("  No interactive setup available — follow the hint above.");
         return Ok(());

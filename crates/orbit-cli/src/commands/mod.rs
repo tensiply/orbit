@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod oauth;
 pub mod auth;
 pub mod command;
 pub mod completions;

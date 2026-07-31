@@ -1902,6 +1902,7 @@ name = "orbit-cli"
 version = "0.17.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "clap_complete",
  "clap_mangen",
@@ -1918,6 +1919,7 @@ dependencies = [
  "orbit-engine",
  "orbit-planner",
  "orbit-tui",
+ "rand 0.8.6",
  "reqwest",
  "serde",
  "serde_json",

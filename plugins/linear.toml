@@ -1,0 +1,18 @@
+name = "linear"
+description = "Linear integration — issue tracking, project management, and AI-assisted workflows via MCP"
+category = "productivity"
+url = "https://linear.app"
+
+[check]
+# Remote MCP — no local binary required
+
+[auth]
+hint = "First connection from Claude Code opens a browser OAuth flow automatically — no setup needed"
+
+[[mcp]]
+name = "linear"
+url = "https://mcp.linear.app/mcp"
+label = "Linear"
+
+[context]
+prompt = "You have access to the user's Linear workspace. You can search issues, view projects, create and update issues, and manage workflows. When referencing issues use their Linear identifiers (e.g. ENG-123). Prioritize issues assigned to the current user and those in active cycles."

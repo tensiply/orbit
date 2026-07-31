@@ -50,16 +50,25 @@ fn interpolate(template: &str) -> String {
         result.push_str(&rest[..start]);
         rest = &rest[start + 2..];
         if let Some(end) = rest.find('}') {
-            let var = &rest[..end];
-            match std::env::var(var) {
-                Ok(v) => result.push_str(&v),
-                Err(_) => {
-                    tracing::warn!("env var '{var}' not set (referenced as '${{{var}}}')");
-                    result.push_str("${");
-                    result.push_str(var);
-                    result.push('}');
+            let expr = &rest[..end];
+            let value = if let Some(key) = expr.strip_prefix("keychain://") {
+                match keychain_get(key) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        tracing::warn!("keychain lookup failed for '{key}' (referenced as '${{{expr}}}')");
+                        format!("${{{expr}}}")
+                    }
                 }
-            }
+            } else {
+                match std::env::var(expr) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        tracing::warn!("env var '{expr}' not set (referenced as '${{{expr}}}')");
+                        format!("${{{expr}}}")
+                    }
+                }
+            };
+            result.push_str(&value);
             rest = &rest[end + 1..];
         } else {
             // Unclosed ${ — emit as-is
@@ -203,5 +212,12 @@ mod tests {
         unsafe { env::set_var("ORBIT_TEST_FULL", "resolved") };
         assert_eq!(resolve("$ORBIT_TEST_FULL"), "resolved");
         unsafe { env::remove_var("ORBIT_TEST_FULL") };
+    }
+
+    #[test]
+    fn inline_interpolation_missing_keychain_leaves_placeholder() {
+        // Key that definitely does not exist in keychain
+        let result = resolve("Bearer ${keychain://ORBIT_DEFINITELY_NOT_SET_KC_XYZ}");
+        assert_eq!(result, "Bearer ${keychain://ORBIT_DEFINITELY_NOT_SET_KC_XYZ}");
     }
 }

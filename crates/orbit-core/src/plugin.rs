@@ -81,6 +81,22 @@ pub struct AuthSpec {
     /// Credential vars to collect interactively and store in the OS keychain
     #[serde(default)]
     pub vars: Vec<AuthVar>,
+    /// OAuth 2.1 + PKCE + dynamic client registration flow.
+    /// When present, `orbit plugins auth` opens a browser instead of prompting for vars.
+    pub oauth: Option<OAuthSpec>,
+}
+
+/// OAuth 2.1 PKCE flow with dynamic client registration (RFC 7591).
+/// The MCP server at `discovery_url` exposes the standard
+/// `/.well-known/oauth-authorization-server` metadata document.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OAuthSpec {
+    /// URL of the OAuth discovery document.
+    pub discovery_url: String,
+    /// Keychain key used to store the resulting access token.
+    pub token_key: String,
+    /// Space-separated OAuth scopes to request.
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
