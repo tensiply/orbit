@@ -498,6 +498,103 @@ pub fn find(name: &str) -> Option<Plugin> {
     load_all().into_iter().find(|p| p.name == name)
 }
 
+// ── MCP entry builder ─────────────────────────────────────────────────────────
+
+/// Build all MCP entries for a plugin (static + instances) as `(name, JSON)` pairs.
+/// Reads secrets from the OS keychain for instance vars. Does not write anywhere.
+pub fn build_mcp_entries(
+    plugin: &Plugin,
+    instances: &PluginInstances,
+) -> Result<Vec<(String, serde_json::Value)>> {
+    let mut out = Vec::new();
+
+    // Static MCPs
+    for entry in &plugin.mcp {
+        let server = if let Some(url) = &entry.url {
+            let mut s = serde_json::json!({ "type": "http", "url": url });
+            if !entry.headers.is_empty() {
+                s["headers"] = serde_json::to_value(&entry.headers)?;
+            }
+            s
+        } else {
+            let command = if plugin.use_orbit_venv {
+                crate::venv::venv_bin(&entry.command)
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                entry.command.clone()
+            };
+            let mut s = serde_json::json!({ "command": command, "args": entry.args });
+            if !entry.env.is_empty() {
+                s["env"] = serde_json::to_value(&entry.env)?;
+            }
+            s
+        };
+        out.push((entry.name.clone(), server));
+    }
+
+    // Instance MCPs
+    if let Some(spec) = &plugin.instance {
+        for record in instances.for_plugin(&plugin.name) {
+            let mut all_vars: HashMap<String, String> = record.vars.clone();
+            for var in &spec.vars {
+                if var.secret {
+                    let key = instance_keychain_key(&plugin.name, &record.name, &var.name);
+                    if let Ok(secret) = crate::secrets::keychain_get(&key) {
+                        all_vars.insert(var.name.clone(), secret);
+                    }
+                }
+            }
+            if let Some(ba) = &spec.basic_auth
+                && let (Some(user), Some(pass)) = (all_vars.get(&ba.user), all_vars.get(&ba.pass))
+            {
+                use base64::Engine as _;
+                let encoded = base64::engine::general_purpose::STANDARD
+                    .encode(format!("{user}:{pass}"));
+                all_vars.insert(ba.var.clone(), encoded);
+            }
+            let entry = if let Some(url_template) = &spec.mcp.url {
+                let url = substitute(url_template, &all_vars);
+                let mut e = serde_json::json!({ "type": "http", "url": url });
+                if !spec.mcp.headers.is_empty() {
+                    let headers: HashMap<String, String> = spec
+                        .mcp
+                        .headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), substitute(v, &all_vars)))
+                        .collect();
+                    e["headers"] = serde_json::to_value(&headers)?;
+                }
+                e
+            } else {
+                let mut e = serde_json::json!({
+                    "command": substitute(&spec.mcp.command, &all_vars),
+                    "args": spec.mcp.args.iter().map(|a| substitute(a, &all_vars)).collect::<Vec<_>>(),
+                });
+                if !spec.mcp.env.is_empty() {
+                    let env: HashMap<String, String> = spec
+                        .mcp
+                        .env
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            let val = substitute(v, &all_vars);
+                            // Drop empty values and unresolved placeholders.
+                            if val.is_empty() || val.contains('{') { None } else { Some((k.clone(), val)) }
+                        })
+                        .collect();
+                    if !env.is_empty() {
+                        e["env"] = serde_json::to_value(&env)?;
+                    }
+                }
+                e
+            };
+            out.push((format!("{}-{}", plugin.name, record.name), entry));
+        }
+    }
+
+    Ok(out)
+}
+
 // ── plugins.mcp.json management ───────────────────────────────────────────────
 
 /// Path to the orbit-managed MCP file that holds MCPs for enabled plugins.
@@ -694,6 +791,12 @@ fn empty_mcp_json() -> serde_json::Value {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 pub fn user_config_dir() -> PathBuf {
+    // ORBIT_CONFIG_HOME is set by the launcher before it overrides XDG_CONFIG_HOME
+    // for session isolation. Prefer it so plugin state is always read from the real
+    // user config, not the session-scoped override.
+    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(orbit_home).join("orbit");
+    }
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg)
     } else {
