@@ -1863,13 +1863,28 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 chat::ChatAsyncAction::CreatePlan { goal, dry_run } => {
                     let (tx, rx) = tokio::sync::mpsc::channel::<chat::ChatTaskResult>(8);
                     app.chat_task_rx = Some(rx);
+                    // Read scope from env vars injected by `orbit launch`.
+                    let chat_workspace = {
+                        let ws_root = std::env::var("AI_WORKSPACE_ROOT").unwrap_or_default();
+                        std::path::Path::new(&ws_root)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string)
+                    };
+                    let chat_tenant =
+                        std::env::var("AI_TENANT").ok().filter(|s| !s.is_empty());
+                    let chat_project =
+                        std::env::var("AI_PROJECT").ok().filter(|s| !s.is_empty());
+                    let chat_repository =
+                        std::env::var("AI_REPOSITORY").ok().filter(|s| !s.is_empty());
                     tokio::spawn(async move {
                         let req = Request::CreatePlan {
                             intent: goal,
-                            workspace: None,
-                            tenant: None,
-                            project: None,
-                            repository: None,
+                            workspace: chat_workspace,
+                            tenant: chat_tenant,
+                            project: chat_project,
+                            repository: chat_repository,
                             dry_run,
                             verbose: false,
                             extra_repos: vec![],

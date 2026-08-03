@@ -1013,7 +1013,10 @@ pub fn spawn_plan_node(
     configure_tmux_session(session_name);
 
     // 6. Register session
-    let pid = tmux_pane_pid(session_name).unwrap_or(std::process::id());
+    // PID 0 is not a valid process on Linux (/proc/0 doesn't exist), so
+    // is_pid_alive(0) → false. This handles the race where a fast command
+    // exits before tmux_pane_pid can query the pane.
+    let pid = tmux_pane_pid(session_name).unwrap_or(0);
     let session = orbit_core::session::Session::new(
         pid,
         engine.as_str(),
@@ -1070,7 +1073,10 @@ pub fn spawn_plugin_executor(
         anyhow::bail!("failed to create plugin-executor tmux session '{session_name}'");
     }
 
-    let pid = tmux_pane_pid(session_name).unwrap_or(std::process::id());
+    // PID 0 is not a valid process on Linux (/proc/0 doesn't exist), so
+    // is_pid_alive(0) → false. This handles the race where a fast command
+    // exits before tmux_pane_pid can query the pane.
+    let pid = tmux_pane_pid(session_name).unwrap_or(0);
     let session = orbit_core::session::Session::new(
         pid,
         "shell",
