@@ -149,10 +149,20 @@ async fn switch_to_stable() -> Result<()> {
 
     print!("  Fetching latest stable version... ");
     let _ = std::io::stdout().flush();
-    let tag = update_check::fetch_latest_tag(&client).await.map_err(|e| {
-        println!("failed");
-        anyhow::anyhow!("Could not fetch release info: {e}")
-    })?;
+    let tag = match update_check::fetch_latest_tag(&client).await {
+        Ok(t) => t,
+        Err(e) if e.to_string().contains("404") || e.to_string().contains("Not Found") => {
+            println!("no releases found");
+            write_mode("stable")?;
+            println!("  No GitHub releases available — marking current build as stable.");
+            println!("  Run `make install` to rebuild from source.");
+            return Ok(());
+        }
+        Err(e) => {
+            println!("failed");
+            return Err(anyhow::anyhow!("Could not fetch release info: {e}"));
+        }
+    };
     println!("{tag}");
 
     let artifact = platform_artifact().to_string();
@@ -233,12 +243,20 @@ async fn switch_to_beta() -> Result<()> {
 
     print!("  Fetching latest pre-release... ");
     let _ = std::io::stdout().flush();
-    let tag = update_check::fetch_latest_prerelease_tag(&client)
-        .await
-        .map_err(|e| {
+    let tag = match update_check::fetch_latest_prerelease_tag(&client).await {
+        Ok(t) => t,
+        Err(e) if e.to_string().contains("404") || e.to_string().contains("Not Found") => {
+            println!("no pre-releases found");
+            write_mode("beta")?;
+            println!("  No GitHub pre-releases available — marking current build as beta.");
+            println!("  Run `make install` to rebuild from source.");
+            return Ok(());
+        }
+        Err(e) => {
             println!("failed");
-            anyhow::anyhow!("{e}")
-        })?;
+            return Err(anyhow::anyhow!("{e}"));
+        }
+    };
     println!("{tag}");
 
     let artifact = platform_artifact().to_string();
