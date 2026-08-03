@@ -2,8 +2,8 @@ use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
     plugin::{
-        self, add_instance_mcps, instance_keychain_key, remove_instance_mcps, InstallMethod,
-        Plugin, PluginInstanceRecord, PluginInstances, PluginState,
+        self, add_instance_mcps, build_mcp_entries, instance_keychain_key, remove_instance_mcps,
+        InstallMethod, Plugin, PluginInstanceRecord, PluginInstances, PluginState,
     },
     secrets,
 };
@@ -12,6 +12,8 @@ use std::{
     io::{self, Write},
     process::Command,
 };
+
+use crate::commands::mcp::{mcp_json_path, remove_mcp_entry, resolve_write_scope, write_mcp_entry, ScopeLevel};
 
 use crate::output::truncate_desc;
 
@@ -36,15 +38,25 @@ pub enum PluginsCommand {
         #[arg(long, short)]
         yes: bool,
     },
-    /// Enable a plugin — registers its MCP servers in all orbit sessions
+    /// Enable a plugin — registers its MCP servers for the current scope
+    ///
+    /// By default, auto-detects the deepest scope from the current directory and
+    /// writes the MCP config there. Use `--scope global` to register globally
+    /// (available in every session, written to plugins.mcp.json).
     Enable {
         /// Plugin name
         name: String,
+        /// Target scope level (default: deepest scope detected from cwd; falls back to global)
+        #[arg(long, value_enum)]
+        scope: Option<ScopeLevel>,
     },
-    /// Disable a plugin — removes its MCP servers from orbit sessions
+    /// Disable a plugin — removes its MCP servers from the current scope
     Disable {
         /// Plugin name
         name: String,
+        /// Target scope level (default: deepest scope detected from cwd; falls back to global)
+        #[arg(long, value_enum)]
+        scope: Option<ScopeLevel>,
     },
     /// Show detailed information about a plugin
     Info {
@@ -109,8 +121,8 @@ pub fn run(args: PluginsArgs) -> Result<()> {
     match args.command.unwrap_or(PluginsCommand::List) {
         PluginsCommand::List => list(),
         PluginsCommand::Install { name, method, yes } => install(&name, method.as_deref(), yes),
-        PluginsCommand::Enable { name } => enable(&name),
-        PluginsCommand::Disable { name } => disable(&name),
+        PluginsCommand::Enable { name, scope } => enable(&name, scope),
+        PluginsCommand::Disable { name, scope } => disable(&name, scope),
         PluginsCommand::Info { name } => info(&name),
         PluginsCommand::Wrap { name, engine } => wrap(&name, engine.as_deref()),
         PluginsCommand::Unwrap { name, engine } => unwrap_engine(&name, engine.as_deref()),
@@ -400,21 +412,10 @@ fn run_install(plugin: &Plugin, method: &InstallMethod) -> Result<()> {
 
 // ── enable ────────────────────────────────────────────────────────────────────
 
-fn enable(name: &str) -> Result<()> {
+fn enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
         bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
-
-    let mut state = PluginState::load();
-
-    if state.is_enabled(name) {
-        println!("  \x1b[32m✓\x1b[0m  {name} is already enabled.");
-        if plugin.has_mcp() {
-            let names: Vec<_> = plugin.mcp.iter().map(|m| m.name.as_str()).collect();
-            println!("     MCP: {}", names.join(", "));
-        }
-        return Ok(());
-    }
 
     if !plugin.is_installed() {
         println!("  \x1b[33m!\x1b[0m  {name} is not installed.");
@@ -424,26 +425,59 @@ fn enable(name: &str) -> Result<()> {
         println!();
     }
 
-    state.enable(name);
-    state.save()?;
-
-    if plugin.has_mcp() {
-        plugin::add_plugin_mcps(&plugin)?;
-        let instances = PluginInstances::load();
-        add_instance_mcps(&plugin, &instances)?;
-
-        let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
-        for r in instances.for_plugin(name) {
-            mcp_names.push(format!("{}-{}", name, r.name));
-        }
-        println!("  \x1b[32m●\x1b[0m  {name} enabled");
-        if !mcp_names.is_empty() {
-            println!("     MCP registered: {}", mcp_names.join(", "));
-        }
-        println!("     Config: {}", plugin::plugins_mcp_path().display());
-        println!("     Active in new orbit sessions.");
-    } else {
+    if !plugin.has_mcp() {
+        // No MCP — just track state globally and return.
+        let mut state = PluginState::load();
+        state.enable(name);
+        state.save()?;
         println!("  \x1b[32m✓\x1b[0m  {name} enabled.");
+        return Ok(());
+    }
+
+    let instances = PluginInstances::load();
+
+    // Try to resolve a scope from cwd (or from the explicit --scope flag).
+    // ScopeLevel::Global means "write to the global plugins.mcp.json".
+    let scope_result = resolve_write_scope(scope_override);
+
+    match scope_result {
+        Ok((Some(scope), level)) if level != ScopeLevel::Global => {
+            // Scope-targeted write — entries go into the scope's mcp.json.
+            let path = mcp_json_path(Some(&scope), level);
+            let entries = build_mcp_entries(&plugin, &instances)?;
+            let mcp_names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
+            for (entry_name, server) in entries {
+                write_mcp_entry(&path, &entry_name, server)?;
+            }
+            println!("  \x1b[32m●\x1b[0m  {name} enabled at {level}");
+            if !mcp_names.is_empty() {
+                println!("     MCP registered: {}", mcp_names.join(", "));
+            }
+            println!("     Config: {}", path.display());
+            println!("     Active in new orbit sessions for this scope.");
+        }
+        _ => {
+            // Global fallback — track plugin state + write to plugins.mcp.json.
+            let mut state = PluginState::load();
+            if state.is_enabled(name) {
+                println!("  \x1b[32m✓\x1b[0m  {name} is already enabled (global).");
+                return Ok(());
+            }
+            state.enable(name);
+            state.save()?;
+            plugin::add_plugin_mcps(&plugin)?;
+            add_instance_mcps(&plugin, &instances)?;
+            let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
+            for r in instances.for_plugin(name) {
+                mcp_names.push(format!("{}-{}", name, r.name));
+            }
+            println!("  \x1b[32m●\x1b[0m  {name} enabled (global)");
+            if !mcp_names.is_empty() {
+                println!("     MCP registered: {}", mcp_names.join(", "));
+            }
+            println!("     Config: {}", plugin::plugins_mcp_path().display());
+            println!("     Active in new orbit sessions.");
+        }
     }
 
     Ok(())
@@ -451,40 +485,62 @@ fn enable(name: &str) -> Result<()> {
 
 // ── disable ───────────────────────────────────────────────────────────────────
 
-fn disable(name: &str) -> Result<()> {
+fn disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     let Some(plugin) = plugin::find(name) else {
         bail!("plugin not found: {name}\nRun `orbit plugins list` to see available plugins.")
     };
 
-    let mut state = PluginState::load();
-
-    if !state.is_enabled(name) {
-        println!("  {name} is not enabled.");
+    if !plugin.has_mcp() {
+        let mut state = PluginState::load();
+        state.disable(name);
+        state.save()?;
+        println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
         return Ok(());
     }
 
-    state.disable(name);
-    state.save()?;
+    let instances = PluginInstances::load();
+    let scope_result = resolve_write_scope(scope_override);
 
-    if plugin.has_mcp() {
-        let instances = PluginInstances::load();
-        plugin::remove_plugin_mcps(&plugin)?;
-        remove_instance_mcps(&plugin, &instances)?;
-
-        let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
-        for r in instances.for_plugin(name) {
-            mcp_names.push(format!("{}-{}", name, r.name));
+    match scope_result {
+        Ok((Some(scope), level)) if level != ScopeLevel::Global => {
+            let path = mcp_json_path(Some(&scope), level);
+            let entries = build_mcp_entries(&plugin, &instances)?;
+            let mcp_names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
+            for (entry_name, _) in &entries {
+                remove_mcp_entry(&path, entry_name)?;
+            }
+            if mcp_names.is_empty() {
+                println!("  \x1b[32m✓\x1b[0m  {name} disabled at {level}.");
+            } else {
+                println!(
+                    "  \x1b[32m✓\x1b[0m  {name} disabled at {level} — MCP removed: {}",
+                    mcp_names.join(", ")
+                );
+            }
         }
-        if mcp_names.is_empty() {
-            println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
-        } else {
-            println!(
-                "  \x1b[32m✓\x1b[0m  {name} disabled — MCP removed: {}",
-                mcp_names.join(", ")
-            );
+        _ => {
+            let mut state = PluginState::load();
+            if !state.is_enabled(name) {
+                println!("  {name} is not enabled globally.");
+                return Ok(());
+            }
+            state.disable(name);
+            state.save()?;
+            plugin::remove_plugin_mcps(&plugin)?;
+            remove_instance_mcps(&plugin, &instances)?;
+            let mut mcp_names: Vec<String> = plugin.mcp.iter().map(|m| m.name.clone()).collect();
+            for r in instances.for_plugin(name) {
+                mcp_names.push(format!("{}-{}", name, r.name));
+            }
+            if mcp_names.is_empty() {
+                println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
+            } else {
+                println!(
+                    "  \x1b[32m✓\x1b[0m  {name} disabled — MCP removed: {}",
+                    mcp_names.join(", ")
+                );
+            }
         }
-    } else {
-        println!("  \x1b[32m✓\x1b[0m  {name} disabled.");
     }
 
     Ok(())

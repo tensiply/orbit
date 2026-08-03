@@ -357,7 +357,7 @@ fn detect_scope_required(scope_override: Option<ScopeLevel>) -> Result<OrbitScop
 
 /// Returns (scope, level) for write operations.
 /// For global scope, scope fields are unused (only global_config_dir is needed).
-fn resolve_write_scope(
+pub fn resolve_write_scope(
     scope_override: Option<ScopeLevel>,
 ) -> Result<(Option<OrbitScope>, ScopeLevel)> {
     match scope_override {
@@ -399,7 +399,7 @@ fn validate_level(scope: &OrbitScope, level: ScopeLevel) -> Result<()> {
     }
 }
 
-fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> PathBuf {
+pub fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> PathBuf {
     match level {
         ScopeLevel::Global => global_config_dir().join("orbit/mcps.json"),
         ScopeLevel::Tenant => scope
@@ -686,13 +686,13 @@ fn build_server_entry(
     obj
 }
 
-fn write_mcp_entry(path: &Path, name: &str, server: Value) -> Result<()> {
+pub fn write_mcp_entry(path: &Path, name: &str, server: Value) -> Result<()> {
     let mut val = read_mcp_file(path);
     val["mcpServers"][name] = server;
     write_mcp_file(path, &val)
 }
 
-fn remove_mcp_entry(path: &Path, name: &str) -> Result<()> {
+pub fn remove_mcp_entry(path: &Path, name: &str) -> Result<()> {
     if !path.is_file() {
         return Ok(());
     }
