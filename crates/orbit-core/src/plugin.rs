@@ -232,10 +232,19 @@ pub struct BasicAuthSpec {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstanceMcpTemplate {
-    /// URL template, e.g. `"{url}/mcp"`.
-    pub url: String,
+    // HTTP/SSE mode — mutually exclusive with command.
+    /// URL template, e.g. `"{url}/mcp"`. When set, generates an HTTP MCP entry.
+    pub url: Option<String>,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    // stdio mode — used when `url` is absent.
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Env vars injected into the MCP process. Values support `{var_name}` substitution.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
 }
 
 // ── instance state ────────────────────────────────────────────────────────────
@@ -606,17 +615,38 @@ pub fn add_instance_mcps(plugin: &Plugin, instances: &PluginInstances) -> Result
                 .encode(format!("{user}:{pass}"));
             all_vars.insert(ba.var.clone(), encoded);
         }
-        let url = substitute(&spec.mcp.url, &all_vars);
-        let mut entry = serde_json::json!({ "type": "http", "url": url });
-        if !spec.mcp.headers.is_empty() {
-            let headers: HashMap<String, String> = spec
-                .mcp
-                .headers
-                .iter()
-                .map(|(k, v)| (k.clone(), substitute(v, &all_vars)))
-                .collect();
-            entry["headers"] = serde_json::to_value(&headers)?;
-        }
+        let entry = if let Some(url_template) = &spec.mcp.url {
+            let url = substitute(url_template, &all_vars);
+            let mut e = serde_json::json!({ "type": "http", "url": url });
+            if !spec.mcp.headers.is_empty() {
+                let headers: HashMap<String, String> = spec
+                    .mcp
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), substitute(v, &all_vars)))
+                    .collect();
+                e["headers"] = serde_json::to_value(&headers)?;
+            }
+            e
+        } else {
+            let mut e = serde_json::json!({
+                "command": substitute(&spec.mcp.command, &all_vars),
+                "args": spec.mcp.args.iter().map(|a| substitute(a, &all_vars)).collect::<Vec<_>>(),
+            });
+            if !spec.mcp.env.is_empty() {
+                let env: HashMap<String, String> = spec
+                    .mcp
+                    .env
+                    .iter()
+                    .filter(|(_, v)| !substitute(v, &all_vars).is_empty())
+                    .map(|(k, v)| (k.clone(), substitute(v, &all_vars)))
+                    .collect();
+                if !env.is_empty() {
+                    e["env"] = serde_json::to_value(&env)?;
+                }
+            }
+            e
+        };
         servers.insert(format!("{}-{}", plugin.name, record.name), entry);
     }
 

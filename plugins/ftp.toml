@@ -1,0 +1,67 @@
+name = "ftp"
+description = "FTP/SFTP server access — browse, upload, download, and manage remote files via MCP"
+category = "dev"
+url = "https://github.com/alxspiker/mcp-server-ftp"
+
+[check]
+any_of = ["npx", "node"]
+
+[[install]]
+method = "npm"
+cmd = ["npm", "install", "-g", "mcp-server-ftp"]
+label = "npm (global)"
+
+[auth]
+hint = "Run `orbit plugins auth ftp` to add a server instance.\nCredentials are stored securely in the OS keychain.\n\nEach instance runs a local npx process connecting to the remote FTP/SFTP server.\nFor SFTP with key auth, place the private key at ~/.ssh/id_ed25519 (auto-detected)."
+
+[instance]
+
+[[instance.vars]]
+name = "host"
+description = "FTP/SFTP server hostname or IP (e.g. ftp.example.com)"
+secret = false
+
+[[instance.vars]]
+name = "protocol"
+description = "Protocol to use: ftp or sftp (default: ftp)"
+secret = false
+optional = true
+
+[[instance.vars]]
+name = "port"
+description = "Server port — leave blank for default (21 for FTP, 22 for SFTP)"
+secret = false
+optional = true
+
+[[instance.vars]]
+name = "user"
+description = "Username (leave blank for anonymous FTP)"
+secret = false
+optional = true
+
+[[instance.vars]]
+name = "password"
+description = "Password (leave blank for key-based SFTP or anonymous FTP)"
+secret = true
+optional = true
+
+[[instance.vars]]
+name = "secure"
+description = "Enable FTPS (explicit TLS): true or false (default: false, FTP only)"
+secret = false
+optional = true
+
+[instance.mcp]
+command = "npx"
+args = ["-y", "mcp-server-ftp"]
+
+[instance.mcp.env]
+FTP_HOST = "{host}"
+FTP_PROTOCOL = "{protocol}"
+FTP_PORT = "{port}"
+FTP_USER = "{user}"
+FTP_PASSWORD = "{password}"
+FTP_SECURE = "{secure}"
+
+[context]
+prompt = "You have access to an FTP/SFTP server via MCP. You can browse directories, download and upload files, create and delete directories, rename and move files, and edit file content in place. When the user asks about remote files or FTP/SFTP operations, use the FTP MCP tools."
