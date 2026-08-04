@@ -1053,30 +1053,37 @@ pub fn spawn_plugin_executor(
         "executor command must not be empty"
     );
 
-    let mut cmd = Command::new("tmux");
-    cmd.arg("new-session")
-        .arg("-d")
-        .arg("-s")
-        .arg(session_name)
-        .arg("--")
-        .arg(&rendered_cmd[0]);
+    // Run the command directly (no tmux) so the output can be captured
+    // reliably. tmux pipe-pane races with fast-exiting commands (e.g. `ls`).
+    let mut cmd = Command::new(&rendered_cmd[0]);
     for arg in rendered_cmd.iter().skip(1) {
         cmd.arg(arg);
     }
     for (k, v) in orbit_env {
         cmd.env(k, v);
     }
-    cmd.current_dir(work_dir);
+    cmd.current_dir(work_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
-    let status = cmd.status()?;
-    if !status.success() {
-        anyhow::bail!("failed to create plugin-executor tmux session '{session_name}'");
-    }
+    let child = cmd.spawn()?;
+    let pid = child.id();
 
-    // PID 0 is not a valid process on Linux (/proc/0 doesn't exist), so
-    // is_pid_alive(0) → false. This handles the race where a fast command
-    // exits before tmux_pane_pid can query the pane.
-    let pid = tmux_pane_pid(session_name).unwrap_or(0);
+    // Capture stdout+stderr to the supervisor's log file in a background
+    // thread. The 5-second supervisor tick gives plenty of time for this
+    // to complete before capture_node_output is called.
+    let log_path = std::env::temp_dir()
+        .join("orbit-plan-nodes")
+        .join(format!("{session_name}.log"));
+    let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(std::path::Path::new("/tmp")));
+    std::thread::spawn(move || {
+        if let Ok(out) = child.wait_with_output() {
+            let mut content = out.stdout;
+            content.extend_from_slice(&out.stderr);
+            let _ = std::fs::write(&log_path, &content);
+        }
+    });
+
     let session = orbit_core::session::Session::new(
         pid,
         "shell",
@@ -1085,7 +1092,7 @@ pub fn spawn_plugin_executor(
         "",
         work_dir.to_path_buf(),
         false,
-        Some(session_name.to_string()),
+        None, // no tmux session — output captured directly to log file
     );
     if let Err(e) = session.save() {
         tracing::warn!("could not save plugin-executor session: {e}");

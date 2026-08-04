@@ -195,6 +195,18 @@ fn advance_plan(
                         timestamp: now_secs(),
                     },
                 );
+                // Flush output_summary as NodeOutput lines before NodeCompleted
+                // so the chat can display the result (needed for direct-exec nodes
+                // whose output was never streamed via pipe-pane).
+                if let Some(ref summary) = node.output_summary {
+                    for line in summary.lines() {
+                        let _ = event_tx.send(PlanStreamEvent::NodeOutput {
+                            plan_id: plan.id.clone(),
+                            node_id: node.id.clone(),
+                            line: line.to_string(),
+                        });
+                    }
+                }
                 let _ = event_tx.send(PlanStreamEvent::NodeCompleted {
                     plan_id: plan.id.clone(),
                     node_id: node.id.clone(),
