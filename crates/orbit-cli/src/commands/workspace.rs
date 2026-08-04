@@ -86,7 +86,7 @@ fn add(path: PathBuf, name: Option<String>, make_default: bool) -> Result<()> {
     println!("  Registered workspace: {ws_name}{default_marker}");
     println!("  Slug: {slug}");
     println!("  Path: {}", expanded.display());
-    println!("  Plans stored at: ~/.local/share/orbit/workspaces/{slug}/plans/");
+    println!("  Plans stored at: ~/.orbit/data/workspaces/{slug}/plans/");
     Ok(())
 }
 
@@ -195,7 +195,7 @@ fn remove(name: String) -> Result<()> {
     reg.save()?;
     println!("  Removed workspace: {name}");
     println!(
-        "  (Data in ~/.local/share/orbit/workspaces/{} was not deleted)",
+        "  (Data in ~/.orbit/data/workspaces/{} was not deleted)",
         slugify(&name)
     );
     Ok(())
@@ -228,7 +228,7 @@ fn count_json_files(dir: &std::path::Path) -> usize {
 }
 
 fn workspace_label_for_dir(dir: &std::path::Path, reg: &WorkspaceRegistry) -> String {
-    // dir is like ~/.local/share/orbit/workspaces/{slug}/plans or ~/.local/share/orbit/plans
+    // dir is like ~/.orbit/data/workspaces/{slug}/plans or ~/.orbit/data/plans
     let path_str = dir.to_string_lossy();
     if path_str.contains("/workspaces/") {
         // Extract slug from path

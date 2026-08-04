@@ -4,15 +4,10 @@ use std::{fs, path::PathBuf, process::Command};
 // ── paths ─────────────────────────────────────────────────────────────────────
 
 pub fn venv_dir() -> PathBuf {
-    // The venv is persistent across sessions. Orbit overrides XDG_DATA_HOME for
-    // session isolation, so we bypass it here and always resolve from the real
-    // home directory. ORBIT_DATA_HOME can override if explicitly set.
-    if let Ok(p) = std::env::var("ORBIT_DATA_HOME") {
-        return PathBuf::from(p).join("venv");
-    }
-    directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".local/share/orbit/venv"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/venv"))
+    // The venv is derived and rebuildable — it lives in cache. Orbit overrides
+    // XDG_DATA_HOME for session isolation, so we bypass it here and always
+    // resolve from orbit_cache_root which is stable.
+    crate::data_paths::orbit_cache_root().join("venv")
 }
 
 pub fn venv_bin(name: &str) -> PathBuf {

@@ -97,14 +97,7 @@ pub async fn fetch_latest_tag(client: &reqwest::Client) -> anyhow::Result<String
 // ── cache ─────────────────────────────────────────────────────────────────────
 
 fn cache_path() -> PathBuf {
-    let data_dir = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    };
-    data_dir.join("orbit").join("update_check")
+    orbit_core::data_paths::orbit_data_root().join("update_check")
 }
 
 fn cache_expired(cache: &Path) -> bool {

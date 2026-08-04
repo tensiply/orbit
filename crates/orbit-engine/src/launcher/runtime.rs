@@ -120,25 +120,44 @@ fn runtime_root(scope: &OrbitScope, engine: Engine) -> PathBuf {
     runtime_dir_for_slug(scope, engine.as_str())
 }
 
-/// Workspace-level runtime root — always anchored at ai_context_root.
+/// Workspace-level runtime root — shared across tenants (auth isolation).
 fn workspace_runtime_root(scope: &OrbitScope, engine: Engine) -> PathBuf {
     workspace_runtime_dir_for_slug(scope, engine.as_str())
 }
 
-/// Tenant-level runtime dir for a given engine slug.
+/// Tenant-level runtime dir: `~/.orbit/run/engines/<workspace>/<tenant>/<engine>/`
+///
+/// Ephemeral files generated before each session (mcp-config.json, context.md,
+/// hooks settings). Cleaned up on daemon start.
 pub fn runtime_dir_for_slug(scope: &OrbitScope, engine_slug: &str) -> PathBuf {
-    let suffix = format!(".{engine_slug}-runtime");
+    let ws = workspace_slug(scope);
+    let base = orbit_core::data_paths::orbit_run_dir()
+        .join("engines")
+        .join(ws);
     if scope.global_mode || scope.tenant.is_empty() {
-        scope.ai_context_root.join(&suffix)
+        base.join(engine_slug)
     } else {
-        scope.tenant_dir.join(&suffix)
+        base.join(&scope.tenant).join(engine_slug)
     }
 }
 
-/// Workspace-level runtime dir — always anchored at ai_context_root.
+/// Workspace-level runtime dir: `~/.orbit/run/engines/<workspace>/<engine>/`
+///
 /// Used for auth so that all tenants in a workspace share the same account.
 pub fn workspace_runtime_dir_for_slug(scope: &OrbitScope, engine_slug: &str) -> PathBuf {
+    let ws = workspace_slug(scope);
+    orbit_core::data_paths::orbit_run_dir()
+        .join("engines")
+        .join(ws)
+        .join(engine_slug)
+}
+
+/// Lowercase name of the workspace root dir (e.g. `~/BeFra` → `"befra"`).
+fn workspace_slug(scope: &OrbitScope) -> String {
     scope
-        .ai_context_root
-        .join(format!(".{engine_slug}-runtime"))
+        .workspace_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("global")
+        .to_lowercase()
 }

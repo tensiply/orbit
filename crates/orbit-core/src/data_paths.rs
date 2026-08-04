@@ -2,14 +2,43 @@ use std::path::PathBuf;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-pub fn orbit_data_root() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg).join("orbit")
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share/orbit"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/orbit"))
+/// Root orbit directory: `~/.orbit/`
+/// Override with `ORBIT_HOME` for testing or CI.
+pub fn orbit_home() -> PathBuf {
+    if let Ok(p) = std::env::var("ORBIT_HOME") {
+        return PathBuf::from(p);
     }
+    directories::BaseDirs::new()
+        .map(|b| b.home_dir().join(".orbit"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit"))
+}
+
+/// Persistent user data: `~/.orbit/data/`
+/// Override with `ORBIT_DATA_HOME` for testing or CI.
+pub fn orbit_data_root() -> PathBuf {
+    if let Ok(p) = std::env::var("ORBIT_DATA_HOME") {
+        return PathBuf::from(p);
+    }
+    orbit_home().join("data")
+}
+
+/// Derived / rebuildable cache: `~/.orbit/cache/`
+/// Override with `ORBIT_CACHE_HOME` for testing or CI.
+pub fn orbit_cache_root() -> PathBuf {
+    if let Ok(p) = std::env::var("ORBIT_CACHE_HOME") {
+        return PathBuf::from(p);
+    }
+    orbit_home().join("cache")
+}
+
+/// Semi-persistent machine state: `~/.orbit/state/`
+pub fn orbit_state_dir() -> PathBuf {
+    orbit_home().join("state")
+}
+
+/// Ephemeral runtime files (socket, pid, engine dirs): `~/.orbit/run/`
+pub fn orbit_run_dir() -> PathBuf {
+    orbit_home().join("run")
 }
 
 /// Derive a filesystem-safe slug from a workspace name.
@@ -118,18 +147,12 @@ pub fn workspace_document_rules_dir() -> Option<PathBuf> {
         .map(|root| PathBuf::from(root).join("document-rules"))
 }
 
-/// User document rule overrides: `~/.config/orbit/document-rules/`
+/// User document rule overrides: `~/.orbit/document-rules/`
 pub fn document_rules_dir() -> PathBuf {
-    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
-        return PathBuf::from(orbit_home).join("document-rules");
+    if let Ok(p) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(p).join("document-rules");
     }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg).join("orbit/document-rules")
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".config/orbit/document-rules"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/orbit/document-rules"))
-    }
+    orbit_home().join("document-rules")
 }
 
 /// Root for user-visible generated documents: `~/.orbit/documents/`
@@ -161,6 +184,11 @@ pub fn documents_index_path_for(workspace_name: Option<&str>) -> PathBuf {
             .join(slugify(name))
             .join("documents/index.jsonl"),
     }
+}
+
+/// Flat scope catalog: `~/.orbit/cache/scope-catalog.json`
+pub fn scope_catalog_path() -> PathBuf {
+    orbit_cache_root().join("scope-catalog.json")
 }
 
 // ── cross-workspace discovery ─────────────────────────────────────────────────
@@ -248,36 +276,39 @@ mod tests {
     fn plans_dir_none_is_legacy() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+            std::env::set_var("ORBIT_DATA_HOME", "/tmp/orbit-test-data");
         }
         assert_eq!(
             plans_dir_for(None),
-            PathBuf::from("/tmp/orbit-test-data/orbit/plans")
+            PathBuf::from("/tmp/orbit-test-data/plans")
         );
+        unsafe { std::env::remove_var("ORBIT_DATA_HOME") };
     }
 
     #[test]
     fn plans_dir_named_workspace() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+            std::env::set_var("ORBIT_DATA_HOME", "/tmp/orbit-test-data");
         }
         assert_eq!(
             plans_dir_for(Some("AI")),
-            PathBuf::from("/tmp/orbit-test-data/orbit/workspaces/ai/plans")
+            PathBuf::from("/tmp/orbit-test-data/workspaces/ai/plans")
         );
         assert_eq!(
             plans_dir_for(Some("BeFra")),
-            PathBuf::from("/tmp/orbit-test-data/orbit/workspaces/befra/plans")
+            PathBuf::from("/tmp/orbit-test-data/workspaces/befra/plans")
         );
+        unsafe { std::env::remove_var("ORBIT_DATA_HOME") };
     }
 
     #[test]
     fn empty_workspace_name_is_legacy() {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", "/tmp/orbit-test-data");
+            std::env::set_var("ORBIT_DATA_HOME", "/tmp/orbit-test-data");
         }
         assert_eq!(plans_dir_for(Some("")), plans_dir_for(None));
+        unsafe { std::env::remove_var("ORBIT_DATA_HOME") };
     }
 }

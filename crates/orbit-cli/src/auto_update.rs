@@ -1,7 +1,7 @@
 /// Background auto-update: governance git pull + binary install.
 ///
 /// Fire-and-forget — spawned as a tokio task. All failures are silent;
-/// errors are appended to `~/.local/share/orbit/orbit.log`.
+/// errors are appended to `~/.orbit/cache/orbit.log`.
 use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
 use std::{
     path::{Path, PathBuf},
@@ -209,30 +209,24 @@ async fn download_and_install_silent(
 
 // ── paths ─────────────────────────────────────────────────────────────────────
 
-fn data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg).join("orbit")
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share/orbit"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/orbit"))
-    }
+fn cache_dir() -> PathBuf {
+    orbit_core::data_paths::orbit_cache_root()
 }
 
 fn governance_cache_path() -> PathBuf {
-    data_dir().join("governance_sync")
+    cache_dir().join("governance_sync")
 }
 
 fn binary_cache_path() -> PathBuf {
-    data_dir().join("binary_auto_update")
+    cache_dir().join("binary_auto_update")
 }
 
 fn lock_path() -> PathBuf {
-    data_dir().join("update.lock")
+    cache_dir().join("update.lock")
 }
 
 fn pending_notification_path() -> PathBuf {
-    data_dir().join("pending_update")
+    cache_dir().join("pending_update")
 }
 
 // ── cache helpers ─────────────────────────────────────────────────────────────
@@ -273,7 +267,7 @@ fn write_pending_notification(version: &str) {
 }
 
 fn log_error(msg: &str) {
-    let log = data_dir().join("orbit.log");
+    let log = cache_dir().join("orbit.log");
     if let Some(parent) = log.parent() {
         let _ = std::fs::create_dir_all(parent);
     }

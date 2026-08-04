@@ -35,7 +35,7 @@ pub struct Plugin {
     #[serde(default)]
     pub executor: Option<ExecutorSpec>,
     /// When true, Python-based install/check/MCP use the orbit-managed venv
-    /// at `~/.local/share/orbit/venv/` instead of the system Python environment.
+    /// at `~/.orbit/data/venv/` instead of the system Python environment.
     #[serde(default)]
     pub use_orbit_venv: bool,
     /// Dynamic multi-instance spec.  When present, `orbit plugins auth` enters
@@ -249,7 +249,7 @@ pub struct InstanceMcpTemplate {
 
 // ── instance state ────────────────────────────────────────────────────────────
 
-/// Persisted at `~/.config/orbit/plugin-instances.toml`.
+/// Persisted at `~/.orbit/plugin-instances.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PluginInstances {
     #[serde(default)]
@@ -317,7 +317,7 @@ impl PluginInstances {
 // ── plugin state ──────────────────────────────────────────────────────────────
 
 /// Tracks which plugins are enabled (MCP servers active).
-/// Persisted at `~/.config/orbit/plugin-state.toml`.
+/// Persisted at `~/.orbit/plugin-state.toml`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PluginState {
     #[serde(default)]
@@ -460,7 +460,7 @@ impl Plugin {
 
 // ── loader ────────────────────────────────────────────────────────────────────
 
-/// Load all plugins: built-ins first, then user plugins (`~/.config/orbit/plugins/`).
+/// Load all plugins: built-ins first, then user plugins (`~/.orbit/plugins/`).
 /// A user plugin with the same name overrides the built-in.
 pub fn load_all() -> Vec<Plugin> {
     let mut plugins: Vec<Plugin> = Vec::new();
@@ -791,20 +791,7 @@ fn empty_mcp_json() -> serde_json::Value {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 pub fn user_config_dir() -> PathBuf {
-    // ORBIT_CONFIG_HOME is set by the launcher before it overrides XDG_CONFIG_HOME
-    // for session isolation. Prefer it so plugin state is always read from the real
-    // user config, not the session-scoped override.
-    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
-        return PathBuf::from(orbit_home).join("orbit");
-    }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".config"))
-            .unwrap_or_else(|| PathBuf::from("/"))
-    }
-    .join("orbit")
+    crate::data_paths::orbit_home()
 }
 
 fn user_plugins_dir() -> PathBuf {

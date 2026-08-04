@@ -30,7 +30,7 @@ pub struct WorkspaceRegistry {
 
 impl WorkspaceRegistry {
     pub fn path() -> PathBuf {
-        config_dir().join("orbit/workspaces.toml")
+        crate::data_paths::orbit_home().join("workspaces.toml")
     }
 
     pub fn load() -> Self {
@@ -133,18 +133,6 @@ impl WorkspaceRegistry {
             }
         }
         found
-    }
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-fn config_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".config"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
     }
 }
 

@@ -7,24 +7,14 @@ use serde::{Deserialize, Serialize};
 
 // ── socket path ───────────────────────────────────────────────────────────────
 
-/// `~/.local/share/orbit/orbit.sock`
+/// `~/.orbit/run/orbit.sock`
 pub fn socket_path() -> std::path::PathBuf {
-    xdg_data_dir().join("orbit/orbit.sock")
+    crate::data_paths::orbit_run_dir().join("orbit.sock")
 }
 
-/// `~/.local/share/orbit/orbitd.pid`
+/// `~/.orbit/run/orbitd.pid`
 pub fn pid_path() -> std::path::PathBuf {
-    xdg_data_dir().join("orbit/orbitd.pid")
-}
-
-fn xdg_data_dir() -> std::path::PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        std::path::PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-    }
+    crate::data_paths::orbit_run_dir().join("orbitd.pid")
 }
 
 // ── PlanStreamEvent ───────────────────────────────────────────────────────────

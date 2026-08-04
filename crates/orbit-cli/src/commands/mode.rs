@@ -28,18 +28,16 @@ pub enum ModeCommand {
 
 // ── persistence ───────────────────────────────────────────────────────────────
 
-fn orbit_data_dir() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".local/share/orbit"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit"))
+fn orbit_state_dir() -> PathBuf {
+    orbit_core::data_paths::orbit_state_dir()
 }
 
 fn mode_file() -> PathBuf {
-    orbit_data_dir().join("mode")
+    orbit_state_dir().join("mode")
 }
 
 fn dev_path_file() -> PathBuf {
-    orbit_data_dir().join("dev_path")
+    orbit_state_dir().join("dev_path")
 }
 
 pub fn current_mode() -> String {
@@ -71,7 +69,7 @@ fn write_dev_path(path: &std::path::Path) -> Result<()> {
 }
 
 fn ensure_data_dir() -> Result<()> {
-    fs::create_dir_all(orbit_data_dir())?;
+    fs::create_dir_all(orbit_state_dir())?;
     Ok(())
 }
 
