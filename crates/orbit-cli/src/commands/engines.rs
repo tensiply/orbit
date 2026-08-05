@@ -10,7 +10,7 @@ use std::{
 };
 
 use super::auth::{self, AuthStatus, detect_auth};
-use crate::output::truncate_desc;
+use crate::output::{bin_available, truncate_desc};
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -99,12 +99,7 @@ fn cmd_list() -> Result<()> {
                 cached_npm_version(&engine.npm_package)
             };
 
-            let ver_col = match &cached_latest {
-                Some(latest) if latest != &installed_ver && !installed_ver.starts_with('?') => {
-                    format!("v{installed_ver}")
-                }
-                _ => format!("v{installed_ver}"),
-            };
+            let ver_col = format!("v{installed_ver}");
             let update_tag = match &cached_latest {
                 Some(latest) if latest != &installed_ver && !installed_ver.starts_with('?') => {
                     format!("  \x1b[33m→ v{latest}\x1b[0m")
@@ -478,16 +473,6 @@ fn print_auth_hint(engine: &EngineEntry) {
 fn engine_not_found(name: &str) -> anyhow::Error {
     let names: Vec<String> = catalog::engines().into_iter().map(|e| e.name).collect();
     anyhow::anyhow!("unknown engine: {name}\n  Available: {}", names.join(", "))
-}
-
-fn bin_available(bin: &str) -> bool {
-    Command::new("which")
-        .arg(bin)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 fn confirm(prompt: &str) -> Result<bool> {

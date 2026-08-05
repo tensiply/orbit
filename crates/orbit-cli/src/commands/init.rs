@@ -103,19 +103,22 @@ fn scaffold(ai_root: &std::path::Path) -> Result<()> {
 
     let toml_path = ai_root.join("orbit.toml");
     if !toml_path.exists() {
-        std::fs::write(
-            &toml_path,
-            "# orbit workspace configuration\n# See: https://github.com/befraeloircorona/orbit\n",
-        )?;
+        std::fs::write(&toml_path, "# orbit workspace configuration\n")?;
     }
 
     println!("Scaffold created at {}", ai_root.display());
     println!();
-    println!("  tenants/     — place tenant configs here");
+    println!("  tenants/     — tenant configs go here");
     println!("  mcp.json     — global MCP servers");
     println!("  orbit.toml   — workspace configuration");
     println!();
-    println!("  Run `orbit launch` to start a session.");
+    println!("  Next steps:");
+    println!("  1. Create a tenant directory:");
+    println!("       mkdir -p tenants/<TENANT>");
+    println!("  2. Add an orbit.json to the tenant with your instructions:");
+    println!("       {{\"instructions\": [\"./source-of-truth/README.md\"]}}");
+    println!("  3. Launch a session:");
+    println!("       orbit launch");
 
     Ok(())
 }

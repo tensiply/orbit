@@ -4,6 +4,8 @@ use orbit_core::{catalog, catalog::EngineEntry, resolver};
 use orbit_engine::launcher::runtime;
 use std::{fs, process::Command};
 
+use crate::output::bin_available;
+
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Args)]
@@ -205,23 +207,26 @@ fn cmd_run_auth(name: &str) -> Result<()> {
         bail!("{} auth exited with non-zero status", engine.auth_cmd);
     }
 
-    // After successful auth, resolve the GitHub username from the stored token
-    // and cache it so dry-run can display it without a network call.
-    if let Ok(scope) = resolver::resolve_from_cwd() {
-        let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
-        let auth_file = workspace_runtime
-            .join("data")
-            .join("opencode")
-            .join("auth.json");
-        if auth_file.exists()
-            && let Some(username) = resolve_github_username(&auth_file)
-        {
-            let account_file = workspace_runtime
+    // Resolve and cache the GitHub username from opencode's OAuth token so
+    // dry-run can display it without a network call. Opencode-specific — other
+    // engines use different auth formats and don't produce an auth.json here.
+    if engine.name == "opencode" {
+        if let Ok(scope) = resolver::resolve_from_cwd() {
+            let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
+            let auth_file = workspace_runtime
                 .join("data")
                 .join("opencode")
-                .join("account.json");
-            let _ = fs::write(&account_file, format!("{{\"username\":\"{username}\"}}"));
-            println!("account:   {username}");
+                .join("auth.json");
+            if auth_file.exists()
+                && let Some(username) = resolve_github_username(&auth_file)
+            {
+                let account_file = workspace_runtime
+                    .join("data")
+                    .join("opencode")
+                    .join("account.json");
+                let _ = fs::write(&account_file, format!("{{\"username\":\"{username}\"}}"));
+                println!("account:   {username}");
+            }
         }
     }
 
@@ -261,16 +266,6 @@ fn resolve_github_username(auth_file: &std::path::Path) -> Option<String> {
 fn engine_not_found_err(name: &str) -> anyhow::Error {
     let names: Vec<String> = catalog::engines().into_iter().map(|e| e.name).collect();
     anyhow::anyhow!("unknown engine: {name}\n  Available: {}", names.join(", "))
-}
-
-fn bin_available(bin: &str) -> bool {
-    Command::new("which")
-        .arg(bin)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 fn home_dir() -> std::path::PathBuf {

@@ -15,7 +15,7 @@ use std::{
 
 use super::auth::{AuthStatus, detect_auth};
 use super::plugins::setup_plugins;
-use crate::output::truncate_desc;
+use crate::output::{bin_available, truncate_desc};
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
@@ -201,7 +201,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     };
 
     // ── build final config ────────────────────────────────────────────────────
-    let mut cfg = UserConfig::default();
+    // Start from the loaded config so fields not asked about (budget, plan_retention,
+    // planner, notifications) are preserved across re-runs.
+    let mut cfg = current.clone();
     cfg.user.name = username.clone();
     cfg.user.display_name = display_name.clone();
     cfg.workspace.ai_root = ai_root.clone();
@@ -261,12 +263,16 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     if !args.no_plugins && !args.yes {
         println!();
         setup_plugins(args.yes)?;
+    } else if args.yes && !args.no_plugins {
+        println!("  \x1b[2mPlugins skipped (--yes) — run `orbit plugins list` to install later.\x1b[0m");
     }
 
     // ── MCP configuration ─────────────────────────────────────────────────────
     if !args.no_mcps && !args.yes {
         println!();
         setup_mcps()?;
+    } else if args.yes && !args.no_mcps {
+        println!("  \x1b[2mMCPs skipped (--yes) — run `orbit mcp enable <name>` to configure later.\x1b[0m");
     }
 
     // ── built-in commands ────────────────────────────────────────────────────
@@ -278,11 +284,15 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     // ── next steps ────────────────────────────────────────────────────────────
     println!();
     if !ai_root.exists() {
-        println!("  \x1b[33m!\x1b[0m  AI root does not exist yet — to clone a governance repo:");
-        println!("     orbit init <governance-url>");
+        println!("  \x1b[33m!\x1b[0m  AI root does not exist yet:");
+        println!("     orbit init <governance-url>    clone a governance repo");
+        println!("     orbit init --scaffold           create a local-only structure");
     } else {
         println!("  \x1b[32m✓\x1b[0m  ready  ·  run `orbit launch` to start a session");
     }
+    println!();
+    println!("  \x1b[2mshell integration\x1b[0m   eval \"$(orbit shell-init)\"  →  add to ~/.zshrc or ~/.bashrc");
+    println!("  \x1b[2mtab completions\x1b[0m     orbit completions install");
     println!();
 
     Ok(())
@@ -505,12 +515,8 @@ fn setup_mcps() -> Result<()> {
         mcp_config.insert(mcp.name.clone(), entry);
     }
 
-    // Write to ~/.config/orbit/mcps.json
-    let config_dir = orbit_core::user_config::UserConfig::path()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let mcps_path = config_dir.join("mcps.json");
+    // Write to ~/.orbit/mcps.json — same path used by `orbit mcp enable --scope global`
+    let mcps_path = orbit_core::data_paths::orbit_home().join("mcps.json");
     let existing: HashMap<String, serde_json::Value> = if mcps_path.exists() {
         serde_json::from_str(&fs::read_to_string(&mcps_path)?).unwrap_or_default()
     } else {
@@ -558,16 +564,6 @@ fn setup_commands() {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
-
-fn bin_available(bin: &str) -> bool {
-    Command::new("which")
-        .arg(bin)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
 
 fn ask(question: &str, default: &str) -> Result<String> {
     print!("  {question} [{default}]: ");

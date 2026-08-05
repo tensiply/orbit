@@ -84,8 +84,8 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
 
         let Some(binary_url) = ws_cfg.binary_url_for_platform() else {
             println!();
-            println!("  No binary update URL configured.");
-            println!("  (Admin: set `update.binary_url` in <ai_root>/orbit.toml)");
+            println!("  \x1b[33m!\x1b[0m  binary update skipped — no download URL configured");
+            println!("     set \x1b[2mupdate.binary_url\x1b[0m in <ai_root>/orbit.toml to enable auto-updates");
             return Ok(());
         };
 
@@ -123,10 +123,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         let checksums_url = binary_url
             .rsplit_once('/')
             .map(|(base, _)| format!("{base}/checksums.txt"))
-            .unwrap_or_else(|| {
-                "https://github.com/befraeloircorona/orbit/releases/latest/download/checksums.txt"
-                    .to_string()
-            });
+            .unwrap_or_else(|| format!("{binary_url}/checksums.txt"));
 
         if args.dry_run {
             println!();

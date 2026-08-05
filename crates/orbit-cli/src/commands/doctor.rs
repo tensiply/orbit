@@ -134,32 +134,55 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
 
     println!();
 
-    // ── completions ───────────────────────────────────────────────────────────
-    section("completions");
     let shell_bin = std::env::var("SHELL").unwrap_or_default();
     let shell_name = shell_bin.split('/').next_back().unwrap_or("").to_string();
     let home = directories::BaseDirs::new()
         .map(|b| b.home_dir().to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+
+    // ── completions ───────────────────────────────────────────────────────────
+    section("completions");
     let comp_path = match shell_name.as_str() {
         "bash" => Some(home.join(".local/share/bash-completion/completions/orbit")),
         "zsh" => Some(home.join(".local/share/zsh/site-functions/_orbit")),
         "fish" => Some(home.join(".config/fish/completions/orbit.fish")),
         _ => None,
     };
-    if let Some(path) = comp_path {
+    if let Some(path) = &comp_path {
         check(
             &format!("{shell_name} completions  {}", path.display()),
-            if path.exists() {
-                Ok(())
-            } else {
-                Err("not installed")
-            },
+            if path.exists() { Ok(()) } else { Err("not installed") },
             Some("Run: orbit completions install"),
         );
     } else {
         println!(
             "  {} shell: {} (install manually with: orbit completions print <shell>)",
+            dim("?"),
+            shell_name
+        );
+    }
+    println!();
+
+    // ── shell integration ─────────────────────────────────────────────────────
+    section("shell integration");
+    let shell_rc = match shell_name.as_str() {
+        "bash" => Some(home.join(".bashrc")),
+        "zsh" => Some(home.join(".zshrc")),
+        "fish" => Some(home.join(".config/fish/config.fish")),
+        _ => None,
+    };
+    if let Some(rc) = &shell_rc {
+        let integrated = std::fs::read_to_string(rc)
+            .map(|c| c.contains("orbit shell-init"))
+            .unwrap_or(false);
+        check(
+            &format!("{shell_name} rc  {}", rc.display()),
+            if integrated { Ok(()) } else { Err("orbit shell-init not found") },
+            Some("Add to your shell profile: eval \"$(orbit shell-init)\""),
+        );
+    } else {
+        println!(
+            "  {} shell: {} (add eval \"$(orbit shell-init)\" to your shell profile manually)",
             dim("?"),
             shell_name
         );

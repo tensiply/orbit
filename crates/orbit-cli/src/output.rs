@@ -1,3 +1,13 @@
+pub fn bin_available(bin: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(bin)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 pub fn truncate_desc(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
