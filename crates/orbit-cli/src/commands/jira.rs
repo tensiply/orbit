@@ -49,7 +49,7 @@ fn run_status() -> Result<()> {
     let orgs = load_orgs();
     if orgs.is_empty() {
         println!("  Jira · no orgs configured");
-        println!("  Add orgs to: ~/.config/orbit/plugins/jira/orgs.toml");
+        println!("  Add orgs to: ~/.orbit/plugins/jira/orgs.toml");
         println!();
         println!("  Example:");
         println!("    [[orgs]]");

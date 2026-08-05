@@ -653,9 +653,7 @@ fn dispatch_node(
             })?;
 
             // Find the rendered mcp.json for this scope
-            let mcp_config_path = orbit_scope
-                .work_dir
-                .join(".local/share/orbit")
+            let mcp_config_path = orbit_core::data_paths::orbit_data_root()
                 .join(format!("mcp-{node_id}.json"));
 
             // Try scope-rendered config first, fall back to the runtime config dir

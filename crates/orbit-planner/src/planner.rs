@@ -178,14 +178,7 @@ fn default_retry() -> u8 {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn user_prompt_path() -> PathBuf {
-    let base = std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-        });
-    base.join("orbit/planner.md")
+    orbit_core::data_paths::orbit_home().join("planner.md")
 }
 
 pub fn build_system_prompt(cfg: &PlannerConfig) -> String {

@@ -304,14 +304,7 @@ fn discover_catalog(shared: &Path, local: &Path) -> Vec<(String, Option<String>)
 }
 
 fn user_commands_dir() -> PathBuf {
-    std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_default()
-        })
-        .join("orbit/commands")
+    orbit_core::data_paths::orbit_home().join("commands")
 }
 
 /// Extract `description:` from a command file on disk.

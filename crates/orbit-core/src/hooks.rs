@@ -32,15 +32,7 @@ struct HooksFile {
 // ── I/O ───────────────────────────────────────────────────────────────────────
 
 fn hooks_path() -> PathBuf {
-    // Read ORBIT_CONFIG_HOME which orbit sets before overriding XDG_CONFIG_HOME
-    let base = std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-        });
-    base.join("orbit/hooks.toml")
+    crate::data_paths::orbit_home().join("hooks.toml")
 }
 
 pub fn load_hooks() -> Vec<PlanHook> {
@@ -97,29 +89,31 @@ mod tests {
 
     #[test]
     fn load_empty_returns_empty() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap());
+            std::env::set_var("ORBIT_HOME", tmp.path().to_str().unwrap());
         }
         let hooks = load_hooks();
+        unsafe { std::env::remove_var("ORBIT_HOME") };
         assert!(hooks.is_empty());
     }
 
     #[test]
     fn load_parses_hooks() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("orbit");
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut f = std::fs::File::create(dir.join("hooks.toml")).unwrap();
+        let mut f = std::fs::File::create(tmp.path().join("hooks.toml")).unwrap();
         writeln!(
             f,
             "[[hooks]]\nevent = \"pre_plan\"\ncommand = [\"echo\", \"hello\"]"
         )
         .unwrap();
         unsafe {
-            std::env::set_var("ORBIT_CONFIG_HOME", tmp.path().to_str().unwrap());
+            std::env::set_var("ORBIT_HOME", tmp.path().to_str().unwrap());
         }
         let hooks = load_hooks();
+        unsafe { std::env::remove_var("ORBIT_HOME") };
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].event, HookEvent::PrePlan);
     }

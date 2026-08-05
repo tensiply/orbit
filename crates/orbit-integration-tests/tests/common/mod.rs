@@ -31,10 +31,10 @@ impl TestHarness {
         let data_home = dir.path().join("data");
         std::fs::create_dir_all(&data_home).unwrap();
 
-        // Redirect all XDG data paths to our temp dir.
+        // Redirect all orbit data paths to our temp dir.
         // SAFETY: tests are serialized via #[serial] — no concurrent env reads.
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", &data_home);
+            std::env::set_var("ORBIT_DATA_HOME", &data_home);
         }
 
         let sock = dir.path().join("orbit-test.sock");
@@ -75,7 +75,10 @@ impl TestHarness {
 
     pub async fn shutdown(&self) {
         let _ = self.send(&Request::Shutdown).await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Clear ORBIT_DATA_HOME so any lingering background tasks don't write
+        // into the next test harness's temp dir after we return.
+        unsafe { std::env::remove_var("ORBIT_DATA_HOME") };
     }
 
     #[allow(dead_code)]
@@ -86,7 +89,7 @@ impl TestHarness {
     /// Write a `Plan` JSON directly to the test data dir, bypassing the planner.
     #[allow(dead_code)]
     pub fn write_plan(&self, plan: &Plan) -> Result<()> {
-        let plans_dir = self.dir.path().join("data/orbit/plans");
+        let plans_dir = self.dir.path().join("data/plans");
         std::fs::create_dir_all(&plans_dir)?;
         let path = plans_dir.join(format!("{}.json", plan.id));
         std::fs::write(path, serde_json::to_string_pretty(plan)?)?;

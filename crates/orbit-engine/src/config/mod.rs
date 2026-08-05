@@ -35,13 +35,13 @@ impl MergedConfig {
     /// Resolve secret prefixes (`secret://`, `keychain://`, `env://`, `file://`, `$VAR`)
     /// in every MCP server's `environment` and `headers` maps.
     /// Call this once, right before rendering to the engine config format.
-    pub fn resolve_mcp_secrets(&mut self) {
+    pub fn resolve_mcp_secrets(&mut self, workspace_slug: Option<&str>) {
         for server in self.mcp.values_mut() {
             for v in server.environment.values_mut() {
-                *v = orbit_core::secrets::resolve(v);
+                *v = orbit_core::secrets::resolve_scoped(v, workspace_slug);
             }
             for v in server.headers.values_mut() {
-                *v = orbit_core::secrets::resolve(v);
+                *v = orbit_core::secrets::resolve_scoped(v, workspace_slug);
             }
         }
     }
@@ -62,7 +62,8 @@ pub struct ScopeReport {
     pub mcp_layers: Vec<LayerEntry>,
     pub agent_overlay_dirs: Vec<LayerEntry>,
     pub instructions: Vec<(PathBuf, bool)>,
-    pub mcp_servers: Vec<(String, Vec<String>)>,
+    /// (name, command/url tokens, source layer label)
+    pub mcp_servers: Vec<(String, Vec<String>, String)>,
     pub env_vars: Vec<(String, String)>,
     /// Commands that will be materialized: (name, source label).
     pub commands: Vec<(String, String)>,
@@ -311,7 +312,69 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         .map(|p| (shorten_path(&home, p), p.is_file()))
         .collect();
 
-    let mut mcp_servers: Vec<(String, Vec<String>)> = merged
+    // Build source attribution: scan each mcp.json layer in priority order (last wins).
+    // This mirrors the load_mcp_layers order so the label reflects where each server
+    // was last defined — useful for dry-run debugging.
+    let mcp_source = {
+        let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        let scan = |path: &std::path::Path| -> Vec<String> {
+            let Ok(text) = std::fs::read_to_string(path) else { return vec![] };
+            let Ok(val) = jsonc::parse(&text) else { return vec![] };
+            val.get("mcpServers")
+                .and_then(|s| s.as_object())
+                .map(|m| m.keys().cloned().collect())
+                .unwrap_or_default()
+        };
+
+        // catalog (~/.orbit/mcps.json) and plugins (~/.orbit/plugins.mcp.json)
+        for name in scan(&orbit_core::data_paths::orbit_home().join("mcps.json")) {
+            map.insert(name, "catalog".into());
+        }
+        for name in scan(&orbit_core::data_paths::orbit_home().join("plugins.mcp.json")) {
+            map.insert(name, "plugins".into());
+        }
+        // global AI root workspace mcp.json
+        let global = scope.global_ai_root.as_path();
+        let ws = scope.ai_context_root.as_path();
+        for name in scan(&global.join("mcp.json")) {
+            map.insert(name, "global".into());
+        }
+        if ws != global {
+            for name in scan(&ws.join("mcp.json")) {
+                map.insert(name, "workspace".into());
+            }
+        }
+        if !scope.global_mode {
+            // tenant
+            let tp = ws.join("tenants").join(&scope.tenant).join("mcp.json");
+            for name in scan(&tp) {
+                map.insert(name, format!("tenant:{}", scope.tenant));
+            }
+            if !scope.project.is_empty() {
+                let pp = ws
+                    .join("tenants").join(&scope.tenant)
+                    .join("projects").join(&scope.project)
+                    .join("mcp.json");
+                for name in scan(&pp) {
+                    map.insert(name, format!("project:{}", scope.project));
+                }
+                if !scope.repository.is_empty() {
+                    let rp = ws
+                        .join("tenants").join(&scope.tenant)
+                        .join("projects").join(&scope.project)
+                        .join("repositories").join(&scope.repository)
+                        .join("mcp.json");
+                    for name in scan(&rp) {
+                        map.insert(name, format!("repo:{}", scope.repository));
+                    }
+                }
+            }
+        }
+        map
+    };
+
+    let mut mcp_servers: Vec<(String, Vec<String>, String)> = merged
         .mcp
         .iter()
         .map(|(name, srv)| {
@@ -320,7 +383,11 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
             } else {
                 srv.command.clone()
             };
-            (name.clone(), display)
+            let source = mcp_source
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| "inline".into());
+            (name.clone(), display, source)
         })
         .collect();
     mcp_servers.sort_by(|a, b| a.0.cmp(&b.0));
@@ -464,6 +531,12 @@ pub fn load(scope: &OrbitScope, engine: Engine) -> Result<MergedConfig> {
     // Load MCP from mcp.json files at each layer
     load_mcp_layers(scope, &mut cfg.mcp);
 
+    // Re-apply inline MCPs from the global AI root so they win over everything,
+    // including scope-level mcp.json files (which use "more-specific-wins" order).
+    // load_mcp_layers runs after step 3, so without this step a repo mcp.json entry
+    // would silently override a global orbit.json inline MCP.
+    apply_global_root_inline_mcp(&mut cfg.mcp, &scope.global_ai_root, engine);
+
     Ok(cfg)
 }
 
@@ -501,7 +574,7 @@ fn merge_value_into(
     cfg: &mut MergedConfig,
     val: serde_json::Value,
     source_path: &Path,
-    engine: Engine,
+    _engine: Engine,
 ) {
     let Some(obj) = val.as_object() else { return };
     let base_dir = source_path.parent().unwrap_or(Path::new("."));
@@ -546,17 +619,9 @@ fn merge_value_into(
                     }
                 }
             }
-            "mcp" => {
-                if let Some(servers) = value.as_object() {
-                    for (name, server) in servers {
-                        if let Some(normalized) = mcp::normalize(base_dir, server) {
-                            cfg.mcp.insert(name.clone(), normalized);
-                        }
-                    }
-                }
-            }
-            // Gemini uses mcpServers instead of mcp
-            "mcpServers" if engine == Engine::Gemini => {
+            // orbit/opencode format: `"mcp": { ... }`
+            // All engines also recognise `"mcpServers"` (Gemini/Claude/native format)
+            "mcp" | "mcpServers" => {
                 if let Some(servers) = value.as_object() {
                     for (name, server) in servers {
                         if let Some(normalized) = mcp::normalize(base_dir, server) {
@@ -573,6 +638,37 @@ fn merge_value_into(
 }
 
 /// Load MCP from `mcp.json` files at every scope layer (shared + local pattern).
+/// Re-apply inline `mcp`/`mcpServers` entries from the global AI root's config file,
+/// overwriting any same-named entries that `load_mcp_layers` may have introduced.
+///
+/// `load_mcp_layers` follows "more-specific-wins" order (repo beats global), which
+/// would otherwise silently override MCPs defined inline in the global orbit.json.
+/// This call restores the "global always wins" invariant for inline MCPs.
+fn apply_global_root_inline_mcp(
+    target: &mut HashMap<String, McpServer>,
+    global_root: &Path,
+    engine: Engine,
+) {
+    for candidate in config_candidates(engine) {
+        let path = global_root.join(candidate);
+        if !path.is_file() {
+            continue;
+        }
+        let val = jsonc::load_file(&path);
+        let Some(obj) = val.as_object() else { return };
+        for key in ["mcp", "mcpServers"] {
+            if let Some(servers) = obj.get(key).and_then(|v| v.as_object()) {
+                for (name, server) in servers {
+                    if let Some(normalized) = mcp::normalize(global_root, server) {
+                        target.insert(name.clone(), normalized);
+                    }
+                }
+            }
+        }
+        return; // only the highest-priority config file in global_root
+    }
+}
+
 fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) {
     // Catalog MCPs configured via `orbit setup` or `orbit mcp enable` — lowest priority baseline.
     let catalog_mcp = dirs_global_config().join("orbit/mcps.json");
@@ -803,5 +899,144 @@ mod tests {
         // The instruction path should be absolute (resolved from cfg.json's dir)
         assert!(cfg.instructions[0].is_absolute());
         assert_eq!(cfg.instructions[0], tmp.path().join("README.md"));
+    }
+
+    // ── BUG 1 regression: mcpServers recognized for all engines ─────────────────
+
+    #[test]
+    fn mcp_servers_key_recognized_for_claude() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "cfg.json",
+            r#"{ "mcpServers": { "gh": { "command": "gh", "args": ["mcp", "serve"] } } }"#,
+        );
+        let mut cfg = MergedConfig::default();
+        merge_file_into(&mut cfg, &tmp.path().join("cfg.json"), Engine::Claude);
+        assert!(cfg.mcp.contains_key("gh"), "mcpServers must be parsed for Claude");
+    }
+
+    #[test]
+    fn mcp_servers_key_recognized_for_opencode() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "cfg.json",
+            r#"{ "mcpServers": { "srv": { "command": "npx", "args": ["-y", "mcp-server"] } } }"#,
+        );
+        let mut cfg = MergedConfig::default();
+        merge_file_into(&mut cfg, &tmp.path().join("cfg.json"), Engine::Opencode);
+        assert!(cfg.mcp.contains_key("srv"), "mcpServers must be parsed for OpenCode");
+    }
+
+    #[test]
+    fn mcp_and_mcp_servers_both_loaded_last_wins() {
+        // A config with both keys — `mcpServers` is processed after `mcp` (map iteration
+        // order), but both must contribute non-colliding entries.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "cfg.json",
+            r#"{
+                "mcp": { "a": { "command": "bin-a" } },
+                "mcpServers": { "b": { "command": "bin-b" } }
+            }"#,
+        );
+        let mut cfg = MergedConfig::default();
+        merge_file_into(&mut cfg, &tmp.path().join("cfg.json"), Engine::Claude);
+        assert!(cfg.mcp.contains_key("a"));
+        assert!(cfg.mcp.contains_key("b"));
+    }
+
+    // ── BUG 4 regression: global root inline MCPs win over scope mcp.json files ─
+
+    #[test]
+    fn global_inline_mcp_wins_over_repo_mcp_json() {
+        use orbit_core::context::OrbitScope;
+
+        let tmp = TempDir::new().unwrap();
+        let global_root = tmp.path().join("global");
+        let ws_root = tmp.path().join("ws");
+        let repo_dir = ws_root
+            .join("tenants").join("T")
+            .join("projects").join("P")
+            .join("repositories").join("R");
+        std::fs::create_dir_all(&global_root).unwrap();
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        // Global orbit.json defines "shared-server" with command "global-cmd"
+        write(
+            &global_root,
+            "orbit.json",
+            r#"{ "mcp": { "shared-server": { "command": "global-cmd" } } }"#,
+        );
+        // Repo mcp.json redefines the same server with a different command
+        std::fs::write(
+            repo_dir.join("mcp.json"),
+            r#"{ "mcpServers": { "shared-server": { "command": "repo-cmd" } } }"#,
+        ).unwrap();
+
+        let scope = OrbitScope {
+            global_ai_root: global_root.clone(),
+            ai_context_root: ws_root.clone(),
+            workspace_root: ws_root.clone(),
+            tenant_dir: ws_root.join("tenants").join("T"),
+            code_root: ws_root.clone(),
+            work_dir: ws_root.clone(),
+            tenant: "T".into(),
+            project: "P".into(),
+            repository: "R".into(),
+            global_mode: false,
+        };
+
+        let cfg = load(&scope, Engine::Claude).unwrap();
+        assert_eq!(
+            cfg.mcp["shared-server"].command[0], "global-cmd",
+            "global orbit.json inline MCP must win over repo mcp.json"
+        );
+    }
+
+    #[test]
+    fn apply_global_root_inline_mcp_is_noop_when_no_overlap() {
+        use orbit_core::context::OrbitScope;
+
+        let tmp = TempDir::new().unwrap();
+        let global_root = tmp.path().join("global");
+        let ws_root = tmp.path().join("ws");
+        let repo_dir = ws_root
+            .join("tenants").join("T")
+            .join("projects").join("P")
+            .join("repositories").join("R");
+        std::fs::create_dir_all(&global_root).unwrap();
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        // Different server names — no overlap
+        write(
+            &global_root,
+            "orbit.json",
+            r#"{ "mcp": { "global-only": { "command": "global-cmd" } } }"#,
+        );
+        std::fs::write(
+            repo_dir.join("mcp.json"),
+            r#"{ "mcpServers": { "repo-only": { "command": "repo-cmd" } } }"#,
+        ).unwrap();
+
+        let scope = OrbitScope {
+            global_ai_root: global_root.clone(),
+            ai_context_root: ws_root.clone(),
+            workspace_root: ws_root.clone(),
+            tenant_dir: ws_root.join("tenants").join("T"),
+            code_root: ws_root.clone(),
+            work_dir: ws_root.clone(),
+            tenant: "T".into(),
+            project: "P".into(),
+            repository: "R".into(),
+            global_mode: false,
+        };
+
+        let cfg = load(&scope, Engine::Claude).unwrap();
+        // Both servers are present (no clobbering when names don't overlap)
+        assert!(cfg.mcp.contains_key("global-only"));
+        assert!(cfg.mcp.contains_key("repo-only"));
     }
 }

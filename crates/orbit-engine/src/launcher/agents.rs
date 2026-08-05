@@ -194,15 +194,11 @@ fn build_opencode(
 
     // ── global opencode skills → runtime XDG config dir ──────────────────────
     // Orbit overrides XDG_CONFIG_HOME for session isolation, so opencode cannot
-    // find skills from ~/.config/opencode/skills/. Bridge them into the runtime
-    // config dir via symlink. ORBIT_CONFIG_HOME preserves the real config path.
-    let real_config = std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| PathBuf::from("/.config"))
-        });
+    // find skills from ~/.config/opencode/skills/. Bridge them by symlinking
+    // from the real home-based path (bypasses the XDG override).
+    let real_config = directories::BaseDirs::new()
+        .map(|b| b.home_dir().join(".config"))
+        .unwrap_or_else(|| PathBuf::from("/.config"));
     let global_opencode_skills = real_config.join("opencode/skills");
     if global_opencode_skills.is_dir() {
         let runtime_skills = runtime_dir.join("config/opencode/skills");
@@ -714,14 +710,7 @@ fn materialize_user_commands(
 }
 
 fn user_config_dir() -> PathBuf {
-    std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-        })
-        .join("orbit")
+    orbit_core::data_paths::orbit_home()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

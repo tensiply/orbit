@@ -19,8 +19,18 @@ const KEYRING_SERVICE: &str = "orbit";
 /// substitution) or leaves the placeholder unchanged (inline interpolation)
 /// so that a missing secret does not abort the launch.
 pub fn resolve(value: &str) -> String {
+    resolve_scoped(value, None)
+}
+
+/// Like `resolve()` but scopes `keychain://KEY` lookups to the workspace.
+///
+/// For `keychain://github-token` in workspace `befra`, tries `befra/github-token`
+/// first and falls back to the global `github-token` if not found.
+/// All other resolver forms are unaffected by the workspace slug.
+pub fn resolve_scoped(value: &str, workspace_slug: Option<&str>) -> String {
+    let slug = workspace_slug.filter(|s| !s.is_empty());
+
     if let Some(var) = value.strip_prefix('$') {
-        // Full substitution: $VAR (no braces) — but not ${VAR} handled below
         if !var.starts_with('{') {
             return resolve_env(var, value);
         }
@@ -32,18 +42,15 @@ pub fn resolve(value: &str) -> String {
         return resolve_file(path, value);
     }
     if let Some(key) = value.strip_prefix("keychain://") {
-        return resolve_keychain(key, value);
+        return resolve_keychain_scoped(key, value, slug);
     }
-    // Inline interpolation: replace all ${VAR} occurrences within the string
     if value.contains("${") {
-        return interpolate(value);
+        return interpolate_scoped(value, slug);
     }
     value.to_string()
 }
 
-/// Replace every `${VAR}` occurrence in `template` with the value of env var `VAR`.
-/// Unresolved placeholders are left unchanged.
-fn interpolate(template: &str) -> String {
+fn interpolate_scoped(template: &str, slug: Option<&str>) -> String {
     let mut result = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(start) = rest.find("${") {
@@ -52,18 +59,27 @@ fn interpolate(template: &str) -> String {
         if let Some(end) = rest.find('}') {
             let expr = &rest[..end];
             let value = if let Some(key) = expr.strip_prefix("keychain://") {
-                match keychain_get(key) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        tracing::warn!("keychain lookup failed for '{key}' (referenced as '${{{expr}}}')");
-                        format!("${{{expr}}}")
-                    }
+                // Try workspace-scoped key first
+                let scoped = slug.map(|s| keychain_get(&format!("{s}/{key}")));
+                match scoped.and_then(Result::ok) {
+                    Some(v) => v,
+                    None => match keychain_get(key) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            tracing::warn!(
+                                "keychain lookup failed for '{key}' (referenced as '${{{expr}}}')"
+                            );
+                            format!("${{{expr}}}")
+                        }
+                    },
                 }
             } else {
                 match std::env::var(expr) {
                     Ok(v) => v,
                     Err(_) => {
-                        tracing::warn!("env var '{expr}' not set (referenced as '${{{expr}}}')");
+                        tracing::warn!(
+                            "env var '{expr}' not set (referenced as '${{{expr}}}')"
+                        );
                         format!("${{{expr}}}")
                     }
                 }
@@ -71,7 +87,6 @@ fn interpolate(template: &str) -> String {
             result.push_str(&value);
             rest = &rest[end + 1..];
         } else {
-            // Unclosed ${ — emit as-is
             result.push_str("${");
         }
     }
@@ -125,13 +140,22 @@ fn resolve_file(path: &str, original: &str) -> String {
     }
 }
 
-fn resolve_keychain(key: &str, original: &str) -> String {
+fn resolve_keychain_scoped(key: &str, original: &str, slug: Option<&str>) -> String {
+    // Try workspace-scoped key first
+    if let Some(s) = slug {
+        let scoped = format!("{s}/{key}");
+        if let Ok(secret) = keychain_get(&scoped) {
+            return secret;
+        }
+    }
+    // Fall back to global key
     match keychain_get(key) {
         Ok(secret) => secret,
         Err(e) => {
+            let hint_key = slug.map(|s| format!("{s}/{key}")).unwrap_or_else(|| key.to_string());
             tracing::warn!(
                 "keychain lookup failed for '{key}': {e} (referenced as '{original}')\n  \
-                 hint: run `orbit secret set {key} <value>` to store it"
+                 hint: run `orbit secret set {hint_key} <value>` to store it"
             );
             String::new()
         }

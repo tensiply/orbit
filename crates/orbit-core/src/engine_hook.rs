@@ -165,14 +165,7 @@ pub fn install_scripts(hook: &EngineHookCatalog) -> Result<Vec<PathBuf>> {
 }
 
 fn user_config_dir() -> PathBuf {
-    std::env::var("ORBIT_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-        })
-        .join("orbit")
+    crate::data_paths::orbit_home()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

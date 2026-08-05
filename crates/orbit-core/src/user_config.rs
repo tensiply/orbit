@@ -8,7 +8,7 @@ use std::{
 
 // ── UserConfig ────────────────────────────────────────────────────────────────
 
-/// Personal configuration stored in `~/.config/orbit/config.toml`.
+/// Personal configuration stored in `~/.orbit/config.toml`.
 /// Created by `orbit setup` — one-time per machine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -219,7 +219,7 @@ impl Default for InstallSection {
 impl UserConfig {
     /// Returns the path to the user config file.
     pub fn path() -> PathBuf {
-        xdg_config_dir().join("orbit/config.toml")
+        orbit_config_dir().join("config.toml")
     }
 
     /// Load config from disk. Returns defaults if the file does not exist.
@@ -235,7 +235,7 @@ impl UserConfig {
         Ok(cfg)
     }
 
-    /// Persist config to `~/.config/orbit/config.toml`.
+    /// Persist config to `~/.orbit/config.toml`.
     pub fn save(&self) -> Result<()> {
         let path = Self::path();
         if let Some(parent) = path.parent() {
@@ -265,18 +265,12 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
-fn xdg_config_dir() -> PathBuf {
-    // ORBIT_CONFIG_HOME is set by the launcher before it overrides XDG_CONFIG_HOME
-    // for session isolation. Prefer it so that orbit commands run inside a session
-    // still find the real user config instead of the session's runtime config dir.
-    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
-        return PathBuf::from(orbit_home);
+fn orbit_config_dir() -> PathBuf {
+    // ORBIT_CONFIG_HOME overrides the default for testing or CI.
+    if let Ok(h) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(h);
     }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        home_dir().join(".config")
-    }
+    home_dir().join(".orbit")
 }
 
 /// Replace a leading `~` with the real home directory path.

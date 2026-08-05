@@ -139,7 +139,7 @@ pub fn launch(
     }
 
     // 3. Write config file (Gemini: runtime_dir already in instructions above)
-    config.resolve_mcp_secrets();
+    config.resolve_mcp_secrets(workspace_slug(scope).as_deref());
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -295,7 +295,6 @@ fn exec_with_tmux(
     // tmux update-environment does not include custom vars like XDG_CONFIG_HOME
     // or OPENCODE_CONFIG, so without -e the engine reads the wrong config.
     for var in &[
-        "ORBIT_CONFIG_HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_CACHE_HOME",
@@ -516,6 +515,15 @@ fn build_gemini_context(instructions: &[std::path::PathBuf], dest: &Path) -> Res
 
 // ── environment ───────────────────────────────────────────────────────────────
 
+fn workspace_slug(scope: &OrbitScope) -> Option<String> {
+    use orbit_core::data_paths::slugify;
+    scope
+        .workspace_root
+        .file_name()
+        .map(|n| slugify(&n.to_string_lossy()))
+        .filter(|s| !s.is_empty())
+}
+
 /// Set the environment variables the engine expects.
 ///
 /// # Safety
@@ -527,19 +535,9 @@ fn set_env(
     paths: &runtime::RuntimePaths,
     extra_env: &std::collections::HashMap<String, String>,
 ) {
+    let ws_slug = workspace_slug(scope);
     unsafe {
-        // Preserve the real config dir so orbit commands run inside this session
-        // can still find the user config (UserConfig checks ORBIT_CONFIG_HOME first).
-        if std::env::var("ORBIT_CONFIG_HOME").is_err() {
-            let real = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-                directories::BaseDirs::new()
-                    .map(|b| b.home_dir().join(".config"))
-                    .unwrap_or_else(|| std::path::PathBuf::from("/.config"))
-                    .to_string_lossy()
-                    .into_owned()
-            });
-            std::env::set_var("ORBIT_CONFIG_HOME", real);
-        }
+        // Orbit's own paths default to ~/.orbit/ regardless of XDG — no preservation needed.
         std::env::set_var("XDG_CONFIG_HOME", &paths.xdg_config_home);
         std::env::set_var("XDG_DATA_HOME", &paths.xdg_data);
         std::env::set_var("XDG_CACHE_HOME", &paths.xdg_cache);
@@ -585,15 +583,14 @@ fn set_env(
 
         // gh CLI uses GH_CONFIG_DIR if set, otherwise falls back to $XDG_CONFIG_HOME/gh.
         // Auth for gh is stored at workspace level (workspace_config_dir/gh). If that
-        // exists, point gh there; otherwise fall back to the real global config.
+        // exists, point gh there; otherwise fall back to the global ~/.orbit/gh.
         let gh_workspace = paths.workspace_config_dir.join("gh");
         if gh_workspace.exists() {
             std::env::set_var("GH_CONFIG_DIR", &gh_workspace);
         } else {
-            let real_config = std::env::var("ORBIT_CONFIG_HOME").unwrap_or_default();
-            let real_gh = std::path::PathBuf::from(&real_config).join("gh");
-            if real_gh.exists() {
-                std::env::set_var("GH_CONFIG_DIR", real_gh);
+            let global_gh = orbit_core::data_paths::orbit_home().join("gh");
+            if global_gh.exists() {
+                std::env::set_var("GH_CONFIG_DIR", global_gh);
             }
         }
 
@@ -601,7 +598,7 @@ fn set_env(
         // can override any of the above if needed. Values are resolved through
         // the secrets layer ($VAR, env://, file://, keychain://).
         for (k, v) in extra_env {
-            std::env::set_var(k, orbit_core::secrets::resolve(v));
+            std::env::set_var(k, orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref()));
         }
     }
 }
@@ -620,18 +617,9 @@ fn collect_session_env(
     paths: &runtime::RuntimePaths,
     extra_env: &std::collections::HashMap<String, String>,
 ) -> Vec<(String, String)> {
-    let real_config_home = std::env::var("ORBIT_CONFIG_HOME")
-        .or_else(|_| std::env::var("XDG_CONFIG_HOME"))
-        .unwrap_or_else(|_| {
-            directories::BaseDirs::new()
-                .map(|b| b.home_dir().join(".config"))
-                .unwrap_or_else(|| std::path::PathBuf::from("/.config"))
-                .to_string_lossy()
-                .into_owned()
-        });
+    let ws_slug = workspace_slug(scope);
 
     let mut env: Vec<(String, String)> = vec![
-        ("ORBIT_CONFIG_HOME".into(), real_config_home.clone()),
         (
             "XDG_CONFIG_HOME".into(),
             paths.xdg_config_home.to_string_lossy().into_owned(),
@@ -690,7 +678,7 @@ fn collect_session_env(
         Engine::Claude => {}
     }
 
-    // gh: prefer workspace-scoped auth; fall back to global if not configured.
+    // gh: prefer workspace-scoped auth; fall back to global ~/.orbit/gh.
     let gh_workspace = paths.workspace_config_dir.join("gh");
     if gh_workspace.exists() {
         env.push((
@@ -698,17 +686,17 @@ fn collect_session_env(
             gh_workspace.to_string_lossy().into_owned(),
         ));
     } else {
-        let real_gh = std::path::PathBuf::from(&real_config_home).join("gh");
-        if real_gh.exists() {
+        let global_gh = orbit_core::data_paths::orbit_home().join("gh");
+        if global_gh.exists() {
             env.push((
                 "GH_CONFIG_DIR".into(),
-                real_gh.to_string_lossy().into_owned(),
+                global_gh.to_string_lossy().into_owned(),
             ));
         }
     }
 
     for (k, v) in extra_env {
-        env.push((k.clone(), orbit_core::secrets::resolve(v)));
+        env.push((k.clone(), orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref())));
     }
 
     env
@@ -800,7 +788,7 @@ pub fn spawn_background(
     }
 
     // 3. Write config file (Gemini: runtime_dir already in instructions above)
-    config.resolve_mcp_secrets();
+    config.resolve_mcp_secrets(workspace_slug(scope).as_deref());
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 
@@ -957,7 +945,7 @@ pub fn spawn_plan_node(
     }
 
     // 3b. Write config + context files
-    config.resolve_mcp_secrets();
+    config.resolve_mcp_secrets(workspace_slug(scope).as_deref());
     let rendered = render::render(&config, engine);
     fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
 

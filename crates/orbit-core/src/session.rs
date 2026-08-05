@@ -59,9 +59,9 @@ impl Session {
         self.tmux_session.is_some()
     }
 
-    /// `~/.local/share/orbit/sessions/`
+    /// `~/.orbit/data/sessions/`
     pub fn sessions_dir() -> PathBuf {
-        xdg_data_dir().join("orbit/sessions")
+        crate::data_paths::orbit_data_root().join("sessions")
     }
 
     /// Persist the session file.
@@ -185,15 +185,6 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn xdg_data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".local/share"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
-}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 

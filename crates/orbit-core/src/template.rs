@@ -4,21 +4,8 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 // ── paths ─────────────────────────────────────────────────────────────────────
 
-fn xdg_config_dir() -> PathBuf {
-    if let Ok(orbit_home) = std::env::var("ORBIT_CONFIG_HOME") {
-        return PathBuf::from(orbit_home);
-    }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else {
-        directories::BaseDirs::new()
-            .map(|b| b.home_dir().join(".config"))
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-    }
-}
-
 pub fn templates_dir() -> PathBuf {
-    xdg_config_dir().join("orbit/plans")
+    crate::data_paths::orbit_home().join("plans")
 }
 
 pub fn template_path(name: &str) -> PathBuf {
