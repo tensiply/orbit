@@ -7,10 +7,11 @@ Referencia completa de todos los comandos de orbit, organizados por categoría.
 ## Setup y configuración inicial
 
 ### `orbit setup`
-Wizard de primera configuración: engines, plugins, directorio de instalación.
+Wizard de primera configuración: engines, plugins, directorio de instalación. En re-ejecución preserva la configuración existente (`budget`, `plan_retention`, etc.) sin sobreescribirla.
 ```bash
 orbit setup
 orbit setup --no-install    # omite la instalación de engines
+orbit setup --yes           # acepta todos los defaults sin interacción
 ```
 
 ### `orbit init`
@@ -21,7 +22,7 @@ orbit init --scaffold       # crea un AI root local sin repo remoto
 ```
 
 ### `orbit doctor`
-Diagnóstico completo del entorno. Verifica tmux, engines, AI root, daemon, instalación, plugins.
+Diagnóstico completo del entorno. Verifica tmux, engines, AI root, daemon, instalación, plugins y la integración con la shell (comprueba que `orbit shell-init` esté configurado en el rc file del shell activo).
 ```bash
 orbit doctor
 ```
@@ -94,9 +95,10 @@ orbit secret delete MY_SECRET
 Ver [Secretos y variables](Secretos-y-variables) para más detalles.
 
 ### `orbit context`
-Inspecciona las capas de contexto, instrucciones y MCP activos.
+Inspecciona las capas de contexto, instrucciones y MCP activos. Con `--dry-run` muestra de qué capa (global, workspace, tenant, plugins, catalog) proviene cada MCP server.
 ```bash
 orbit context
+orbit context --dry-run     # muestra atribución de capa por MCP server
 ```
 
 ### `orbit snapshot`
@@ -158,7 +160,9 @@ orbit mcp list
 orbit mcp enable <name>
 orbit mcp disable <name>
 orbit mcp info <name>
-orbit mcp list --scope global     # scope explícito: global|tenant|project|repo
+orbit mcp list --scope global       # scope explícito: global|workspace|tenant|project|repo
+orbit mcp enable <name> --scope workspace
+orbit mcp enable <nombre-custom>    # acepta MCPs no listados en el catálogo
 ```
 Ver [Servidores MCP](Servidores-MCP) para más detalles.
 
@@ -242,6 +246,14 @@ orbit update                      # actualiza governance + binario
 orbit update --force              # reinstala aunque ya sea la última versión
 ```
 
+### `orbit scope`
+Inspecciona y verifica la estructura de scopes registrados.
+```bash
+orbit scope list    # lista workspaces/tenants/proyectos/repos registrados
+orbit scope show    # detalle del scope actual (inferido desde cwd)
+orbit scope check   # verifica salud de la estructura de governance
+```
+
 ### `orbit workspace`
 Registra y gestiona configuraciones de múltiples workspaces.
 ```bash
@@ -256,12 +268,20 @@ Envía notificaciones de escritorio.
 orbit notify "mensaje"
 ```
 
+### `orbit shell-init`
+Imprime el script de inicialización de shell que configura el entorno orbit. Agregar a `~/.zshrc` o `~/.bashrc`:
+```bash
+eval "$(orbit shell-init)"
+```
+También instala el autocompletado y configura variables de entorno de sesión.
+
 ### `orbit completions`
-Genera scripts de autocompletado para la shell.
+Genera e instala scripts de autocompletado para la shell.
 ```bash
 orbit completions bash
 orbit completions zsh
 orbit completions fish
+orbit completions install   # instala automáticamente en el rc file del shell activo
 ```
 
 ### `orbit man`

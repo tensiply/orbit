@@ -26,7 +26,7 @@ orbit engines update gemini         # actualiza un engine específico
 orbit engines info claude           # descripción, versión instalada, estado de auth
 ```
 
-orbit detecta la versión instalada ejecutando `<bin> --version` y extrae el número de versión. La versión npm más reciente se cachea 24h en `~/.local/share/orbit/engine-versions/`.
+orbit detecta la versión instalada ejecutando `<bin> --version` y extrae el número de versión. La versión npm más reciente se cachea 24h en `~/.orbit/cache/engine-versions/`.
 
 ---
 

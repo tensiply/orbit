@@ -8,14 +8,18 @@ Los servidores MCP (Model Context Protocol) amplían las capacidades del engine 
 
 El orden de carga (de menor a mayor prioridad):
 
-1. MCPs de plugins habilitados (`~/.config/orbit/plugins.mcp.json`)
-2. Global (`~/AI/mcp.json`)
-3. Workspace (`~/WORKSPACE/AI/mcp.json`)
-4. Tenant
-5. Proyecto
-6. Repositorio
+| # | Capa | Archivo |
+|---|---|---|
+| 1 | Plugins | `~/.orbit/plugins.mcp.json` (generado por `orbit plugins enable`) |
+| 2 | Global | `~/AI/mcp.json` |
+| 3 | Workspace | `~/WORKSPACE/AI/mcp.json` |
+| 4 | Tenant | `…/tenants/TENANT/mcp.json` |
+| 5 | Proyecto | `…/projects/PROJECT/mcp.json` |
+| 6 | Repositorio | `…/repositories/REPO/mcp.json` |
 
 Los MCPs de scopes más específicos pueden sobrescribir los de scopes más generales. Todos los MCPs habilitados se ensamblan y pasan al engine al lanzar.
+
+Los `mcpServers` definidos directamente en `orbit.json` de cualquier scope también se cargan — funcionan para **todos los engines**, no solo OpenCode.
 
 ---
 
@@ -34,10 +38,23 @@ Por defecto, el scope se auto-detecta desde el directorio actual. Para especific
 
 ```bash
 orbit mcp list --scope global
+orbit mcp enable mi-servidor --scope workspace
 orbit mcp enable mi-servidor --scope tenant
 orbit mcp enable mi-servidor --scope project
 orbit mcp enable mi-servidor --scope repo
 ```
+
+Los niveles válidos son: `global`, `workspace`, `tenant`, `project`, `repo`.
+
+### MCPs custom (no en el catálogo)
+
+`orbit mcp enable` acepta cualquier MCP, no solo los del catálogo integrado. Para MCPs propios o de terceros, pásalos con la definición inline o habilítalos directamente:
+
+```bash
+orbit mcp enable mi-servidor-custom --scope workspace
+```
+
+Si el MCP no está en el catálogo, orbit pedirá los parámetros necesarios interactivamente.
 
 ---
 
@@ -50,7 +67,7 @@ orbit mcp list          # muestra catálogo completo con estado de habilitación
 orbit mcp info <name>   # detalles, variables requeridas, estado en cada capa
 ```
 
-Las variables marcadas como secretas en el catálogo muestran un hint para usar variables de entorno en lugar de guardar el valor en claro.
+Las variables marcadas como secretas en el catálogo muestran un hint para usar resolvers de keychain en lugar de guardar el valor en claro.
 
 ---
 
@@ -63,7 +80,7 @@ Las variables marcadas como secretas en el catálogo muestran un hint para usar 
       "command": "npx",
       "args": ["-y", "@mi-org/mi-mcp@latest"],
       "env": {
-        "MI_API_KEY": "secret://keychain/MI_KEY"
+        "MI_API_KEY": "keychain://MI_KEY"
       }
     },
     "mi-servidor-local": {
@@ -74,13 +91,16 @@ Las variables marcadas como secretas en el catálogo muestran un hint para usar 
 }
 ```
 
+El mismo formato funciona dentro del bloque `mcpServers` de `orbit.json`.
+
 ### Variables de entorno en MCPs
 
 Puedes usar los mismos resolvers que en `orbit.json`:
 
 | Prefijo | Descripción |
 |---|---|
-| `secret://keychain/<key>` | Lee del keychain del SO |
+| `keychain://<key>` | Lee del keychain del SO |
+| `secret://keychain/<key>` | Alias legado de `keychain://` |
 | `env://<VAR>` | Referencia una variable de entorno |
 | `file://<path>` | Lee de un archivo |
 
@@ -88,7 +108,7 @@ Puedes usar los mismos resolvers que en `orbit.json`:
 
 ## MCPs de plugins
 
-Cuando habilitas un plugin con `orbit plugins enable <name>`, sus servidores MCP se registran automáticamente en `~/.config/orbit/plugins.mcp.json` y se cargan en todas las sesiones como capa base.
+Cuando habilitas un plugin con `orbit plugins enable <name>`, sus servidores MCP se registran automáticamente en `~/.orbit/plugins.mcp.json` y se cargan en todas las sesiones como capa base.
 
 ```bash
 orbit plugins enable playwright     # registra @playwright/mcp en todas las sesiones
@@ -100,7 +120,16 @@ orbit plugins disable playwright    # elimina el MCP de las sesiones
 ## Inspeccionar MCPs activos
 
 ```bash
-orbit launch . --dry-run    # muestra todos los MCPs que se cargarían, por capa
-orbit context               # MCPs activos en el scope actual
+orbit context show          # MCPs activos con atribución de capa
+orbit context --dry-run     # muestra de qué capa (global, workspace, tenant:X, plugins...) viene cada MCP
+orbit launch . --dry-run    # reporte completo incluyendo MCPs
 orbit mcp list              # catálogo con estado de habilitación
+```
+
+`orbit context show` incluye una sección de MCP servers donde cada entrada indica su capa de origen, por ejemplo:
+
+```
+● github          npx @modelcontextprotocol/server-github    [workspace]
+● playwright      npx @playwright/mcp@latest                 [plugins]
+● mi-servidor     uvx mi-mcp-server                          [tenant:AIDEV]
 ```

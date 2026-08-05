@@ -109,6 +109,36 @@ El sistema de planes soporta plugins de executor que definen cómo se materializ
 
 ---
 
+## Chat TUI como interfaz principal
+
+La forma más directa de usar el planner es desde el Tab 0 (Chat) del TUI:
+
+```bash
+orbit        # abre el TUI, Tab 0 (Chat) por defecto
+```
+
+Escribe tu objetivo en lenguaje natural. orbit lo analiza, genera un plan y, si tiene múltiples pasos o es complejo, te lo muestra para aprobar antes de ejecutar. Durante la ejecución muestra un spinner animado; si el planner necesita re-planificar mid-run, el spinner se mantiene activo.
+
+Para usar el planner directamente sin TUI:
+
+```bash
+orbit plan create "implementar cache LRU en el módulo storage"
+```
+
+---
+
+## Planes programados
+
+```bash
+orbit plan schedule "<objetivo>" --cron "0 9 * * 1-5"          # lunes a viernes 9am
+orbit plan schedule "<objetivo>" --once "2026-08-10T09:00"     # una sola vez
+orbit plan list --scheduled                                      # ver planes programados
+```
+
+El daemon ejecuta los planes programados en segundo plano incluso si no hay sesión activa.
+
+---
+
 ## Evaluación en CI
 
 El crate `orbit-eval` permite validar la estructura de planes sin ejecutar el engine — útil para verificar templates y planes en pipelines de CI:

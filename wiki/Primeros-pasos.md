@@ -14,26 +14,26 @@
 
 ```bash
 # Linux x86_64
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
+curl -fsSL https://github.com/eloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
 # Linux aarch64
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-aarch64 \
+curl -fsSL https://github.com/eloircorona/orbit/releases/latest/download/orbit-linux-aarch64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
 # macOS Apple Silicon
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-aarch64 \
+curl -fsSL https://github.com/eloircorona/orbit/releases/latest/download/orbit-macos-aarch64 \
   -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 
 # macOS Intel
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-x86_64 \
+curl -fsSL https://github.com/eloircorona/orbit/releases/latest/download/orbit-macos-x86_64 \
   -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 ```
 
 ### Desde fuente
 
 ```bash
-git clone https://github.com/befraeloircorona/orbit.git
+git clone https://github.com/eloircorona/orbit.git
 cd orbit
 cargo build --release
 cp target/release/orbit ~/.local/bin/
@@ -72,6 +72,15 @@ El wizard:
 3. Detecta plugins disponibles y ofrece instalarlos
 4. Configura el directorio de instalación de orbit
 
+Al finalizar, el wizard muestra los next steps obligatorios:
+
+```bash
+eval "$(orbit shell-init)"   # integrar orbit con tu shell (agrega PATH, variables, hooks)
+orbit completions install    # instalar autocompletado para bash/zsh/fish
+```
+
+Agrega `eval "$(orbit shell-init)"` a tu `~/.bashrc`, `~/.zshrc` o equivalente para que aplique en cada sesión.
+
 ---
 
 ## Primera sesión
@@ -98,7 +107,7 @@ orbit status          # snapshot rápido: engine, workspace, daemon, versión
 orbit doctor          # diagnóstico completo de entorno
 ```
 
-`orbit doctor` verifica: tmux, engines de IA, AI root, socket del daemon, directorio de instalación, plugins activos.
+`orbit doctor` verifica: tmux, engines de IA, AI root, socket del daemon, directorio de instalación, plugins activos y **shell integration** (detecta si `orbit shell-init` está en el rc file del shell activo).
 
 ---
 

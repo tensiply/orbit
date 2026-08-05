@@ -21,7 +21,7 @@ orbit es un workspace Cargo con múltiples crates. El binario principal (`orbit`
 │              │  (Unix socket)  │                │
 │              └────────┬────────┘                │
 └───────────────────────┼─────────────────────────┘
-                        │ ~/.local/share/orbit/orbit.sock
+                        │ ~/.orbit/run/orbit.sock
 ┌───────────────────────┴─────────────────────────┐
 │                  orbitd (daemon)                │
 │                                                 │
@@ -72,14 +72,14 @@ orbit/
 | `orbit-daemon` | Servidor IPC async, gestor de sesiones | Solo tokio; aislado del código síncrono |
 | `orbit-client` | Cliente IPC ligero | Sin lógica de negocio |
 | `orbit-tui` | Componentes ratatui, vistas | Sin acceso directo a config |
-| `orbit-planner` | Motor de planes, evaluación de intenciones, templates | |
+| `orbit-planner` | Hybrid Planner: intent classification, gap resolver, validator | |
 | `orbit-eval` | Validación estructural de planes para CI | |
 
 ---
 
 ## Protocolo IPC
 
-- **Transporte:** Unix domain socket en `~/.local/share/orbit/orbit.sock`
+- **Transporte:** Unix domain socket en `~/.orbit/run/orbit.sock`
 - **Formato:** JSON-RPC 2.0 sobre socket
 - **Auto-start:** si el cliente no detecta el socket, arranca `orbitd` y espera a que esté listo
 
@@ -107,7 +107,7 @@ Antes de ejecutar el engine, orbit llama a `set_env()` en `orbit-engine/src/laun
 | `serde` + `serde_json` | Serialización de config y protocolo IPC |
 | `anyhow` + `thiserror` | Error handling en boundaries public/internal |
 | `tracing` + `tracing-subscriber` | Logging estructurado |
-| `directories` | XDG dirs cross-platform |
+| `directories` | Resolución de home dir (orbit gestiona sus propias rutas bajo `~/.orbit/`) |
 | `notify` | Watcher de archivos para hot-reload de contexto |
 
 ---

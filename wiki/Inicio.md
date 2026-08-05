@@ -4,13 +4,13 @@
 
 Construido en Rust. Corre en Linux y macOS.
 
-**Versión actual:** [v0.11.0](https://github.com/befraeloircorona/orbit/releases/tag/v0.11.0)
+**Versión actual:** [v0.19.0](https://github.com/eloircorona/orbit/releases/tag/v0.19.0) · en desarrollo activo
 
 ---
 
 ## ¿Qué hace?
 
-orbit resuelve el contexto correcto para tu sesión de IA — tenant, proyecto, repositorio, instrucciones, servidores MCP — y lanza el engine listo para trabajar. Gestiona las sesiones vía tmux y provee una interfaz TUI para navegar sesiones activas, lanzar nuevas y administrar plugins y MCP.
+orbit resuelve el contexto correcto para tu sesión de IA — tenant, proyecto, repositorio, instrucciones, servidores MCP — y lanza el engine listo para trabajar. Gestiona las sesiones vía tmux y provee una interfaz TUI con chat integrado, navegación de sesiones, planner de IA y administración de plugins y MCP. Todos los datos de orbit viven en `~/.orbit/`.
 
 ---
 
@@ -21,10 +21,15 @@ orbit resuelve el contexto correcto para tu sesión de IA — tenant, proyecto, 
 | **Contexto por capas** | Instrucciones y MCP se acumulan desde global → workspace → tenant → proyecto → repo |
 | **Multi-engine** | opencode, Gemini CLI, Claude Code, GitHub Copilot |
 | **Sesiones tmux** | Lanza y gestiona sesiones persistentes con attach/kill/clean |
-| **TUI** | Dashboard interactivo: sesiones, lanzador, MCP, plugins |
-| **Plugins** | Herramientas opcionales con lifecycle propio (headroom, playwright, rust-analyzer…) |
-| **MCP por scope** | Servidores MCP configurados a nivel global, tenant, proyecto o repositorio |
-| **Sistema de planes** | Ejecución autónoma de tareas con IA, templates y auditoría |
+| **Chat TUI** | Tab 0 del TUI: chat directo con el planner de IA integrado |
+| **Planner híbrido** | Ejecución autónoma de tareas con clasificación de intenciones, gap resolver y validación |
+| **Plugins** | Herramientas opcionales con lifecycle propio (jenkins, sonarcloud, linear, playwright…) |
+| **MCP por scope** | Servidores MCP configurados a nivel global, workspace, tenant, proyecto o repositorio |
+| **Activity log** | Historial de sesiones por scope; inyectado automáticamente al lanzar |
+| **Scope catalog** | `orbit scope` — escanea y verifica la salud de toda tu estructura de workspaces |
+| **Documentos** | Genera PDF, HTML, DOCX, XLSX, CSV desde templates y reglas YAML |
+| **Secrets por workspace** | `keychain://token` resuelve primero `{workspace}/token` antes del key global |
+| **`~/.orbit/` centralizado** | Toda la data en un solo directorio: `data/`, `cache/`, `state/`, `run/` |
 | **Sharing LAN** | Comparte tu instancia orbit en red local vía mDNS |
 
 ---
@@ -49,6 +54,7 @@ orbit resuelve el contexto correcto para tu sesión de IA — tenant, proyecto, 
 ### Funciones avanzadas
 - [Sistema de planes](Sistema-de-planes) — `orbit plan`, ejecución autónoma, memoria
 - [Compartir y descubrir](Compartir-y-descubrir) — `orbit serve`, `orbit discover`, LAN
+- [Actividad](Actividad) — `orbit activity`, historial de sesiones por scope
 
 ### Referencia técnica
 - [Arquitectura](Arquitectura) — crates, daemon IPC, internals
@@ -61,11 +67,13 @@ orbit resuelve el contexto correcto para tu sesión de IA — tenant, proyecto, 
 
 ```bash
 # Instalar (Linux x86_64)
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
+curl -fsSL https://github.com/eloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
 # Primera configuración
 orbit setup
+eval "$(orbit shell-init)"   # integrar con tu shell
+orbit completions install    # autocompletado
 
 # Lanzar desde el directorio actual
 orbit launch .

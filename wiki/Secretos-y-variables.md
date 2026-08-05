@@ -9,12 +9,13 @@ orbit provee dos mecanismos para manejar valores sensibles y variables de config
 Almacena secretos en el keychain nativo (Keychain en macOS, Secret Service / libsecret en Linux).
 
 ```bash
-orbit secret set MY_API_KEY       # lee el valor de stdin de forma segura
-orbit secret get MY_API_KEY       # imprime el valor
-orbit secret delete MY_API_KEY    # elimina el secreto
+orbit secret set MY_API_KEY           # lee el valor de stdin de forma segura
+orbit secret set MY_API_KEY --workspace befra  # guarda con scope de workspace
+orbit secret get MY_API_KEY           # imprime el valor
+orbit secret delete MY_API_KEY        # elimina el secreto
 ```
 
-Los secretos nunca se guardan en archivos de config — solo en el keychain. Para referenciarlos en `orbit.json` usa el prefijo `secret://keychain/<key>`.
+Los secretos nunca se guardan en archivos de config — solo en el keychain. Para referenciarlos en `orbit.json` usa el prefijo `keychain://<key>`.
 
 ---
 
@@ -39,7 +40,8 @@ Al definir variables en `orbit.json`, puedes usar prefijos especiales para evita
 
 | Prefijo | Descripción | Ejemplo |
 |---|---|---|
-| `secret://keychain/<key>` | Lee del keychain del SO en tiempo de lanzamiento | `"secret://keychain/MY_API_KEY"` |
+| `keychain://<key>` | Lee del keychain del SO en tiempo de lanzamiento | `"keychain://MY_API_KEY"` |
+| `secret://keychain/<key>` | Alias legado de `keychain://` | `"secret://keychain/MY_API_KEY"` |
 | `env://<VAR>` | Referencia otra variable de entorno del sistema | `"env://HOME"` |
 | `file://<path>` | Lee el valor del archivo en el path indicado | `"file://~/.token"` |
 
@@ -48,7 +50,7 @@ Al definir variables en `orbit.json`, puedes usar prefijos especiales para evita
 ```jsonc
 {
   "env": {
-    "ANTHROPIC_API_KEY": "secret://keychain/ANTHROPIC_KEY",
+    "ANTHROPIC_API_KEY": "keychain://ANTHROPIC_KEY",
     "MY_WORKSPACE": "env://HOME",
     "DEPLOY_TOKEN": "file://~/.deploy-token"
   }
@@ -56,6 +58,29 @@ Al definir variables en `orbit.json`, puedes usar prefijos especiales para evita
 ```
 
 Los valores con prefijo se resuelven justo antes de lanzar el engine, nunca se almacenan en claro en disco.
+
+---
+
+## Secretos con scope de workspace
+
+Cuando orbit resuelve un `keychain://` dentro de una sesión, intenta automáticamente `{workspace-slug}/{key}` **antes** del key global. Esto permite tener tokens distintos por workspace sin cambiar la configuración.
+
+```
+# En workspace "befra":
+keychain://github-token  →  busca "befra/github-token", luego "github-token"
+
+# En workspace "AI":
+keychain://github-token  →  busca "AI/github-token", luego "github-token"
+```
+
+Para guardar un secret con scope de workspace:
+
+```bash
+orbit secret set github-token TOKEN --workspace befra
+# guarda como "befra/github-token" en el keychain
+```
+
+Esto es útil para GitHub tokens, cloud credentials o API keys que varían por contexto de trabajo.
 
 ---
 
@@ -73,12 +98,14 @@ Además de las variables definidas en `orbit.json`, orbit siempre exporta estas 
 | `AI_CONTEXT_ROOT` | AI root del workspace |
 | `AI_GLOBAL_ROOT` | AI root global |
 | `AI_GLOBAL_MODE` | `true` en modo global |
+| `ORBIT_HOME` | Raíz de datos de orbit (`~/.orbit`) |
 
 ---
 
 ## Buenas prácticas
 
 - Usa `orbit secret set` para API keys, tokens y cualquier valor sensible
-- Nunca escribas secretos directamente en `orbit.json` — usa `secret://keychain/<key>`
+- Nunca escribas secretos directamente en `orbit.json` — usa `keychain://<key>`
+- Para tokens que varían por workspace, usa `orbit secret set KEY VALUE --workspace SLUG`
 - Las variables de entorno definidas en scopes más específicos (repo) sobrescriben a las de scopes más generales (global)
 - Para desarrollo local, un `.env` cargado manualmente antes de `orbit launch` también funciona — pero los resolvers de keychain son más seguros y portables

@@ -1,15 +1,129 @@
 # Releases
 
-> **Versión actual:** v0.11.0 — 14 de julio, 2026
+> **Versión actual:** v0.19.0 — 5 de agosto, 2026
 
 ## Saltar a un hito
 
+- [Paths · Scope · MCP · Setup — post-v0.19.0](#paths--scope--mcp--setup--postv0190)
+- [Chat TUI · OAuth · Planner IA — v0.19.0](#chat-tui--oauth--planner-ia--v0190)
+- [Hooks · Cloud · Documentos · Activity — v0.16.0–v0.18.0](#hooks--cloud--documentos--activity--v0160v0180)
+- [Autenticación por scope · Remote MCP — v0.12.0–v0.15.0](#autenticaci%C3%B3n-por-scope--remote-mcp--v0120v0150)
 - [Sistema de planes — v0.11.0](#sistema-de-planes--v0110)
 - [Refactor de configuración — v0.10.x](#refactor-de-configuraci%C3%B3n--v010x)
 - [Dry-run y ASCII art — v0.8.0–v0.9.0](#dry-run-y-ascii-art--v080v090)
 - [Governance y engines — v0.6.0–v0.7.0](#governance-y-engines--v060v070)
 - [Modelo de workspace — v0.3.0–v0.5.0](#modelo-de-workspace--v030v050)
 - [Fundación — v0.1.0–v0.2.0](#fundaci%C3%B3n--v010v020)
+
+---
+
+## Paths · Scope · MCP · Setup — post-v0.19.0
+
+> Trabajo sin versionar encima de v0.19.0. Próxima release: v0.20.0
+
+**Centralización completa en `~/.orbit`**
+- Todo el estado de orbit vive bajo `~/.orbit/` (antes repartido entre `~/.config/orbit/` y `~/.local/share/orbit/`)
+- `~/.orbit/config.toml`, `~/.orbit/hooks.toml`, `~/.orbit/workspaces.toml`
+- Subdirectorios: `data/` (planes, sesiones, audit, tasks), `cache/` (venv, engine-versions), `state/` (mode, log), `run/` (socket, pid)
+
+**Secrets con scope de workspace**
+- `keychain://github-token` en workspace "befra" busca `befra/github-token` primero, luego `github-token`
+- Permite tokens distintos por workspace sin cambiar la config
+
+**Nuevo: `orbit scope`**
+- `orbit scope list` — lista todos los workspaces/tenants/proyectos/repos registrados
+- `orbit scope show` — muestra el scope resuelto desde el directorio actual
+- `orbit scope check` — verifica la salud de la estructura de governance
+
+**MCP mejorado**
+- `mcpServers` en orbit.json funciona para todos los engines (antes solo OpenCode)
+- Nuevo nivel `workspace` en `orbit mcp enable/disable --scope workspace`
+- `orbit context --dry-run` muestra de qué capa (global, workspace, tenant, repo) viene cada MCP
+- El global root ya no sobreescribe MCPs de scopes específicos
+
+**Setup más robusto**
+- `orbit setup` preserva config existente al correr de nuevo (`budget`, `plan_retention`, etc.)
+- Hints claros en next steps: `eval "$(orbit shell-init)"`, `orbit completions install`
+- `orbit doctor` incluye sección "shell integration"
+
+---
+
+## Chat TUI · OAuth · Planner IA — v0.19.0
+
+### v0.19.0 (2026-08-04)
+
+**Chat TUI (Tab 0)**
+- Nuevo tab principal: Chat integrado con el planner de IA
+- Escribe tu objetivo en lenguaje natural → orbit genera un plan, pide aprobación si es necesario, y ejecuta
+- Mensajes como cajas con bordes, animación spinner "orbiting" durante ejecución
+- Auto-arranca el daemon si no está corriendo al enviar el primer mensaje
+- Spinner activo durante re-planificación
+
+**OAuth2.1 PKCE para plugins**
+- Flujo OAuth completo con PKCE para plugins que requieren autenticación externa
+- `orbit plugins auth <nombre>` — abre el navegador, intercambia el token y lo guarda en keychain
+- Plugin `linear` — integración completa con Linear.app (issues, proyectos, ciclos)
+
+**Nuevos plugins**
+- `jenkins` — Jenkins CI/CD: builds, pipelines, logs (disponible vía MCP)
+- `linear` — Linear.app vía OAuth2.1
+
+**Setup wizard**
+- `orbit setup` — wizard interactivo para configuración inicial (engine, presupuesto, plugins)
+- Capa de output unificada (`output.rs`) con formateo consistente
+
+**Mejoras de sesión tmux**
+- Título de ventana tmux configurable, `work_dir` respetado
+- `configure_helper` para manipular sesiones tmux desde plugins
+
+---
+
+## Hooks · Cloud · Documentos · Activity — v0.16.0–v0.18.0
+
+### v0.18.0 (2026-07-29)
+
+- **Plugins cloud** — `gcloud`, `aws`, `kubectl`: autenticación aislada por scope, credentials no compartidas entre workspaces
+- **Remote MCP con headers** — los servidores MCP remotos pueden llevar headers (ej. `Authorization`) con resolución de secrets
+- **Warp engine hook** — badges de sesión y títulos de tab en Warp terminal
+
+### v0.17.0 (2026-07-28)
+
+- **`orbit document`** — generación de documentos: PDF, HTML, DOCX, XLSX, CSV desde templates YAML + HTML. `orbit document create/update/list/template`
+- **`orbit task`** — modelo canónico interno de tareas con CLI y tab en TUI
+- **`orbit activity`** — log persistente de sesiones por scope. Las últimas 5 entradas se inyectan automáticamente en cada lanzamiento. `orbit activity list/append/has`
+- **Templates de documento por workspace** — directorio `$AI_CONTEXT_ROOT/templates/document/` permite templates propios por scope
+
+### v0.16.0 (2026-07-22)
+
+- **`orbit hooks`** — catálogo de hooks para Claude Code engine: Stop, Notification y otros eventos. `orbit hooks list/enable/disable`
+- **Hook scripts embebidos** — scripts de hook definidos en `hooks.toml` se auto-instalan; guard hooks para operaciones destructivas
+- **Catálogo de commands** — commands/skills built-in compilados en el binario, habilitables/deshabilitables por scope
+- **`orbit plugins auth`** — subcomando de autenticación interactiva con setup de credenciales
+- **Plugin SonarCloud** — quality gates, issues, security hotspots, cobertura
+
+---
+
+## Autenticación por scope · Remote MCP — v0.12.0–v0.15.0
+
+### v0.15.0 (2026-07-17)
+
+- **Auth por scope** — sesiones de provider aisladas por workspace (fix para scope incorrecto en v0.14.0)
+
+### v0.14.0 (2026-07-17)
+
+- **Auth por scope** — cada workspace tiene sus propias credenciales de engine. `orbit auth` aísla sesiones por workspace
+
+### v0.13.0 (2026-07-16)
+
+- **Remote MCP (HTTP)** — soporte para servidores MCP remotos vía HTTP/SSE además de stdio local
+
+### v0.12.0 (2026-07-14)
+
+- **Venv gestionado por orbit** — Python venv automático en `~/.orbit/cache/venv/` para plugins pip
+- **Plugin markitdown** — conversión de documentos (PDF, DOCX, XLSX, imágenes) a Markdown
+- **MCP: visibilidad completa** — `orbit mcp list` muestra todos los MCPs activos con su scope de origen
+- **Materialización de commands para Claude** — orbit genera el catálogo de commands/skills para el engine Claude
+- Fixes: paths relativos en args de MCP resueltos a absolutos, `ORBIT_CONFIG_HOME` en dirs global config, vars de entorno de orbit en sesiones tmux nuevas
 
 ---
 

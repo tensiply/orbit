@@ -62,32 +62,42 @@ orbit session clean             # elimina entradas de sesiones muertas
 
 ## TUI
 
-Ejecuta `orbit` sin argumentos para abrir el dashboard TUI:
+Ejecuta `orbit` sin argumentos para abrir el TUI:
 
 ```
 orbit
 ```
 
+El tab principal es **Chat (Tab 0)**: escribe un objetivo en lenguaje natural y orbit genera y ejecuta un plan de IA. Los demás tabs dan visibilidad y control sobre el resto del sistema.
+
 ### Tabs del TUI
 
-| Tab | Tecla | Descripción |
-|---|---|---|
-| Sessions | `1` | Lista sesiones activas, attach/kill desde aquí |
-| Launch | `2` | Formulario interactivo para lanzar sesiones |
-| System | `3` | Gestor de MCP servers por scope |
-| Peers | `9` | Instancias orbit en la red local (requiere `orbit serve`) |
+| Tab | Tecla | Nombre | Descripción |
+|---|---|---|---|
+| 0 | `0` | Chat | Interfaz de chat con el planner de IA — entrada principal |
+| 1 | `1` | Sessions | Sesiones activas por scope — attach/kill |
+| 2 | `2` | Launch | Formulario interactivo para lanzar sesiones |
+| 3 | `3` | System | Estado del daemon y MCP servers por scope |
+| 4 | `4` | Plans | Historial y estado de planes de IA |
+| 5 | `5` | Engines | Engines instalados, versiones y estado de auth |
+| 6 | `6` | Plugins | Plugins habilitados y su estado |
+| 7 | `7` | Activity | Log de actividad reciente de sesiones |
+| 8 | `8` | Memory | Entradas de memoria persistente por scope |
+| 9 | `9` | Peers | Instancias orbit en la red local (requiere `orbit serve`) |
 
 ### Atajos de teclado
 
 | Tecla | Acción |
 |---|---|
+| `0`–`9` | Ir al tab correspondiente |
+| `Tab` / `Shift+Tab` | Ciclar entre tabs |
 | `↑↓` | Navegar lista |
-| `↵` / `a` | Attach a sesión |
+| `↵` / `a` | Attach a sesión (tab Sessions) |
 | `k` | Kill sesión |
 | `w` | Cambiar workspace |
 | `←→` | Ciclar workspaces (en tab Launch) |
 | `↓` | Abrir dropdown (Tenant/Project/Repo en Launch) |
-| `q` | Salir del TUI |
+| `q` / `Esc` | Salir del TUI |
 
 ### Workspace selector
 

@@ -1,12 +1,44 @@
 # Configuración
 
-orbit usa dos niveles de configuración: la **configuración de usuario** global en `~/.config/orbit/config.toml` y los **archivos de scope** (`orbit.json`) en cada nivel del workspace.
+orbit usa dos niveles de configuración: la **configuración de usuario** global en `~/.orbit/config.toml` y los **archivos de scope** (`orbit.json`) en cada nivel del workspace.
+
+---
+
+## Estructura de `~/.orbit`
+
+Toda la data de orbit vive bajo `~/.orbit/`:
+
+```
+~/.orbit/
+├── config.toml          # configuración principal
+├── hooks.toml           # hooks del planner
+├── workspaces.toml      # registro de workspaces
+├── data/                # datos persistentes del usuario
+│   ├── plans/           # historial de planes
+│   ├── sessions/        # registro de sesiones
+│   ├── audit/           # audit log
+│   └── tasks/           # tareas sincronizadas
+├── cache/               # datos derivados (se pueden regenerar)
+│   ├── engine-versions/ # caché de versiones de engines
+│   ├── venv/            # Python venv gestionado por orbit
+│   └── scope-catalog/   # índice de workspaces escaneados
+├── state/               # estado de la máquina
+│   ├── mode             # modo activo (stable/beta)
+│   ├── dev_path         # path de build dev
+│   └── orbit.log        # log de sesión
+└── run/                 # runtime efímero (se limpia al reiniciar)
+    ├── orbit.sock       # Unix socket del daemon
+    ├── orbit.pid        # PID del daemon
+    └── engines/         # directorios de sesión por engine
+```
+
+Para cambiar la raíz usa la variable `ORBIT_HOME` antes de lanzar orbit.
 
 ---
 
 ## Configuración de usuario
 
-**Ruta:** `~/.config/orbit/config.toml`
+**Ruta:** `~/.orbit/config.toml`
 
 Contiene ajustes globales del binario: engine por defecto, directorio de instalación, comportamiento de auto-update.
 
@@ -59,7 +91,18 @@ Solo se carga el primer archivo encontrado en cada scope.
   // Variables de entorno inyectadas al lanzar
   "env": {
     "MY_VAR": "valor",
-    "SECRET_VAR": "secret://keychain/MY_SECRET"
+    "SECRET_VAR": "keychain://MY_SECRET"
+  },
+
+  // Servidores MCP inline — funciona para TODOS los engines
+  "mcpServers": {
+    "mi-mcp": {
+      "command": "uvx",
+      "args": ["mi-mcp-server"],
+      "env": {
+        "API_KEY": "keychain://mi-api-key"
+      }
+    }
   },
 
   // Agentes personalizados (solo para engines que los soporten)
@@ -79,7 +122,8 @@ Las variables se inyectan en el entorno del engine al lanzar. Para secretos, usa
 
 | Prefijo | Descripción |
 |---|---|
-| `secret://keychain/<key>` | Lee del keychain del sistema operativo |
+| `keychain://<key>` | Lee del keychain del sistema operativo |
+| `secret://keychain/<key>` | Alias de `keychain://` (formato legado) |
 | `env://<VAR>` | Referencia otra variable de entorno |
 | `file://<path>` | Lee el valor de un archivo |
 
@@ -88,6 +132,8 @@ Las variables se inyectan en el entorno del engine al lanzar. Para secretos, usa
 ## Servidores MCP por scope
 
 Cada scope puede tener su propio `mcp.json`. Ver [Servidores MCP](Servidores-MCP) para el formato y uso.
+
+Los `mcpServers` también pueden definirse directamente en `orbit.json` (sin archivo `mcp.json` separado) y funcionan para todos los engines.
 
 ---
 
@@ -105,7 +151,7 @@ orbit exporta estas variables al lanzar un engine:
 | `AI_PROJECT` | Proyecto activo |
 | `AI_REPOSITORY` | Repositorio activo |
 | `AI_GLOBAL_MODE` | `true` si se lanzó en modo global |
-| `ORBIT_CONFIG_HOME` | Directorio XDG real de config (preservado antes del override) |
+| `ORBIT_HOME` | Raíz de datos de orbit (`~/.orbit` por defecto) |
 | `XDG_CONFIG_HOME` | Sobreescrito al directorio de runtime para aislamiento de sesión |
 
 ---
