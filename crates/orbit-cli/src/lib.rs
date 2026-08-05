@@ -61,6 +61,8 @@ pub enum Commands {
     Snapshot(commands::snapshot::SnapshotArgs),
     /// Manage Jira integration: board mappings, orgs
     Jira(commands::jira::JiraArgs),
+    /// Scan, list and validate governance scopes across all workspaces
+    Scope(commands::scope::ScopeArgs),
     /// Store and retrieve secrets in the OS keychain
     Secret(commands::secret::SecretArgs),
     /// Manage env vars in orbit.json at any scope level
@@ -161,6 +163,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Doctor(args)) => commands::doctor::run(args),
         Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         Some(Commands::Jira(args)) => commands::jira::run(args),
+        Some(Commands::Scope(args)) => commands::scope::run(args),
         Some(Commands::Secret(args)) => commands::secret::run(args),
         Some(Commands::Env(args)) => commands::env::run(args),
         Some(Commands::Plan(args)) => commands::plan::run(*args).await,

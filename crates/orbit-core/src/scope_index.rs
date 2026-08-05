@@ -73,7 +73,7 @@ fn try_read_description(ai_root: &Path, tenant: &str, project: &str, repository:
     read_first_line(&readme)
 }
 
-fn scan_dirs(parent: &Path) -> Vec<String> {
+pub fn scan_dirs(parent: &Path) -> Vec<String> {
     let Ok(rd) = fs::read_dir(parent) else {
         return vec![];
     };

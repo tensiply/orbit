@@ -23,6 +23,7 @@ pub mod mode;
 pub mod notify;
 pub mod plan;
 pub mod plugins;
+pub mod scope;
 pub mod secret;
 pub mod serve;
 pub mod session;

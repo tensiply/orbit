@@ -21,6 +21,7 @@ pub mod plan;
 pub mod plugin;
 pub mod resolver;
 pub mod schedule;
+pub mod scope_catalog;
 pub mod scope_index;
 pub mod secrets;
 pub mod session;
