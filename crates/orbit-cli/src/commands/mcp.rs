@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use crate::output::truncate_desc;
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{catalog, catalog::McpEntry, context::OrbitScope};
-use orbit_engine::resolver;
+use orbit_engine::{config::jsonc, resolver};
 use serde_json::Value;
 use std::{
     fs,
@@ -28,8 +28,13 @@ pub enum McpCommand {
     List,
     /// Enable an MCP and write its config to the detected scope
     Enable {
-        /// MCP name (from catalog)
+        /// MCP name
         name: String,
+        /// Command for a custom (non-catalog) MCP — binary followed by arguments.
+        /// When provided, skips catalog lookup.
+        /// Example: --command npx -y @modelcontextprotocol/server-github
+        #[arg(long, num_args = 1.., allow_hyphen_values = true, value_name = "CMD")]
+        command: Vec<String>,
     },
     /// Disable an MCP from the detected scope
     Disable {
@@ -45,8 +50,10 @@ pub enum McpCommand {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ScopeLevel {
-    /// Global — available in every session (~/.config/orbit/mcps.json)
+    /// Global — available in every session (~/.orbit/mcps.json)
     Global,
+    /// Workspace-level — available for the current workspace (ai_context_root/mcp.json)
+    Workspace,
     /// Tenant-level — available for the current tenant
     Tenant,
     /// Project-level — available for the current project
@@ -60,7 +67,7 @@ pub enum ScopeLevel {
 pub fn run(args: McpArgs) -> Result<()> {
     match args.command.unwrap_or(McpCommand::List) {
         McpCommand::List => cmd_list(args.scope),
-        McpCommand::Enable { name } => cmd_enable(&name, args.scope),
+        McpCommand::Enable { name, command } => cmd_enable(&name, &command, args.scope),
         McpCommand::Disable { name } => cmd_disable(&name, args.scope),
         McpCommand::Info { name } => cmd_info(&name, args.scope),
     }
@@ -85,7 +92,8 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
     let mut rows: Vec<Row> = Vec::new();
 
     for m in &catalog_mcps {
-        let enabled_at = find_enabled_scope(&m.name, &scope, scope_override);
+        // Use scope_mcps (last-writer-wins) so list and info report the same scope.
+        let enabled_at = scope_mcps.get(&m.name).cloned();
         rows.push(Row {
             name: m.name.clone(),
             desc: m.description.clone(),
@@ -172,32 +180,47 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
 
 // ── enable ────────────────────────────────────────────────────────────────────
 
-fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    let entry = catalog::mcp_by_name(name).with_context(|| {
-        format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.")
-    })?;
-
+fn cmd_enable(
+    name: &str,
+    custom_cmd: &[String],
+    scope_override: Option<ScopeLevel>,
+) -> Result<()> {
     let (scope, level) = resolve_write_scope(scope_override)?;
-    let path = mcp_json_path(scope.as_ref(), level);
+    let path = mcp_json_path(scope.as_ref(), level)?;
 
     if mcp_in_file(name, &path) {
         println!("  \x1b[32m●\x1b[0m  {name} is already enabled at {level}.");
         return Ok(());
     }
 
-    println!();
-    println!("  {name}  —  {}", entry.description);
-    println!();
+    let server = if !custom_cmd.is_empty() {
+        // Custom MCP — use the provided command directly, no catalog lookup
+        println!();
+        println!("  {name}  —  custom MCP");
+        println!("  command:  {}", custom_cmd.join(" "));
+        println!();
+        build_server_entry(custom_cmd, &Default::default())
+    } else {
+        // Catalog MCP — require the catalog entry so we can prompt for variables
+        let entry = catalog::mcp_by_name(name).with_context(|| {
+            format!(
+                "MCP not found in catalog: {name}\n\
+                 Run `orbit mcp list` to see available MCPs.\n\
+                 For a custom MCP, use: orbit mcp enable {name} --command <binary> [args...]"
+            )
+        })?;
+        println!();
+        println!("  {name}  —  {}", entry.description);
+        println!();
+        let env = collect_vars(&entry)?;
+        build_server_entry(&entry.command, &env)
+    };
 
-    let env = collect_vars(&entry)?;
-    let server = build_server_entry(&entry.command, &env);
     write_mcp_entry(&path, name, server)?;
 
     println!();
     println!("  \x1b[32m●\x1b[0m  {name} enabled at {level}");
-    if !env.is_empty() {
-        println!("     Config: {}", path.display());
-    }
+    println!("     Config: {}", path.display());
     println!("     Active in new orbit sessions.");
 
     Ok(())
@@ -206,12 +229,8 @@ fn cmd_enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── disable ───────────────────────────────────────────────────────────────────
 
 fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    if catalog::mcp_by_name(name).is_none() {
-        bail!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.");
-    }
-
     let (scope, level) = resolve_write_scope(scope_override)?;
-    let path = mcp_json_path(scope.as_ref(), level);
+    let path = mcp_json_path(scope.as_ref(), level)?;
 
     if !mcp_in_file(name, &path) {
         println!("  {name} is not enabled at {level}.");
@@ -227,13 +246,11 @@ fn cmd_disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 // ── info ──────────────────────────────────────────────────────────────────────
 
 fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
-    let entry = catalog::mcp_by_name(name).with_context(|| {
-        format!("MCP not found in catalog: {name}\nRun `orbit mcp list` to see available MCPs.")
-    })?;
+    let entry = catalog::mcp_by_name(name);
 
     let scope = detect_scope_required(scope_override)?;
 
-    let enabled_at = find_enabled_scope(name, &scope, scope_override);
+    let enabled_at = collect_all_scope_mcps(&scope, scope_override).remove(name);
     let status_str = match &enabled_at {
         Some(lvl) => format!("\x1b[32m● enabled at {lvl}\x1b[0m"),
         None => "\x1b[2m○ disabled\x1b[0m".to_string(),
@@ -242,35 +259,45 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     println!();
     println!("  \x1b[1m{name}\x1b[0m");
     println!();
-    println!("  description   {}", entry.description);
-    println!("  command       {}", entry.command.join(" "));
-    println!("  status        {status_str}");
 
-    if !entry.required_vars.is_empty() {
-        println!();
-        println!("  required variables");
-        for v in &entry.required_vars {
-            let secret_tag = if v.secret {
-                "  \x1b[33m[secret]\x1b[0m"
-            } else {
-                ""
-            };
-            println!("    {}{secret_tag}", v.name);
-            println!("      \x1b[2m{}\x1b[0m", v.description);
+    match &entry {
+        Some(e) => {
+            println!("  description   {}", e.description);
+            println!("  command       {}", e.command.join(" "));
+        }
+        None => {
+            println!("  \x1b[2m(custom MCP — not in catalog)\x1b[0m");
         }
     }
+    println!("  status        {status_str}");
 
-    if !entry.optional_vars.is_empty() {
-        println!();
-        println!("  optional variables");
-        for v in &entry.optional_vars {
-            let default_tag = v
-                .default
-                .as_deref()
-                .map(|d| format!("  \x1b[2m(default: {d})\x1b[0m"))
-                .unwrap_or_default();
-            println!("    {}{default_tag}", v.name);
-            println!("      \x1b[2m{}\x1b[0m", v.description);
+    if let Some(e) = &entry {
+        if !e.required_vars.is_empty() {
+            println!();
+            println!("  required variables");
+            for v in &e.required_vars {
+                let secret_tag = if v.secret {
+                    "  \x1b[33m[secret]\x1b[0m"
+                } else {
+                    ""
+                };
+                println!("    {}{secret_tag}", v.name);
+                println!("      \x1b[2m{}\x1b[0m", v.description);
+            }
+        }
+
+        if !e.optional_vars.is_empty() {
+            println!();
+            println!("  optional variables");
+            for v in &e.optional_vars {
+                let default_tag = v
+                    .default
+                    .as_deref()
+                    .map(|d| format!("  \x1b[2m(default: {d})\x1b[0m"))
+                    .unwrap_or_default();
+                println!("    {}{default_tag}", v.name);
+                println!("      \x1b[2m{}\x1b[0m", v.description);
+            }
         }
     }
 
@@ -380,7 +407,9 @@ fn default_level(scope: &OrbitScope) -> ScopeLevel {
     } else if !scope.tenant.is_empty() {
         ScopeLevel::Tenant
     } else {
-        ScopeLevel::Global
+        // resolve_from_cwd succeeded → we are inside a workspace; write to workspace level,
+        // not global (global spans all workspaces)
+        ScopeLevel::Workspace
     }
 }
 
@@ -399,39 +428,46 @@ fn validate_level(scope: &OrbitScope, level: ScopeLevel) -> Result<()> {
     }
 }
 
-pub fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> PathBuf {
+pub fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> Result<PathBuf> {
     match level {
-        ScopeLevel::Global => global_config_dir().join("orbit/mcps.json"),
-        ScopeLevel::Tenant => scope
-            .unwrap()
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.unwrap().tenant)
-            .join("mcp.json"),
-        ScopeLevel::Project => scope
-            .unwrap()
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.unwrap().tenant)
-            .join("projects")
-            .join(&scope.unwrap().project)
-            .join("mcp.json"),
-        ScopeLevel::Repo => scope
-            .unwrap()
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.unwrap().tenant)
-            .join("projects")
-            .join(&scope.unwrap().project)
-            .join("repositories")
-            .join(&scope.unwrap().repository)
-            .join("mcp.json"),
+        ScopeLevel::Global => Ok(orbit_core::data_paths::orbit_home().join("mcps.json")),
+        ScopeLevel::Workspace => {
+            let s = scope.context("scope required for workspace level")?;
+            Ok(s.ai_context_root.join("mcp.json"))
+        }
+        ScopeLevel::Tenant => {
+            let s = scope.context("scope required for tenant level")?;
+            Ok(s.ai_context_root.join("tenants").join(&s.tenant).join("mcp.json"))
+        }
+        ScopeLevel::Project => {
+            let s = scope.context("scope required for project level")?;
+            Ok(s.ai_context_root
+                .join("tenants")
+                .join(&s.tenant)
+                .join("projects")
+                .join(&s.project)
+                .join("mcp.json"))
+        }
+        ScopeLevel::Repo => {
+            let s = scope.context("scope required for repo level")?;
+            Ok(s.ai_context_root
+                .join("tenants")
+                .join(&s.tenant)
+                .join("projects")
+                .join(&s.project)
+                .join("repositories")
+                .join(&s.repository)
+                .join("mcp.json"))
+        }
     }
 }
 
 fn scope_description(scope: &OrbitScope, override_level: Option<ScopeLevel>) -> String {
     if matches!(override_level, Some(ScopeLevel::Global)) || scope.global_mode {
         return "global".to_string();
+    }
+    if matches!(override_level, Some(ScopeLevel::Workspace)) {
+        return "workspace".to_string();
     }
     let mut parts = Vec::new();
     if !scope.tenant.is_empty() {
@@ -587,7 +623,7 @@ fn mcp_names_in_file(path: &Path) -> Vec<String> {
     let Ok(text) = fs::read_to_string(path) else {
         return vec![];
     };
-    let Ok(val) = serde_json::from_str::<Value>(&text) else {
+    let Ok(val) = jsonc::parse(&text) else {
         return vec![];
     };
     val.get("mcpServers")
@@ -707,7 +743,7 @@ fn read_mcp_file(path: &Path) -> Value {
     if path.is_file() {
         fs::read_to_string(path)
             .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+            .and_then(|s| jsonc::parse(&s).ok())
             .unwrap_or_else(empty_mcp_json)
     } else {
         empty_mcp_json()
@@ -733,7 +769,7 @@ fn mcp_in_file(name: &str, path: &Path) -> bool {
     let Ok(text) = fs::read_to_string(path) else {
         return false;
     };
-    let Ok(val) = serde_json::from_str::<Value>(&text) else {
+    let Ok(val) = jsonc::parse(&text) else {
         return false;
     };
     val.get("mcpServers")
@@ -757,6 +793,7 @@ impl std::fmt::Display for ScopeLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScopeLevel::Global => write!(f, "global"),
+            ScopeLevel::Workspace => write!(f, "workspace"),
             ScopeLevel::Tenant => write!(f, "tenant"),
             ScopeLevel::Project => write!(f, "project"),
             ScopeLevel::Repo => write!(f, "repo"),

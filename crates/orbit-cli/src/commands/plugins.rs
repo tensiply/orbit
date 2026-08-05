@@ -443,7 +443,7 @@ fn enable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     match scope_result {
         Ok((Some(scope), level)) if level != ScopeLevel::Global => {
             // Scope-targeted write — entries go into the scope's mcp.json.
-            let path = mcp_json_path(Some(&scope), level);
+            let path = mcp_json_path(Some(&scope), level)?;
             let entries = build_mcp_entries(&plugin, &instances)?;
             let mcp_names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
             for (entry_name, server) in entries {
@@ -503,7 +503,7 @@ fn disable(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
 
     match scope_result {
         Ok((Some(scope), level)) if level != ScopeLevel::Global => {
-            let path = mcp_json_path(Some(&scope), level);
+            let path = mcp_json_path(Some(&scope), level)?;
             let entries = build_mcp_entries(&plugin, &instances)?;
             let mcp_names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
             for (entry_name, _) in &entries {

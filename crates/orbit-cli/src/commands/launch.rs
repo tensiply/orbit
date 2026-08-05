@@ -550,12 +550,18 @@ fn print_dry_run(
         let name_w = report
             .mcp_servers
             .iter()
-            .map(|(n, _)| n.len())
+            .map(|(n, _, _)| n.len())
             .max()
             .unwrap_or(0);
-        for (name, cmd) in &report.mcp_servers {
+        for (name, cmd, source) in &report.mcp_servers {
             let pad = " ".repeat(name_w.saturating_sub(name.len()));
-            println!("  {}  {}{pad}  {}", ok, name, cmd.join(" "));
+            println!(
+                "  {}  {}{pad}  {}  {}",
+                ok,
+                name,
+                cmd.join(" "),
+                dim(&format!("[{source}]"))
+            );
         }
     }
     println!();
