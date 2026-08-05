@@ -250,6 +250,7 @@ impl ChatState {
                         self.messages.push(msg);
                         self.scroll = u16::MAX;
                     }
+                    self.push_orbiting();
                 }
             }
         }
