@@ -24,11 +24,11 @@ El directorio `~/AI` es un repositorio de governance — contiene instrucciones 
 
 ### Multi-workspace
 
-Si trabajas con múltiples workspaces (por ejemplo `~/AI` personal y `~/BeFra/AI` laboral), orbit soporta un AI root global y un AI root de workspace independientes:
+Si trabajas con múltiples workspaces (por ejemplo `~/AI` personal y `~/trabajo/AI` laboral), orbit soporta un AI root global y un AI root de workspace independientes:
 
 ```
 ~/AI/                              ← raíz global (siempre cargada)
-~/BeFra/AI/                        ← raíz del workspace BeFra
+~/trabajo/AI/                        ← raíz del workspace trabajo
     └── tenants/
         └── DEVTEAM/
 ```

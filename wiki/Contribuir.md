@@ -3,7 +3,7 @@
 ## Setup de desarrollo
 
 ```bash
-git clone https://github.com/befraeloircorona/orbit.git
+git clone https://github.com/eloircorona/orbit.git
 cd orbit
 cargo build                         # build debug
 cargo build --release               # build release
@@ -136,7 +136,7 @@ git commit -m "chore(deps): bump serde to 1.0.203"
 
 ## Release
 
-Los releases se crean desde `main` usando el [Git Release workflow](https://github.com/befraeloircorona/orbit/wiki/Releases). El workflow de CI compila binarios para Linux (x86_64, aarch64) y macOS (x86_64, aarch64).
+Los releases se crean desde `main` usando el [Git Release workflow](https://github.com/eloircorona/orbit/wiki/Releases). El workflow de CI compila binarios para Linux (x86_64, aarch64) y macOS (x86_64, aarch64).
 
 ```bash
 # Calcular la nueva versión (SemVer desde commits)

@@ -33,8 +33,8 @@ Gestión de workspaces desde el TUI y la CLI. Permite agregar, eliminar y renomb
 
 ```bash
 orbit workspace list
-orbit workspace add ~/BeFra --name BeFra
-orbit workspace remove BeFra
+orbit workspace add ~/trabajo --name trabajo
+orbit workspace remove trabajo
 ```
 
 ### `orbit serve` / `orbit discover` — LAN collaboration

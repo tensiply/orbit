@@ -9,7 +9,7 @@ El scope catalog es el índice de todos los repositorios registrados en orbit, o
 Orbit organiza el trabajo en una jerarquía de cuatro niveles:
 
 ```
-WORKSPACE (~/AI, ~/BeFra, ...)
+WORKSPACE (~/AI, ~/trabajo, ...)
   └─ TENANT (AIDEV, DEVTEAM, ...)
        └─ PROJECT (AI-ECOSYSTEM, core, ...)
             └─ REPOSITORY (orbit, backend, ...)
@@ -33,7 +33,7 @@ Salida:
 ```
   Scanning 2 workspace(s)...
     AI → /home/user/AI
-    BeFra → /home/user/BeFra
+    trabajo → /home/user/trabajo
 
   ✓  47 repositories indexed
   Catalog: ~/.orbit/cache/scope-catalog.json
@@ -81,7 +81,7 @@ Reporta si faltan `orbit.json`, `source-of-truth/README.md`, `source-of-truth/co
   3 governance issue(s):
 
   ◆  AI/AIDEV/core/backend      Missing orbit.json
-  ◆  BeFra/DEVTEAM/reports      Missing source-of-truth/README.md
+  ◆  trabajo/DEVTEAM/reports      Missing source-of-truth/README.md
   ◆  AI/AIDEV/tools/scraper     Missing source-of-truth/conventions.md
 
   Run `orbit scope scan` after fixing to update the catalog.

@@ -10,7 +10,7 @@ Almacena secretos en el keychain nativo (Keychain en macOS, Secret Service / lib
 
 ```bash
 orbit secret set MY_API_KEY           # lee el valor de stdin de forma segura
-orbit secret set MY_API_KEY --workspace befra  # guarda con scope de workspace
+orbit secret set MY_API_KEY --workspace trabajo  # guarda con scope de workspace
 orbit secret get MY_API_KEY           # imprime el valor
 orbit secret delete MY_API_KEY        # elimina el secreto
 ```
@@ -66,8 +66,8 @@ Los valores con prefijo se resuelven justo antes de lanzar el engine, nunca se a
 Cuando orbit resuelve un `keychain://` dentro de una sesión, intenta automáticamente `{workspace-slug}/{key}` **antes** del key global. Esto permite tener tokens distintos por workspace sin cambiar la configuración.
 
 ```
-# En workspace "befra":
-keychain://github-token  →  busca "befra/github-token", luego "github-token"
+# En workspace "trabajo":
+keychain://github-token  →  busca "trabajo/github-token", luego "github-token"
 
 # En workspace "AI":
 keychain://github-token  →  busca "AI/github-token", luego "github-token"
@@ -76,8 +76,8 @@ keychain://github-token  →  busca "AI/github-token", luego "github-token"
 Para guardar un secret con scope de workspace:
 
 ```bash
-orbit secret set github-token TOKEN --workspace befra
-# guarda como "befra/github-token" en el keychain
+orbit secret set github-token TOKEN --workspace trabajo
+# guarda como "trabajo/github-token" en el keychain
 ```
 
 Esto es útil para GitHub tokens, cloud credentials o API keys que varían por contexto de trabajo.

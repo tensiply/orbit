@@ -27,7 +27,7 @@
 - Subdirectorios: `data/` (planes, sesiones, audit, tasks), `cache/` (venv, engine-versions), `state/` (mode, log), `run/` (socket, pid)
 
 **Secrets con scope de workspace**
-- `keychain://github-token` en workspace "befra" busca `befra/github-token` primero, luego `github-token`
+- `keychain://github-token` en workspace "trabajo" busca `trabajo/github-token` primero, luego `github-token`
 - Permite tokens distintos por workspace sin cambiar la config
 
 **Nuevo: `orbit scope`**
