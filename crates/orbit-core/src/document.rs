@@ -171,6 +171,9 @@ pub struct GenerateRequest {
     pub repository: Option<String>,
     /// Explicit scope string override (for orbit_scope auto-var).
     pub scope: Option<String>,
+    /// Pre-allocated ID (e.g. DOC-000001). If set, the index uses it directly instead of
+    /// calling next_id(). Set by the CLI so the ID can appear in the output filename.
+    pub id: Option<String>,
     /// When true, skip writing to the NDJSON document index (used by update flow).
     pub skip_index: bool,
 }
@@ -443,7 +446,10 @@ pub fn list_templates() -> Vec<(TemplateSource, DocumentTemplateMeta)> {
     results
 }
 
-fn collect_html_templates(dir: &std::path::Path, mut push: impl FnMut(PathBuf, DocumentTemplateMeta)) {
+fn collect_html_templates(
+    dir: &std::path::Path,
+    mut push: impl FnMut(PathBuf, DocumentTemplateMeta),
+) {
     if let Ok(entries) = fs::read_dir(dir) {
         let mut paths: Vec<_> = entries
             .filter_map(|e| e.ok())
@@ -596,9 +602,12 @@ fn human_timestamp_now() -> String {
     let hour = time_secs / 3600;
     let minute = (time_secs % 3600) / 60;
     let (y, m, d) = days_to_ymd(days as u32);
-    let month_abbr = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    let mon = month_abbr.get(m.saturating_sub(1) as usize).unwrap_or(&"???");
+    let month_abbr = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let mon = month_abbr
+        .get(m.saturating_sub(1) as usize)
+        .unwrap_or(&"???");
     format!("{mon} {d}, {y} at {hour:02}:{minute:02}")
 }
 
@@ -638,7 +647,9 @@ fn render_mermaid_blocks(markdown: &str) -> String {
         return markdown.to_string();
     }
 
-    let mmdc_path = which_binary("mmdc").or_else(|_| which_binary("mermaid")).ok();
+    let mmdc_path = which_binary("mmdc")
+        .or_else(|_| which_binary("mermaid"))
+        .ok();
     if mmdc_path.is_none() {
         eprintln!(
             "[orbit document] warn: mermaid diagrams found but mmdc not in PATH — \
@@ -712,11 +723,16 @@ fn render_single_mermaid(diagram: &str, mmdc: &Path) -> Result<String> {
     fs::write(&mmd_file, diagram)?;
 
     let status = Command::new(mmdc)
-        .arg("-i").arg(&mmd_file)
-        .arg("-o").arg(&png_file)
-        .arg("--backgroundColor").arg("white")
-        .arg("-w").arg("1200")
-        .arg("-s").arg("2")
+        .arg("-i")
+        .arg(&mmd_file)
+        .arg("-o")
+        .arg(&png_file)
+        .arg("--backgroundColor")
+        .arg("white")
+        .arg("-w")
+        .arg("1200")
+        .arg("-s")
+        .arg("2")
         .status()
         .context("failed to run mmdc")?;
 
@@ -733,8 +749,10 @@ fn render_single_mermaid(diagram: &str, mmdc: &Path) -> Result<String> {
     if let Ok(convert) = which_binary("convert") {
         let _ = Command::new(convert)
             .arg(&png_file)
-            .arg("-bordercolor").arg("white")
-            .arg("-border").arg("0x40")
+            .arg("-bordercolor")
+            .arg("white")
+            .arg("-border")
+            .arg("0x40")
             .arg(&png_file)
             .status();
     }
@@ -754,12 +772,28 @@ fn base64_encode(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            chunk[1] as usize
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            chunk[2] as usize
+        } else {
+            0
+        };
         out.push(TABLE[b0 >> 2] as char);
         out.push(TABLE[((b0 & 0x3) << 4) | (b1 >> 4)] as char);
-        out.push(if chunk.len() > 1 { TABLE[((b1 & 0xf) << 2) | (b2 >> 6)] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[b2 & 0x3f] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[((b1 & 0xf) << 2) | (b2 >> 6)] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[b2 & 0x3f] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -841,7 +875,7 @@ pub fn generate(req: &GenerateRequest) -> Result<GenerateResult> {
         .to_string();
 
     let entry = DocumentEntry {
-        id: next_id(&workspace_name),
+        id: req.id.clone().unwrap_or_else(|| next_id(&workspace_name)),
         title: req.title.clone(),
         format: req.format.as_str().to_string(),
         template: req.template.clone(),
@@ -1000,15 +1034,24 @@ fn try_pdf_renderers(html: &Path, output: &Path, ctx: &PdfRenderCtx) -> Result<(
         let footer_line = format!("{}  |  {}", ctx.footer_left, ctx.footer_left2);
         let status = Command::new(&wp)
             .arg("--quiet")
-            .arg("--page-size").arg(&ctx.page_size)
-            .arg("--margin-top").arg("25")
-            .arg("--margin-bottom").arg("28")
-            .arg("--margin-left").arg("20")
-            .arg("--margin-right").arg("20")
-            .arg("--footer-font-size").arg("8")
-            .arg("--footer-spacing").arg("3")
-            .arg("--footer-left").arg(&footer_line)
-            .arg("--footer-right").arg("Page [page] / [topage]")
+            .arg("--page-size")
+            .arg(&ctx.page_size)
+            .arg("--margin-top")
+            .arg("25")
+            .arg("--margin-bottom")
+            .arg("28")
+            .arg("--margin-left")
+            .arg("20")
+            .arg("--margin-right")
+            .arg("20")
+            .arg("--footer-font-size")
+            .arg("8")
+            .arg("--footer-spacing")
+            .arg("3")
+            .arg("--footer-left")
+            .arg(&footer_line)
+            .arg("--footer-right")
+            .arg("Page [page] / [topage]")
             .arg(html)
             .arg(output)
             .status()
@@ -1261,6 +1304,7 @@ mod tests {
             project: None,
             repository: None,
             scope: Some("T/P/R".into()),
+            id: None,
             skip_index: false,
         };
         let vars = auto_vars(&req);
@@ -1288,6 +1332,7 @@ mod tests {
             project: None,
             repository: None,
             scope: None,
+            id: None,
             skip_index: true,
         };
         let result = generate(&req).unwrap();
@@ -1312,6 +1357,7 @@ mod tests {
             project: None,
             repository: None,
             scope: None,
+            id: None,
             skip_index: true,
         };
         let result = generate(&req).unwrap();
@@ -1336,6 +1382,7 @@ mod tests {
             project: None,
             repository: None,
             scope: None,
+            id: None,
             skip_index: true,
         };
         let result = generate(&req).unwrap();

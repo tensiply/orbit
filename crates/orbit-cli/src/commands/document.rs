@@ -1,10 +1,10 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use orbit_core::{
     data_paths,
     document::{
         self, DocumentEntry, DocumentFormat, GenerateRequest, TemplateSource, add_user_template,
-        find_entry, list_templates, load_all_entries, load_all_entries_global,
+        find_entry, list_templates, load_all_entries, load_all_entries_global, next_id,
         remove_user_template, resolve_template, update_stored_entry,
     },
 };
@@ -61,10 +61,6 @@ pub struct CreateArgs {
     /// Template variable: KEY=VALUE (repeatable)
     #[arg(long = "var", short = 'v', value_name = "KEY=VALUE")]
     pub vars: Vec<String>,
-
-    /// Open the output directory in the file explorer after creation
-    #[arg(long)]
-    pub open: bool,
 
     /// Overwrite the output file if it already exists
     #[arg(long)]
@@ -158,27 +154,45 @@ pub fn run(args: DocumentArgs) -> Result<()> {
 
 fn run_create(args: CreateArgs) -> Result<()> {
     let format = DocumentFormat::parse(&args.r#type)?;
-
     let content = resolve_content(args.content.as_deref(), args.content_file.as_deref())?;
-
-    // Resolve workspace/tenant/project/repository from args or env.
     let (workspace_name, tenant, project, repository) = resolve_scope(args.workspace.as_deref());
 
-    let output = match args.output {
-        Some(p) => p,
-        None => {
-            let slug = slugify_title(&args.title);
-            let scope_dir =
-                data_paths::documents_scope_dir(&workspace_name, &tenant, &project, &repository);
-            scope_dir.join(format!("{slug}.{}", format.extension()))
-        }
-    };
+    // Resolve output path and ID together so the filename includes the ID.
+    // Same title → find existing entry → reuse its path and ID (idempotent re-generation).
+    // New title → allocate ID first, build {ID}-{slug}.{ext}.
+    let (output, alloc_id, existing): (PathBuf, String, Option<DocumentEntry>) =
+        if let Some(p) = args.output {
+            let ex = find_by_output(&p, &workspace_name);
+            let id = ex
+                .as_ref()
+                .map(|e| e.id.clone())
+                .unwrap_or_else(|| next_id(&workspace_name));
+            (p, id, ex)
+        } else {
+            let ex = find_by_title(&args.title, &workspace_name);
+            if let Some(ref e) = ex {
+                (e.output_path.clone(), e.id.clone(), ex)
+            } else {
+                let id = next_id(&workspace_name);
+                let slug = slugify_title(&args.title);
+                let scope_dir = data_paths::documents_scope_dir(
+                    &workspace_name,
+                    &tenant,
+                    &project,
+                    &repository,
+                );
+                let path = scope_dir.join(format!("{id}-{slug}.{}", format.extension()));
+                (path, id, None)
+            }
+        };
 
+    // Backup existing file before overwriting.
+    // --force skips the backup and overwrites directly.
     if output.exists() && !args.force {
-        bail!(
-            "output file already exists: {}. Use --force to overwrite.",
-            output.display()
-        );
+        let backup = PathBuf::from(format!("{}.bk", output.display()));
+        if let Err(e) = fs::copy(&output, &backup) {
+            eprintln!("[orbit document] warn: could not backup existing file: {e}");
+        }
     }
 
     let vars = parse_vars(&args.vars)?;
@@ -190,16 +204,28 @@ fn run_create(args: CreateArgs) -> Result<()> {
         template: args.template,
         output,
         vars,
-        workspace: Some(workspace_name),
+        workspace: Some(workspace_name.clone()),
         tenant: Some(tenant),
         project: Some(project),
         repository: Some(repository),
         scope: None,
-        skip_index: false,
+        id: Some(alloc_id),
+        skip_index: existing.is_some(),
     };
 
     let result = document::generate(&req)
         .with_context(|| format!("failed to generate {} document", req.title))?;
+
+    // Update existing index entry in-place (preserves the original ID).
+    if let Some(entry) = existing {
+        let now = document::now_secs_pub();
+        let updated = DocumentEntry {
+            source_path: result.source.clone(),
+            updated_at: now,
+            ..entry.clone()
+        };
+        let _ = update_stored_entry(&workspace_name, &entry.id, updated);
+    }
 
     println!(
         "  {} → {} ({} bytes)",
@@ -209,12 +235,25 @@ fn run_create(args: CreateArgs) -> Result<()> {
     );
     println!("  source: {}", result.source.display());
 
-    if args.open {
-        let dir = result.output.parent().unwrap_or(&result.output);
-        open::that(dir).with_context(|| format!("failed to open directory {}", dir.display()))?;
+    let dir = result.output.parent().unwrap_or(&result.output);
+    if let Err(e) = open::that(dir) {
+        eprintln!("[orbit document] warn: could not open directory: {e}");
     }
 
     Ok(())
+}
+
+fn find_by_output(output: &std::path::Path, workspace_name: &str) -> Option<DocumentEntry> {
+    let target = output.to_string_lossy();
+    load_all_entries(workspace_name)
+        .into_iter()
+        .find(|e| e.output_path.to_string_lossy() == target)
+}
+
+fn find_by_title(title: &str, workspace_name: &str) -> Option<DocumentEntry> {
+    load_all_entries(workspace_name)
+        .into_iter()
+        .find(|e| e.title == title)
 }
 
 fn run_update(args: UpdateArgs) -> Result<()> {
@@ -254,6 +293,7 @@ fn run_update(args: UpdateArgs) -> Result<()> {
         project: Some(entry.project.clone()),
         repository: Some(entry.repository.clone()),
         scope: None,
+        id: None,
         // skip_index=true: we update the existing entry manually below.
         skip_index: true,
     };
@@ -279,9 +319,9 @@ fn run_update(args: UpdateArgs) -> Result<()> {
         result.bytes
     );
 
-    if args.open {
-        let dir = result.output.parent().unwrap_or(&result.output);
-        open::that(dir).with_context(|| format!("failed to open directory {}", dir.display()))?;
+    let dir = result.output.parent().unwrap_or(&result.output);
+    if let Err(e) = open::that(dir) {
+        eprintln!("[orbit document] warn: could not open directory: {e}");
     }
 
     Ok(())
