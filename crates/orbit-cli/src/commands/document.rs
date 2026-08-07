@@ -299,14 +299,23 @@ fn run_list(args: ListArgs) -> Result<()> {
     }
 
     let shown: Vec<_> = entries.iter().rev().take(args.limit).collect();
-    println!("{:<12} {:<10} {:<30} PATH", "ID", "FORMAT", "TITLE");
-    println!("{}", "─".repeat(90));
+    println!(
+        "{:<12} {:<12} {:<10} {:<28} PATH",
+        "ID", "WORKSPACE", "FORMAT", "TITLE"
+    );
+    println!("{}", "─".repeat(100));
     for e in shown.iter().rev() {
+        let ws_display = if e.workspace.is_empty() {
+            "—".to_string()
+        } else {
+            truncate(&e.workspace, 12)
+        };
         println!(
-            "{:<12} {:<10} {:<30} {}",
+            "{:<12} {:<12} {:<10} {:<28} {}",
             e.id,
+            ws_display,
             e.format,
-            truncate(&e.title, 30),
+            truncate(&e.title, 28),
             e.output_path.display()
         );
     }

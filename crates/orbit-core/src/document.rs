@@ -281,17 +281,35 @@ pub fn load_all_entries_global() -> Vec<DocumentEntry> {
 }
 
 /// Find an entry by ID (e.g., "DOC-000001") or by output/source path.
+///
+/// When multiple entries share the same ID across workspaces, prefers the one
+/// matching the current workspace (from `AI_WORKSPACE_ROOT`) over the first found.
 pub fn find_entry(id_or_path: &str) -> Option<(String, DocumentEntry)> {
+    let current_ws = std::env::var("AI_WORKSPACE_ROOT")
+        .ok()
+        .and_then(|p| {
+            PathBuf::from(&p)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+
+    let mut fallback: Option<(String, DocumentEntry)> = None;
     for entry in load_all_entries_global() {
         if entry.id == id_or_path
             || entry.output_path.to_string_lossy() == id_or_path
             || entry.source_path.to_string_lossy() == id_or_path
         {
-            let ws = entry.workspace.clone();
-            return Some((ws, entry));
+            if !current_ws.is_empty() && entry.workspace == current_ws {
+                return Some((entry.workspace.clone(), entry));
+            }
+            if fallback.is_none() {
+                fallback = Some((entry.workspace.clone(), entry));
+            }
         }
     }
-    None
+    fallback
 }
 
 /// Generate the next document ID for a workspace in DOC-NNNNNN format.
