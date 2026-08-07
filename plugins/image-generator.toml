@@ -1,0 +1,73 @@
+name = "image-generator"
+description = "Image generation pipeline: HTML templates via Chrome headless, or AI (DALL-E 3). Always saves source text alongside the image."
+category = "productivity"
+
+[check]
+binary = "google-chrome"
+any_of = ["chromium", "chromium-browser"]
+
+[[install]]
+method = "apt"
+cmd = ["apt-get", "install", "-y", "google-chrome-stable"]
+label = "google-chrome (apt) — required for template backend"
+
+[[install]]
+method = "apt"
+cmd = ["apt-get", "install", "-y", "chromium"]
+label = "chromium (apt) — alternative to google-chrome"
+
+[auth]
+hint = "For the AI backend: set OPENAI_API_KEY env var or run `orbit secret set openai_api_key`. Template backend requires no auth."
+
+[context]
+prompt = """When generating images (notices, banners, social cards, announcements, visuals):
+- Use `orbit image create` instead of creating images manually.
+- Required: `--title` for the image title.
+- Pass text content via `--content "<text>"` or `--content-file <path>` (stored alongside image as .txt).
+- `--backend template` (default): renders an HTML template via Chrome headless — best for notices, cards, banners.
+- `--backend ai`: generates via DALL-E 3 — needs OPENAI_API_KEY or `orbit secret set openai_api_key`.
+- `--type png` (default), `--type jpeg`, or `--type webp`.
+- `--template <name>` selects the HTML template. Run `orbit image template list` to see available.
+- `--var KEY=VALUE` injects template variables (e.g. `--var accent=#6366f1`).
+- `--open` opens the output directory after generation.
+- NEVER specify `--output` — let orbit choose the scope-based path and register in index.
+- The source .txt file enables `orbit image` to regenerate the image from the same content later.
+"""
+
+[executor]
+command = ["sh", "-c", "orbit image create --title {title}{content_arg}{template_arg}{backend_arg}{type_arg}{extra_args}"]
+
+[[executor.params]]
+name = "title"
+description = "Image title"
+required = true
+
+[[executor.params]]
+name = "content_arg"
+description = "Optional content flag, e.g. ' --content \"System maintenance scheduled\"'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "template_arg"
+description = "Optional --template flag, e.g. ' --template notice'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "backend_arg"
+description = "Optional --backend flag, e.g. ' --backend ai'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "type_arg"
+description = "Optional --type flag, e.g. ' --type jpeg'"
+required = false
+default = ""
+
+[[executor.params]]
+name = "extra_args"
+description = "Any additional flags to pass to orbit image create"
+required = false
+default = ""

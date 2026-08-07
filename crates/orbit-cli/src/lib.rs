@@ -87,6 +87,11 @@ pub enum Commands {
     Discover(commands::discover::DiscoverArgs),
     /// Generate documents (PDF, HTML, DOCX, XLSX, CSV) from markdown or data
     Document(commands::document::DocumentArgs),
+    /// Generate images (PNG, JPEG, WEBP) from HTML templates or AI
+    Image(commands::image::ImageArgs),
+    /// Print shell integration (eval in .zshrc/.bashrc)
+    #[command(name = "shell-init")]
+    ShellInit(commands::shell_init::ShellInitArgs),
 }
 
 impl Cli {
@@ -102,18 +107,20 @@ fn needs_setup(cmd: &Option<Commands>) -> bool {
             | Some(Commands::Completions(_))
             | Some(Commands::Man(_))
             | Some(Commands::Update(_))
+            | Some(Commands::ShellInit(_))
             | None
     )
 }
 
 fn shows_banner(cmd: &Option<Commands>) -> bool {
-    // Completions and Man produce machine-readable output; Launch handles its own
+    // Completions, Man, and ShellInit produce machine-readable output; Launch handles its own
     // banner for --dry-run; None opens the TUI which manages its own display.
     !matches!(
         cmd,
         Some(Commands::Completions(_))
             | Some(Commands::Man(_))
             | Some(Commands::Launch(_))
+            | Some(Commands::ShellInit(_))
             | None
     )
 }
@@ -176,6 +183,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Serve(args)) => commands::serve::run(args).await,
         Some(Commands::Discover(args)) => commands::discover::run(args),
         Some(Commands::Document(args)) => commands::document::run(args),
+        Some(Commands::Image(args)) => commands::image::run(args),
+        Some(Commands::ShellInit(args)) => commands::shell_init::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 
@@ -212,6 +221,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     task: params.task_context.as_ref().map(|t| t.key.clone()),
                     no_task: params.task_context.is_none(),
                     new_session: false,
+                    print_work_dir: false,
                 })
                 .await?;
             }

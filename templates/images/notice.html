@@ -1,0 +1,143 @@
+<!-- ---
+name: notice
+description: Simple notice with title and brief description
+variables:
+  - title
+  - description
+width: 1200
+height: 630
+--- -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* Subtle gradient overlay */
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 50%, rgba(99, 102, 241, 0.18) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 80%, rgba(16, 185, 129, 0.10) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    /* Dot grid pattern */
+    body::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      z-index: 10;
+      width: 960px;
+      padding: 72px 80px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 24px;
+      backdrop-filter: blur(2px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(99, 102, 241, 0.20);
+      border: 1px solid rgba(99, 102, 241, 0.40);
+      border-radius: 100px;
+      padding: 4px 14px;
+      margin-bottom: 28px;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #818cf8;
+    }
+
+    .badge-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: #a5b4fc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+      margin-bottom: 24px;
+    }
+
+    p {
+      font-size: 22px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: #94a3b8;
+      max-width: 680px;
+    }
+
+    .footer {
+      position: absolute;
+      bottom: 36px;
+      right: 52px;
+      z-index: 10;
+      font-size: 13px;
+      color: rgba(255,255,255,0.22);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .scope {
+      position: absolute;
+      bottom: 36px;
+      left: 52px;
+      z-index: 10;
+      font-size: 13px;
+      color: rgba(255,255,255,0.22);
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      <span class="badge-text">Notice</span>
+    </div>
+    <h1>{{ title }}</h1>
+    {% if description %}<p>{{ description }}</p>{% endif %}
+  </div>
+
+  <div class="footer">orbit</div>
+  {% if orbit_scope %}<div class="scope">{{ orbit_scope }}</div>{% endif %}
+</body>
+</html>

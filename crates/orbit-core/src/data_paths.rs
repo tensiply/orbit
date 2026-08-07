@@ -186,6 +186,82 @@ pub fn documents_index_path_for(workspace_name: Option<&str>) -> PathBuf {
     }
 }
 
+// ── image paths ───────────────────────────────────────────────────────────────
+
+/// User image templates: `~/.orbit/data/templates/images/`
+pub fn image_templates_dir() -> PathBuf {
+    orbit_data_root().join("templates/images")
+}
+
+/// Workspace-scoped image templates: `$AI_CONTEXT_ROOT/templates/image/`
+pub fn workspace_image_templates_dir() -> Option<PathBuf> {
+    std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|root| PathBuf::from(root).join("templates/image"))
+}
+
+/// Workspace-scoped image rule overrides: `$AI_CONTEXT_ROOT/image-rules/`
+pub fn workspace_image_rules_dir() -> Option<PathBuf> {
+    std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|root| PathBuf::from(root).join("image-rules"))
+}
+
+/// User image rule overrides: `~/.orbit/image-rules/`
+pub fn image_rules_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(p).join("image-rules");
+    }
+    orbit_home().join("image-rules")
+}
+
+/// Root for user-visible generated images: `~/.orbit/images/`
+pub fn images_output_base() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|b| b.home_dir().join(".orbit/images"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/images"))
+}
+
+/// Scope-based output directory: `~/.orbit/images/{workspace}/{tenant}/{project}/{repo}/`
+pub fn images_scope_dir(workspace: &str, tenant: &str, project: &str, repo: &str) -> PathBuf {
+    let mut path = images_output_base();
+    for part in [workspace, tenant, project, repo] {
+        if !part.is_empty() {
+            path = path.join(part);
+        }
+    }
+    path
+}
+
+/// NDJSON index of image entries for a workspace.
+pub fn images_index_path_for(workspace_name: Option<&str>) -> PathBuf {
+    let root = orbit_data_root();
+    match workspace_name.filter(|s| !s.is_empty()) {
+        None => root.join("images/index.jsonl"),
+        Some(name) => root
+            .join("workspaces")
+            .join(slugify(name))
+            .join("images/index.jsonl"),
+    }
+}
+
+/// All image index paths: legacy flat + every `workspaces/*/images/index.jsonl`.
+pub fn all_images_index_paths() -> Vec<PathBuf> {
+    let root = orbit_data_root();
+    let mut paths = vec![root.join("images/index.jsonl")];
+    let ws_root = root.join("workspaces");
+    if let Ok(entries) = std::fs::read_dir(&ws_root) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                paths.push(entry.path().join("images/index.jsonl"));
+            }
+        }
+    }
+    paths
+}
+
 /// Flat scope catalog: `~/.orbit/cache/scope-catalog.json`
 pub fn scope_catalog_path() -> PathBuf {
     orbit_cache_root().join("scope-catalog.json")

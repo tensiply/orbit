@@ -11,6 +11,7 @@ pub mod engine_hook;
 pub mod error;
 pub mod eval;
 pub mod hooks;
+pub mod image;
 pub mod ipc;
 pub mod jira;
 pub mod mcp_client;

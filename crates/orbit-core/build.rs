@@ -67,4 +67,21 @@ fn main() {
         &out_dir.join("builtin_document_templates.rs"),
         "html",
     );
+
+    println!("cargo:rerun-if-changed=../../image-rules");
+    println!("cargo:rerun-if-changed=../../templates/images");
+
+    let img_rules_dir = Path::new(&manifest_dir).join("../../image-rules");
+    embed_dir(
+        &img_rules_dir,
+        &out_dir.join("builtin_image_rules.rs"),
+        "yaml",
+    );
+
+    let img_tpl_dir = Path::new(&manifest_dir).join("../../templates/images");
+    embed_dir(
+        &img_tpl_dir,
+        &out_dir.join("builtin_image_templates.rs"),
+        "html",
+    );
 }

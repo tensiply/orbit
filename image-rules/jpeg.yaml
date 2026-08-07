@@ -1,0 +1,6 @@
+format: jpeg
+renderer: chrome
+width: 1200
+height: 630
+quality: 85
+template: notice
