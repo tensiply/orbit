@@ -507,13 +507,16 @@ pub fn list_templates() -> Vec<(TemplateSource, ImageTemplateMeta)> {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut out = Vec::new();
 
-    if let Some(dir) = data_paths::workspace_image_templates_dir() {
+    // Scope-level dirs: repo > project > tenant > workspace (most specific wins)
+    for (_label, dir) in data_paths::scoped_image_template_dirs() {
         append_templates_from_dir(&dir, &mut seen, &mut out, true);
     }
 
+    // User-global dir
     let user_dir = data_paths::image_templates_dir();
     append_templates_from_dir(&user_dir, &mut seen, &mut out, false);
 
+    // Built-ins
     for (name, content) in BUILTIN_IMAGE_TEMPLATES {
         if seen.insert(name.to_string()) {
             out.push((TemplateSource::Builtin, parse_template_meta(content, name)));
@@ -551,12 +554,13 @@ fn append_templates_from_dir(
 }
 
 pub fn resolve_template(name: &str) -> Result<(String, String)> {
-    if let Some(dir) = data_paths::workspace_image_templates_dir() {
+    // Scope-level dirs: repo > project > tenant > workspace
+    for (label, dir) in data_paths::scoped_image_template_dirs() {
         let p = dir.join(format!("{name}.html"));
         if p.exists() {
             let raw = fs::read_to_string(&p)
-                .with_context(|| format!("cannot read workspace template {}", p.display()))?;
-            return Ok((format!("workspace:{}", p.display()), raw));
+                .with_context(|| format!("cannot read {label} template {}", p.display()))?;
+            return Ok((format!("{label}:{}", p.display()), raw));
         }
     }
 

@@ -201,6 +201,62 @@ pub fn workspace_image_templates_dir() -> Option<PathBuf> {
         .map(|root| PathBuf::from(root).join("templates/image"))
 }
 
+/// All scope-level image template directories, from most-specific to least-specific:
+/// repo > project > tenant > workspace.
+/// Each `Option<PathBuf>` is `None` when the corresponding env var is unset.
+pub fn scoped_image_template_dirs() -> Vec<(String, PathBuf)> {
+    let context_root = match std::env::var("AI_CONTEXT_ROOT").ok().filter(|s| !s.is_empty()) {
+        Some(r) => PathBuf::from(r),
+        None => return vec![],
+    };
+    let tenant = std::env::var("AI_TENANT").unwrap_or_default();
+    let project = std::env::var("AI_PROJECT").unwrap_or_default();
+    let repo = std::env::var("AI_REPOSITORY").unwrap_or_default();
+
+    let mut dirs: Vec<(String, PathBuf)> = Vec::new();
+
+    // repo
+    if !tenant.is_empty() && !project.is_empty() && !repo.is_empty() {
+        dirs.push((
+            format!("repo:{repo}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("projects")
+                .join(&project)
+                .join("repositories")
+                .join(&repo)
+                .join("templates/image"),
+        ));
+    }
+    // project
+    if !tenant.is_empty() && !project.is_empty() {
+        dirs.push((
+            format!("project:{project}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("projects")
+                .join(&project)
+                .join("templates/image"),
+        ));
+    }
+    // tenant
+    if !tenant.is_empty() {
+        dirs.push((
+            format!("tenant:{tenant}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("templates/image"),
+        ));
+    }
+    // workspace
+    dirs.push(("workspace".to_string(), context_root.join("templates/image")));
+
+    dirs
+}
+
 /// Workspace-scoped image rule overrides: `$AI_CONTEXT_ROOT/image-rules/`
 pub fn workspace_image_rules_dir() -> Option<PathBuf> {
     std::env::var("AI_CONTEXT_ROOT")
