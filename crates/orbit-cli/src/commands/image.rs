@@ -5,7 +5,7 @@ use orbit_core::{
     image::{
         self, ImageBackend, ImageEntry, ImageFormat, ImageGenerateRequest, TemplateSource,
         add_user_template, find_entry, list_templates, load_all_entries, load_all_entries_global,
-        remove_user_template, resolve_template,
+        remove_user_template, resolve_template, update_stored_entry,
     },
 };
 use std::{collections::HashMap, fs, path::PathBuf};
@@ -74,17 +74,13 @@ pub struct CreateArgs {
     #[arg(long, short = 'o')]
     pub output: Option<PathBuf>,
 
-    /// Overwrite the output file if it already exists
+    /// Skip backup when the output file already exists (default: backup to .bk)
     #[arg(long)]
     pub force: bool,
 
     /// Workspace name override (auto-detected from AI_WORKSPACE_ROOT)
     #[arg(long)]
     pub workspace: Option<String>,
-
-    /// Open the output directory after generation
-    #[arg(long)]
-    pub open: bool,
 }
 
 // ── list ──────────────────────────────────────────────────────────────────────
@@ -164,12 +160,18 @@ fn run_create(args: CreateArgs) -> Result<()> {
         }
     };
 
+    // Backup existing file before overwriting — same title = same path = idempotent re-generation.
+    // --force skips the backup and overwrites directly.
     if output.exists() && !args.force {
-        bail!(
-            "output file already exists: {}. Use --force to overwrite.",
-            output.display()
-        );
+        let backup = PathBuf::from(format!("{}.bk", output.display()));
+        if let Err(e) = fs::copy(&output, &backup) {
+            eprintln!("[orbit image] warn: could not backup existing file: {e}");
+        }
     }
+
+    // Look up existing index entry for this output path so we can update it (preserving the ID)
+    // instead of appending a new entry every time the same image is regenerated.
+    let existing = find_by_output(&output, &workspace_name);
 
     let vars = parse_vars(&args.vars)?;
 
@@ -183,15 +185,30 @@ fn run_create(args: CreateArgs) -> Result<()> {
         height: args.height,
         vars,
         output,
-        workspace: Some(workspace_name),
+        workspace: Some(workspace_name.clone()),
         tenant: Some(tenant),
         project: Some(project),
         repository: Some(repository),
-        skip_index: false,
+        // If an entry already exists we update it manually below; skip the auto-append.
+        skip_index: existing.is_some(),
     };
 
     let result = image::generate(&req)
         .with_context(|| format!("failed to generate image '{}'", req.title))?;
+
+    // Update existing index entry (preserves the original ID) or was already appended as new.
+    if let Some(entry) = existing {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let updated = ImageEntry {
+            source_path: result.source.clone(),
+            updated_at: now,
+            ..entry.clone()
+        };
+        let _ = update_stored_entry(&workspace_name, &entry.id, updated);
+    }
 
     println!(
         "  {} → {} ({} bytes)",
@@ -201,14 +218,19 @@ fn run_create(args: CreateArgs) -> Result<()> {
     );
     println!("  source: {}", result.source.display());
 
-    if args.open {
-        let dir = result.output.parent().unwrap_or(&result.output);
-        if let Err(e) = open::that(dir) {
-            eprintln!("[orbit image] warn: could not open directory: {e}");
-        }
+    let dir = result.output.parent().unwrap_or(&result.output);
+    if let Err(e) = open::that(dir) {
+        eprintln!("[orbit image] warn: could not open directory: {e}");
     }
 
     Ok(())
+}
+
+fn find_by_output(output: &std::path::Path, workspace_name: &str) -> Option<ImageEntry> {
+    let target = output.to_string_lossy();
+    load_all_entries(workspace_name)
+        .into_iter()
+        .find(|e| e.output_path.to_string_lossy() == target)
 }
 
 fn run_list(args: ListArgs) -> Result<()> {
