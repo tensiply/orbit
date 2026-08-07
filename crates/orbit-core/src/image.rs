@@ -164,6 +164,9 @@ pub struct ImageGenerateRequest {
     pub tenant: Option<String>,
     pub project: Option<String>,
     pub repository: Option<String>,
+    /// Pre-allocated ID (e.g. IMG-000001). If set, the index uses it directly instead of
+    /// calling next_id(). Set by the CLI so the ID can appear in the output filename.
+    pub id: Option<String>,
     pub skip_index: bool,
 }
 
@@ -218,7 +221,7 @@ pub fn generate(req: &ImageGenerateRequest) -> Result<ImageResult> {
             .unwrap_or_default()
             .as_secs();
         let ws = req.workspace.clone().unwrap_or_default();
-        let id = next_id(&ws);
+        let id = req.id.clone().unwrap_or_else(|| next_id(&ws));
         let entry = ImageEntry {
             id,
             title: req.title.clone(),

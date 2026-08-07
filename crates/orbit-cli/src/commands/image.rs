@@ -5,7 +5,7 @@ use orbit_core::{
     image::{
         self, ImageBackend, ImageEntry, ImageFormat, ImageGenerateRequest, TemplateSource,
         add_user_template, find_entry, list_templates, load_all_entries, load_all_entries_global,
-        remove_user_template, resolve_template, update_stored_entry,
+        next_id, remove_user_template, resolve_template, update_stored_entry,
     },
 };
 use std::{collections::HashMap, fs, path::PathBuf};
@@ -150,17 +150,36 @@ fn run_create(args: CreateArgs) -> Result<()> {
     let content = resolve_content(args.content.as_deref(), args.content_file.as_deref())?;
     let (workspace_name, tenant, project, repository) = resolve_scope(args.workspace.as_deref());
 
-    let output = match args.output {
-        Some(p) => p,
-        None => {
-            let slug = slugify(&args.title);
-            let scope_dir =
-                data_paths::images_scope_dir(&workspace_name, &tenant, &project, &repository);
-            scope_dir.join(format!("{slug}.{}", format.extension()))
-        }
-    };
+    // Resolve output path and ID together so the filename can include the ID.
+    // Same title → find existing entry → reuse its path and ID (idempotent re-generation).
+    // New title → allocate ID first, then build {ID}-{slug}.{ext}.
+    let (output, alloc_id, existing): (PathBuf, String, Option<ImageEntry>) =
+        if let Some(p) = args.output {
+            let ex = find_by_output(&p, &workspace_name);
+            let id = ex
+                .as_ref()
+                .map(|e| e.id.clone())
+                .unwrap_or_else(|| next_id(&workspace_name));
+            (p, id, ex)
+        } else {
+            let ex = find_by_title(&args.title, &workspace_name);
+            if let Some(ref e) = ex {
+                (e.output_path.clone(), e.id.clone(), ex)
+            } else {
+                let id = next_id(&workspace_name);
+                let slug = slugify(&args.title);
+                let scope_dir = data_paths::images_scope_dir(
+                    &workspace_name,
+                    &tenant,
+                    &project,
+                    &repository,
+                );
+                let path = scope_dir.join(format!("{id}-{slug}.{}", format.extension()));
+                (path, id, None)
+            }
+        };
 
-    // Backup existing file before overwriting — same title = same path = idempotent re-generation.
+    // Backup existing file before overwriting.
     // --force skips the backup and overwrites directly.
     if output.exists() && !args.force {
         let backup = PathBuf::from(format!("{}.bk", output.display()));
@@ -168,10 +187,6 @@ fn run_create(args: CreateArgs) -> Result<()> {
             eprintln!("[orbit image] warn: could not backup existing file: {e}");
         }
     }
-
-    // Look up existing index entry for this output path so we can update it (preserving the ID)
-    // instead of appending a new entry every time the same image is regenerated.
-    let existing = find_by_output(&output, &workspace_name);
 
     let vars = parse_vars(&args.vars)?;
 
@@ -189,6 +204,8 @@ fn run_create(args: CreateArgs) -> Result<()> {
         tenant: Some(tenant),
         project: Some(project),
         repository: Some(repository),
+        // Pass the pre-allocated ID so the core uses it verbatim in the index entry.
+        id: Some(alloc_id),
         // If an entry already exists we update it manually below; skip the auto-append.
         skip_index: existing.is_some(),
     };
@@ -196,7 +213,7 @@ fn run_create(args: CreateArgs) -> Result<()> {
     let result = image::generate(&req)
         .with_context(|| format!("failed to generate image '{}'", req.title))?;
 
-    // Update existing index entry (preserves the original ID) or was already appended as new.
+    // Update existing index entry in-place (preserves the original ID).
     if let Some(entry) = existing {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -231,6 +248,12 @@ fn find_by_output(output: &std::path::Path, workspace_name: &str) -> Option<Imag
     load_all_entries(workspace_name)
         .into_iter()
         .find(|e| e.output_path.to_string_lossy() == target)
+}
+
+fn find_by_title(title: &str, workspace_name: &str) -> Option<ImageEntry> {
+    load_all_entries(workspace_name)
+        .into_iter()
+        .find(|e| e.title == title)
 }
 
 fn run_list(args: ListArgs) -> Result<()> {
