@@ -8,7 +8,7 @@ Generate an image from text content. Always saves a source .txt file alongside t
 ## Usage
 
 ```
-orbit image create --title "<title>" [--content "<text>"] [--backend template|ai] [--type png|jpeg|webp] [--template <name>] [--var KEY=VALUE...] [--width N] [--height N] [--open]
+orbit image create --title "<title>" [--content "<text>"] [--backend template|ai] [--type png|jpeg|webp] [--template <name>] [--var KEY=VALUE...] [--width N] [--height N] [--force]
 ```
 
 ## Examples
