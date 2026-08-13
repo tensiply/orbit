@@ -101,6 +101,7 @@ pub fn build_gemini_commands(
         "# Available Commands\n\nOrbit provides the following commands. When the user asks to generate a document, commit code, open a PR, or manage sessions, invoke the corresponding `orbit` command directly.\n".to_string(),
     ];
 
+    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (name, content) in orbit_core::builtin_command::all() {
         if commands_filter.is_some_and(|f| !f.contains(*name)) {
             continue;
@@ -108,6 +109,16 @@ pub fn build_gemini_commands(
         let text =
             apply_scope_overlays_or_fallback(scope, "commands", name, content, &shared, &local);
         // Strip YAML front matter so Gemini only sees the usable instructions
+        let body = strip_front_matter(&text);
+        parts.push(format!("\n---\n\n## /{name}\n\n{body}"));
+        seen_names.insert(name.to_string());
+    }
+
+    // Include scope-only commands (from tenant/project/repo dirs)
+    for (name, text) in collect_scope_commands(scope, commands_filter, &shared, &local) {
+        if seen_names.contains(&name) {
+            continue;
+        }
         let body = strip_front_matter(&text);
         parts.push(format!("\n---\n\n## /{name}\n\n{body}"));
     }
@@ -123,7 +134,9 @@ fn strip_front_matter(text: &str) -> &str {
         return text;
     }
     // find the closing ---
-    if let Some(rest) = t.strip_prefix("---") && let Some(idx) = rest.find("\n---") {
+    if let Some(rest) = t.strip_prefix("---")
+        && let Some(idx) = rest.find("\n---")
+    {
         return rest[idx + 4..].trim_start();
     }
     text
@@ -185,6 +198,7 @@ fn build_opencode(
         fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
     materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
+    materialize_scope_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
 
     // ── skills symlink ────────────────────────────────────────────────────────
     let shared_skills = shared.join("skills");
@@ -266,6 +280,7 @@ fn build_claude(
         fs::write(commands_dir.join(format!("{name}.md")), text)?;
     }
     materialize_user_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
+    materialize_scope_commands(scope, &commands_dir, commands_filter, &shared, &local)?;
 
     // ── skills + README symlinks ──────────────────────────────────────────────
     let shared_skills = shared.join("skills");
@@ -711,6 +726,127 @@ fn materialize_user_commands(
 
 fn user_config_dir() -> PathBuf {
     orbit_core::data_paths::orbit_home()
+}
+
+/// Return scope command directories in order: tenant → project → repo.
+fn scope_command_dirs(scope: &OrbitScope) -> Vec<PathBuf> {
+    if scope.global_mode || scope.tenant.is_empty() {
+        return Vec::new();
+    }
+    let mut dirs = Vec::new();
+    dirs.push(
+        scope
+            .ai_context_root
+            .join("tenants")
+            .join(&scope.tenant)
+            .join("source-of-truth/orbit/commands"),
+    );
+    if !scope.project.is_empty() {
+        dirs.push(
+            scope
+                .ai_context_root
+                .join("tenants")
+                .join(&scope.tenant)
+                .join("projects")
+                .join(&scope.project)
+                .join("source-of-truth/orbit/commands"),
+        );
+        if !scope.repository.is_empty() {
+            dirs.push(
+                scope
+                    .ai_context_root
+                    .join("tenants")
+                    .join(&scope.tenant)
+                    .join("projects")
+                    .join(&scope.project)
+                    .join("repositories")
+                    .join(&scope.repository)
+                    .join("source-of-truth/orbit/commands"),
+            );
+        }
+    }
+    dirs
+}
+
+/// Collect scope-only commands from tenant/project/repo dirs.
+/// Returns `(name, merged_text)` for each command not already in `exclude`.
+fn collect_scope_commands(
+    scope: &OrbitScope,
+    commands_filter: Option<&std::collections::HashSet<String>>,
+    shared: &Path,
+    local: &Path,
+) -> Vec<(String, String)> {
+    let dirs = scope_command_dirs(scope);
+    if dirs.is_empty() {
+        return Vec::new();
+    }
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for dir in &dirs {
+        if !dir.is_dir() {
+            continue;
+        }
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect();
+        entries.sort_by_key(|e| e.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.extension().and_then(|ex| ex.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+                continue;
+            };
+            if seen.contains(&stem) {
+                continue;
+            }
+            if commands_filter.is_some_and(|f| !f.contains(&stem)) {
+                continue;
+            }
+            // Use empty fallback: scope overlays provide the actual content.
+            let text = apply_scope_overlays_or_fallback(scope, "commands", &stem, "", shared, local);
+            if !text.trim().is_empty() {
+                seen.insert(stem.clone());
+                result.push((stem, text));
+            }
+        }
+    }
+    result
+}
+
+/// Materialise scope-only commands (tenant/project/repo) that are not built-ins
+/// and not in `~/.orbit/commands/`.  Called after `materialize_user_commands`.
+fn materialize_scope_commands(
+    scope: &OrbitScope,
+    commands_dir: &Path,
+    commands_filter: Option<&std::collections::HashSet<String>>,
+    shared: &Path,
+    local: &Path,
+) -> Result<()> {
+    // Collect names already written so we don't overwrite built-ins or user commands.
+    let already_written: std::collections::HashSet<String> = fs::read_dir(commands_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|ex| ex.to_str()) != Some("md") {
+                return None;
+            }
+            p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+        })
+        .collect();
+
+    for (name, text) in collect_scope_commands(scope, commands_filter, shared, local) {
+        if already_written.contains(&name) {
+            continue;
+        }
+        fs::write(commands_dir.join(format!("{name}.md")), text)?;
+    }
+    Ok(())
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
