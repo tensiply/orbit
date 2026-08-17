@@ -768,7 +768,7 @@ fn scope_command_dirs(scope: &OrbitScope) -> Vec<PathBuf> {
     dirs
 }
 
-/// Collect scope-only commands from tenant/project/repo dirs.
+/// Collect non-built-in commands from workspace, tenant, project, and repo dirs.
 /// Returns `(name, merged_text)` for each command not already in `exclude`.
 fn collect_scope_commands(
     scope: &OrbitScope,
@@ -776,10 +776,13 @@ fn collect_scope_commands(
     shared: &Path,
     local: &Path,
 ) -> Vec<(String, String)> {
-    let dirs = scope_command_dirs(scope);
-    if dirs.is_empty() {
-        return Vec::new();
+    // Workspace dirs first (shared → local), then tenant → project → repo.
+    let mut dirs = vec![shared.join("commands")];
+    let local_commands = local.join("commands");
+    if local_commands != dirs[0] {
+        dirs.push(local_commands);
     }
+    dirs.extend(scope_command_dirs(scope));
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut result = Vec::new();
     for dir in &dirs {

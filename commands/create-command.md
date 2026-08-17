@@ -11,7 +11,7 @@ Create a new orbit command. Guides the user interactively through scope, body, a
 |---|---|
 | `orbit/commands/<name>.md` | Compiled into binary — requires rebuild. Built-in commands in the orbit repo. |
 | `~/.orbit/commands/<name>.md` | **Global user commands** — visible in ALL sessions across all workspaces. No rebuild needed. |
-| `~/AI/source-of-truth/orbit/commands/<name>.md` | **Workspace override** — overrides a built-in for all sessions in this workspace. |
+| `~/AI/source-of-truth/orbit/commands/<name>.md` | **Workspace** — visible in all sessions of this workspace; overrides a built-in of the same name if one exists. |
 | `~/AI/tenants/<T>/source-of-truth/orbit/commands/<name>.md` | **Tenant-only** — visible only in sessions for that tenant. |
 | `~/AI/tenants/<T>/projects/<P>/source-of-truth/orbit/commands/<name>.md` | **Project-only** — visible only in sessions for that project. |
 | `~/AI/tenants/<T>/projects/<P>/repositories/<R>/source-of-truth/orbit/commands/<name>.md` | **Repo-only** — visible only in sessions for that repo. |
@@ -110,22 +110,22 @@ agent: <agent>
 <body>
 ```
 
-## Step 8 — Update manifest.jsonc (only for `workspace` or `global` scope)
+## Step 8 — Verify scope path is correct
 
-Read `~/AI/source-of-truth/orbit/manifest.jsonc` and add under `"commands"`:
+Orbit discovers commands automatically by scanning these directories at launch — no manifest update needed for any scope:
 
-```json
-"<name>": {
-  "source": "commands/<name>.md",
-  "overrides": [
-    "tenants/*/source-of-truth/orbit/commands/<name>.md",
-    "tenants/*/projects/*/source-of-truth/orbit/commands/<name>.md",
-    "tenants/*/projects/*/repositories/*/source-of-truth/orbit/commands/<name>.md"
-  ]
-}
+| Scope | Discovery |
+|---|---|
+| `global` | `~/.orbit/commands/` |
+| `workspace` | `~/AI/source-of-truth/orbit/commands/` |
+| `tenant` | `~/AI/tenants/<T>/source-of-truth/orbit/commands/` |
+| `project` | `~/AI/tenants/<T>/projects/<P>/source-of-truth/orbit/commands/` |
+| `repo` | `~/AI/tenants/<T>/projects/<P>/repositories/<R>/source-of-truth/orbit/commands/` |
+
+Confirm that the file was written to the expected path with:
+```bash
+ls <resolved_path>
 ```
-
-For scope-only commands (tenant/project/repo): skip this step — orbit discovers them automatically from scope directories.
 
 ## Step 9 — Verify
 
