@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   Session, LaunchScope, LaunchedInfo, WorkspaceInfo, ScopeTreeWorkspace,
   ArchCatalogDto, ArchEntityDto, SaveEntityArgs, ArchLayout, ArchRoutes,
+  HarnessReport,
 } from '../types'
 
 export const tauriService = {
@@ -19,6 +20,15 @@ export const tauriService = {
 
   listSessions: (): Promise<Session[]> =>
     invoke('session_list'),
+
+  sessionHarness: (
+    workspace: string | null,
+    tenant: string | null,
+    project: string | null,
+    repository: string | null,
+    engine: string,
+  ): Promise<HarnessReport> =>
+    invoke('session_harness', { workspace, tenant, project, repository, engine }),
 
   sessionKill: (id: string): Promise<void> =>
     invoke('session_kill', { id }),

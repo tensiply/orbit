@@ -26,6 +26,7 @@ pub fn run() {
             sessions::session_kill,
             sessions::session_clean,
             sessions::session_launch,
+            sessions::session_harness,
             sessions::get_session_title,
             // PTY
             pty::pty_open,

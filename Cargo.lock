@@ -3418,8 +3418,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "directories",
  "orbit-client",
  "orbit-core",
+ "orbit-engine",
  "portable-pty",
  "serde",
  "serde_json",

@@ -1137,7 +1137,8 @@ function SessionItem({
   onRestart:          () => void
   onLaunchWithEngine: (engine: string) => void
 }) {
-  const blurSidebar = useAppStore((s) => s.blurSidebar)
+  const blurSidebar      = useAppStore((s) => s.blurSidebar)
+  const openHarnessDrawer = useAppStore((s) => s.openHarnessDrawer)
   const itemRef     = useRef<HTMLLIElement>(null)
   const buttonRef   = useRef<HTMLButtonElement>(null)
 
@@ -1182,6 +1183,9 @@ function SessionItem({
         <ContextMenuContent className="w-56 text-xs">
           <ContextMenuItem className="text-xs gap-2" onClick={onOpen}>
             <ExternalLink size={13} />Open session
+          </ContextMenuItem>
+          <ContextMenuItem className="text-xs gap-2" onClick={() => void openHarnessDrawer(session)}>
+            <Wrench size={13} />View harness
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub>

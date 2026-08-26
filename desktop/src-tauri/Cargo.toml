@@ -21,8 +21,11 @@ tauri-plugin-window-state = "2"
 
 portable-pty = "0.8"
 
-orbit-core = { path = "../../crates/orbit-core" }
+orbit-core   = { path = "../../crates/orbit-core" }
+orbit-engine = { path = "../../crates/orbit-engine" }
 orbit-client = { path = "../../crates/orbit-client" }
+
+directories = { workspace = true }
 
 base64 = { workspace = true }
 serde = { workspace = true }

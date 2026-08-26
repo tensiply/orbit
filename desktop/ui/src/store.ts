@@ -8,6 +8,7 @@ import { createSettingsSlice } from './store/slices/settings'
 import { createDocumentsSlice } from './store/slices/documents'
 import { createScopeSlice } from './store/slices/scope'
 import { createArchDrawerSlice } from './store/slices/archDrawer'
+import { createHarnessDrawerSlice } from './store/slices/harnessDrawer'
 import type { AppStore } from './store/types'
 
 export const useAppStore = create<AppStore>()(
@@ -21,6 +22,7 @@ export const useAppStore = create<AppStore>()(
       ...createDocumentsSlice(...a),
       ...createScopeSlice(...a),
       ...createArchDrawerSlice(...a),
+      ...createHarnessDrawerSlice(...a),
     }),
     {
       name: 'orbit-ui-prefs',
@@ -42,4 +44,4 @@ export const useAppStore = create<AppStore>()(
 
 // Re-export types so existing component imports continue to work
 export type { AppStore } from './store/types'
-export type { Session, Tab, NavView, Theme, Shortcut, ShortcutCategory, Setting, SettingCategory, DocEntry, WorkspaceInfo, ScopeTreeWorkspace } from './types'
+export type { Session, Tab, NavView, Theme, Shortcut, ShortcutCategory, Setting, SettingCategory, DocEntry, WorkspaceInfo, ScopeTreeWorkspace, HarnessReport } from './types'

@@ -158,6 +158,73 @@ export interface ScopeTreeWorkspace {
   tenants: ScopeTreeTenant[]
 }
 
+// ── Harness inspection ────────────────────────────────────────────────────────
+
+export interface HarnessLayer {
+  path: string
+  exists: boolean
+  label: string
+}
+
+export interface HarnessMcpServer {
+  name: string
+  command: string[]
+  source: string
+}
+
+export interface HarnessInstruction {
+  path: string
+  exists: boolean
+}
+
+export interface HarnessEnvVar {
+  key: string
+  value: string
+  redacted: boolean
+}
+
+export interface HarnessCommand {
+  name: string
+  source: string
+}
+
+export interface HarnessHook {
+  name: string
+  events: string
+}
+
+export interface HarnessPluginContext {
+  name: string
+  prompt_preview: string | null
+  instruction_files: string[]
+}
+
+export interface HarnessScopeInfo {
+  workspace: string
+  workspace_root: string
+  tenant: string
+  project: string
+  repository: string
+  engine: string
+  work_dir: string
+  exec_cmd: string
+  auth_status: string
+}
+
+export interface HarnessReport {
+  scope: HarnessScopeInfo
+  config_layers: HarnessLayer[]
+  mcp_layers: HarnessLayer[]
+  agent_overlay_dirs: HarnessLayer[]
+  instructions: HarnessInstruction[]
+  mcp_servers: HarnessMcpServer[]
+  env_vars: HarnessEnvVar[]
+  commands: HarnessCommand[]
+  engine_hooks: HarnessHook[]
+  plugin_context: HarnessPluginContext[]
+  activity_preview: string[]
+}
+
 export type Theme = 'dark' | 'light'
 export type ShortcutCategory = 'navigation' | 'terminal' | 'app'
 

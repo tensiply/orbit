@@ -6,5 +6,6 @@ import type { SettingsSlice } from './slices/settings'
 import type { DocumentsSlice } from './slices/documents'
 import type { ScopeSlice } from './slices/scope'
 import type { ArchDrawerSlice } from './slices/archDrawer'
+import type { HarnessDrawerSlice } from './slices/harnessDrawer'
 
-export type AppStore = TabsSlice & SessionsSlice & UiSlice & ShortcutsSlice & SettingsSlice & DocumentsSlice & ScopeSlice & ArchDrawerSlice
+export type AppStore = TabsSlice & SessionsSlice & UiSlice & ShortcutsSlice & SettingsSlice & DocumentsSlice & ScopeSlice & ArchDrawerSlice & HarnessDrawerSlice

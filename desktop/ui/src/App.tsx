@@ -9,6 +9,7 @@ import { TitleBar } from './components/TitleBar'
 import { ShortcutsView } from './components/ShortcutsView'
 import { TerminalDrawer } from './components/TerminalDrawer'
 import { ArchEditDrawer } from './components/ArchEditDrawer'
+import { HarnessDrawer } from './components/HarnessDrawer'
 import { UIKitView } from './components/UIKitView'
 import { ColorsView } from './components/ColorsView'
 import { SettingsView } from './components/SettingsView'
@@ -199,6 +200,7 @@ export default function App() {
             </div>
 
             {/* Drawer cards — siblings, same height, gap from parent */}
+            <HarnessDrawer />
             <ArchEditDrawer />
             <TerminalDrawer />
           </div>
