@@ -209,15 +209,13 @@ function HarnessContent({ report }: { report: HarnessReport }) {
 
 export function HarnessDrawer() {
   const open        = useAppStore((s) => s.harnessDrawerOpen)
-  const session     = useAppStore((s) => s.harnessSession)
+  const harnessLabel = useAppStore((s) => s.harnessLabel)
   const report      = useAppStore((s) => s.harnessReport)
   const loading     = useAppStore((s) => s.harnessLoading)
   const error       = useAppStore((s) => s.harnessError)
   const closeDrawer = useAppStore((s) => s.closeHarnessDrawer)
 
-  const label = session
-    ? [session.tenant, session.project, session.repository].filter(Boolean).join(' › ') || session.work_dir
-    : 'Harness'
+  const label = harnessLabel ?? 'Harness'
 
   return (
     <Drawer

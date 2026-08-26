@@ -235,6 +235,8 @@ function ScopeNavigator({
   const launchScopeSession = useAppStore((s) => s.launchScopeSession)
   const blurSidebar        = useAppStore((s) => s.blurSidebar)
 
+  const openHarnessDrawerForScope = useAppStore((s) => s.openHarnessDrawerForScope)
+
   const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   useEffect(() => {
@@ -259,6 +261,14 @@ function ScopeNavigator({
       : [...scopePath, folderName]
     blurSidebar()
     void launchScopeSession(fullPath, engine)
+  }
+
+  const openHarnessForFolder = (folderName: string, engine: string) => {
+    const fullPath = selectedWorkspace
+      ? [selectedWorkspace, ...scopePath, folderName]
+      : [...scopePath, folderName]
+    const [ws, tenant = null, project = null, repository = null] = fullPath
+    void openHarnessDrawerForScope(ws, tenant, project, repository, engine)
   }
 
   const children    = getScopeChildren(scopeTree, scopePath, selectedWorkspace)
@@ -330,6 +340,22 @@ function ScopeNavigator({
                               key={id}
                               className="text-xs gap-2"
                               onClick={() => launchFolder(name, id)}
+                            >
+                              <Icon size={13} />{label}
+                            </ContextMenuItem>
+                          ))}
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger className="text-xs gap-2">
+                          <Wrench size={13} />View harness with…
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-40 text-xs">
+                          {ENGINES_MENU.map(({ id, label, Icon }) => (
+                            <ContextMenuItem
+                              key={id}
+                              className="text-xs gap-2"
+                              onClick={() => openHarnessForFolder(name, id)}
                             >
                               <Icon size={13} />{label}
                             </ContextMenuItem>
