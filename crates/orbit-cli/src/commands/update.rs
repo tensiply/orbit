@@ -85,7 +85,9 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         let Some(binary_url) = ws_cfg.binary_url_for_platform() else {
             println!();
             println!("  \x1b[33m!\x1b[0m  binary update skipped — no download URL configured");
-            println!("     set \x1b[2mupdate.binary_url\x1b[0m in <ai_root>/orbit.toml to enable auto-updates");
+            println!(
+                "     set \x1b[2mupdate.binary_url\x1b[0m in <ai_root>/orbit.toml to enable auto-updates"
+            );
             return Ok(());
         };
 

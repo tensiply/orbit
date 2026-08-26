@@ -1,6 +1,6 @@
 use crate::{
     data_paths::scope_catalog_path,
-    scope_index::{build_scope_index, scan_dirs, ScopeIndexEntry},
+    scope_index::{ScopeIndexEntry, build_scope_index, scan_dirs},
     workspace_registry::WorkspaceEntry,
 };
 use anyhow::Result;
@@ -115,9 +115,7 @@ fn valid_scope_names(parent: &Path) -> Vec<String> {
     scan_dirs(parent)
         .into_iter()
         .filter(|name| {
-            !name.is_empty()
-                && !name.starts_with('.')
-                && !name.contains(char::is_whitespace)
+            !name.is_empty() && !name.starts_with('.') && !name.contains(char::is_whitespace)
         })
         .collect()
 }
@@ -150,7 +148,13 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn make_complete_repo(dir: &TempDir, ws: &str, tenant: &str, project: &str, repo: &str) -> WorkspaceEntry {
+    fn make_complete_repo(
+        dir: &TempDir,
+        ws: &str,
+        tenant: &str,
+        project: &str,
+        repo: &str,
+    ) -> WorkspaceEntry {
         let ai_root = dir.path().join("AI");
 
         // workspace orbit.json

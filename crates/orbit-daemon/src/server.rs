@@ -208,7 +208,20 @@ impl ServerState {
         }
         match req {
             Request::ListSessions => {
-                let sessions = Session::load_all();
+                use std::collections::HashSet;
+                // Active sessions, most recently started first.
+                let mut active = Session::load_all();
+                active.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+
+                // History from the NDJSON log — exclude IDs already active.
+                let active_ids: HashSet<String> = active.iter().map(|s| s.id.clone()).collect();
+                let history = Session::load_history_excluding(50, &active_ids)
+                    .into_iter()
+                    .map(|mut s| { s.is_history = true; s })
+                    .collect::<Vec<_>>();
+
+                let mut sessions = active;
+                sessions.extend(history);
                 Response::Sessions { sessions }
             }
 
@@ -375,10 +388,15 @@ impl ServerState {
 
                 // ── Phase 1: Gap resolution ───────────────────────────────────────
                 let planner_intent = if !user_cfg.planner.skip_gap_resolution {
-                    let gap_backend = CliBackend::new(user_cfg.planner.activities.gap_resolution
-                        .as_ref()
-                        .and_then(|c| c.engine.parse().ok())
-                        .unwrap_or(orbit_core::engine::Engine::Claude));
+                    let gap_backend = CliBackend::new(
+                        user_cfg
+                            .planner
+                            .activities
+                            .gap_resolution
+                            .as_ref()
+                            .and_then(|c| c.engine.parse().ok())
+                            .unwrap_or(orbit_core::engine::Engine::Claude),
+                    );
                     match gap_resolver::resolve_gaps(&intent, &scope, &recent, &gap_backend) {
                         Ok(gap_result) => {
                             let _ = append_event_for(
@@ -386,7 +404,11 @@ impl ServerState {
                                 &AuditEvent::GapResolved {
                                     plan_id: String::new(), // no plan_id yet
                                     gaps_found: gap_result.gaps.len(),
-                                    gaps_auto_resolved: gap_result.gaps.iter().filter(|g| g.auto_resolved).count(),
+                                    gaps_auto_resolved: gap_result
+                                        .gaps
+                                        .iter()
+                                        .filter(|g| g.auto_resolved)
+                                        .count(),
                                     needed_user_input: gap_result.needs_user_input,
                                     timestamp: now_secs(),
                                 },
@@ -408,7 +430,10 @@ impl ServerState {
                 };
 
                 // ── Phase 2: Invoke planner + validation retry loop ───────────────
-                let plan_engine = user_cfg.planner.activities.plan_generation
+                let plan_engine = user_cfg
+                    .planner
+                    .activities
+                    .plan_generation
                     .as_ref()
                     .and_then(|c| c.engine.parse().ok())
                     .unwrap_or(orbit_core::engine::Engine::Claude);
@@ -446,7 +471,12 @@ impl ServerState {
                         })
                         .ok()
                         .and_then(|s| orbit_engine::config::load(&s, cfg.engine).ok())
-                        .map(|m| m.mcp.keys().map(|k| McpCatalogEntry { name: k.clone() }).collect())
+                        .map(|m| {
+                            m.mcp
+                                .keys()
+                                .map(|k| McpCatalogEntry { name: k.clone() })
+                                .collect()
+                        })
                         .unwrap_or_default();
 
                         let validation_ctx = ValidationContext {
@@ -455,7 +485,11 @@ impl ServerState {
                             scope: &scope,
                         };
 
-                        let val_result = validator::validate_plan(&plan, &validation_ctx, &validator::default_rules());
+                        let val_result = validator::validate_plan(
+                            &plan,
+                            &validation_ctx,
+                            &validator::default_rules(),
+                        );
 
                         if val_result.is_valid || retry == max_retries {
                             last_trace = Some(trace);
@@ -1313,6 +1347,7 @@ pub async fn run_on(
     info!("orbitd listening on {}", sock.display());
 
     resume_running_plans();
+    Session::seed_history_from_existing();
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     let (event_tx, _) = broadcast::channel::<PlanStreamEvent>(4096);

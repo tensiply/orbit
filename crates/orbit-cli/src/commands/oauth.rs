@@ -60,14 +60,14 @@ pub async fn run_oauth_flow(plugin_name: &str, spec: &OAuthSpec) -> Result<()> {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("registration response missing 'client_id'"))?
             .to_string();
-        let secret = reg_resp["client_secret"]
-            .as_str()
-            .map(str::to_string);
+        let secret = reg_resp["client_secret"].as_str().map(str::to_string);
         (id, secret)
     } else {
         // No dynamic registration — prompt for client_id
         println!("  No dynamic registration endpoint found.");
-        println!("  Create an OAuth app at the service settings and provide the client credentials.");
+        println!(
+            "  Create an OAuth app at the service settings and provide the client credentials."
+        );
         println!();
         let id = prompt_line("  Client ID")?;
         if id.is_empty() {
@@ -144,7 +144,10 @@ pub async fn run_oauth_flow(plugin_name: &str, spec: &OAuthSpec) -> Result<()> {
 
     // ── 8. store in keychain ──────────────────────────────────────────────────
     secrets::keychain_set(&spec.token_key, access_token)?;
-    println!("  \x1b[32m✓\x1b[0m  Access token stored in keychain ({})", spec.token_key);
+    println!(
+        "  \x1b[32m✓\x1b[0m  Access token stored in keychain ({})",
+        spec.token_key
+    );
 
     Ok(())
 }
@@ -174,10 +177,9 @@ fn url_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(
-                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
-                16,
-            ) {
+            if let Ok(byte) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 result.push(byte);
                 i += 3;
                 continue;
@@ -258,7 +260,10 @@ async fn wait_for_callback(
 
     // Check for OAuth error from the provider
     if let Some(error) = params.get("error") {
-        let desc = params.get("error_description").map(|s| s.as_str()).unwrap_or("");
+        let desc = params
+            .get("error_description")
+            .map(|s| s.as_str())
+            .unwrap_or("");
         let html = format!(
             "<html><body><h1>Authorization failed</h1><p>{error}: {desc}</p></body></html>"
         );
@@ -268,7 +273,12 @@ async fn wait_for_callback(
 
     let state = params.get("state").map(|s| s.as_str()).unwrap_or("");
     if state != expected_state {
-        let _ = send_html_response(&mut stream, 400, "<html><body><h1>State mismatch</h1></body></html>").await;
+        let _ = send_html_response(
+            &mut stream,
+            400,
+            "<html><body><h1>State mismatch</h1></body></html>",
+        )
+        .await;
         bail!("state mismatch — possible CSRF attack");
     }
 

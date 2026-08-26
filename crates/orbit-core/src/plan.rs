@@ -330,8 +330,7 @@ impl Plan {
         // Iterate flat dir first, then workspace dirs. Later entries overwrite earlier ones
         // so workspace-scoped copies (canonical write target of Plan::save) take precedence
         // over any stale legacy flat-dir copies of the same plan ID.
-        let mut by_id: std::collections::HashMap<String, Plan> =
-            std::collections::HashMap::new();
+        let mut by_id: std::collections::HashMap<String, Plan> = std::collections::HashMap::new();
         for dir in crate::data_paths::all_plans_dirs() {
             let Ok(entries) = fs::read_dir(&dir) else {
                 continue;

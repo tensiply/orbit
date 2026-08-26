@@ -79,7 +79,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let engine_names_str = engine_names.join(" / ");
 
     println!("setup\n");
-    println!("  \x1b[2mConfigure your orbit installation — profile, engines, plugins, and MCPs.\x1b[0m\n");
+    println!(
+        "  \x1b[2mConfigure your orbit installation — profile, engines, plugins, and MCPs.\x1b[0m\n"
+    );
 
     // ── collect values (flags → interactive → default) ────────────────────────
     let username = match args.username {
@@ -213,14 +215,20 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     cfg.install.dir = install_dir.clone();
 
     if args.dry_run {
-        println!("\n  \x1b[2m[dry-run] would write {}:\x1b[0m\n", UserConfig::path().display());
+        println!(
+            "\n  \x1b[2m[dry-run] would write {}:\x1b[0m\n",
+            UserConfig::path().display()
+        );
         println!("{}", toml::to_string_pretty(&cfg)?);
         return Ok(());
     }
 
     // ── save config ───────────────────────────────────────────────────────────
     cfg.save()?;
-    println!("  \x1b[32m✓\x1b[0m  config saved    {}", UserConfig::path().display());
+    println!(
+        "  \x1b[32m✓\x1b[0m  config saved    {}",
+        UserConfig::path().display()
+    );
 
     // ── self-install binary ───────────────────────────────────────────────────
     let install_dir_expanded = orbit_core::user_config::expand_tilde(&install_dir);
@@ -228,7 +236,10 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     let target = install_dir_expanded.join("orbit");
 
     if current_exe == target {
-        println!("  \x1b[32m✓\x1b[0m  binary          {} (unchanged)", target.display());
+        println!(
+            "  \x1b[32m✓\x1b[0m  binary          {} (unchanged)",
+            target.display()
+        );
     } else {
         fs::create_dir_all(&install_dir_expanded)?;
         // Write to a temp file first then rename — avoids ETXTBSY (error 26)
@@ -264,7 +275,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         println!();
         setup_plugins(args.yes)?;
     } else if args.yes && !args.no_plugins {
-        println!("  \x1b[2mPlugins skipped (--yes) — run `orbit plugins list` to install later.\x1b[0m");
+        println!(
+            "  \x1b[2mPlugins skipped (--yes) — run `orbit plugins list` to install later.\x1b[0m"
+        );
     }
 
     // ── MCP configuration ─────────────────────────────────────────────────────
@@ -272,7 +285,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         println!();
         setup_mcps()?;
     } else if args.yes && !args.no_mcps {
-        println!("  \x1b[2mMCPs skipped (--yes) — run `orbit mcp enable <name>` to configure later.\x1b[0m");
+        println!(
+            "  \x1b[2mMCPs skipped (--yes) — run `orbit mcp enable <name>` to configure later.\x1b[0m"
+        );
     }
 
     // ── built-in commands ────────────────────────────────────────────────────
@@ -291,7 +306,9 @@ pub async fn run(args: SetupArgs) -> Result<()> {
         println!("  \x1b[32m✓\x1b[0m  ready  ·  run `orbit launch` to start a session");
     }
     println!();
-    println!("  \x1b[2mshell integration\x1b[0m   eval \"$(orbit shell-init)\"  →  add to ~/.zshrc or ~/.bashrc");
+    println!(
+        "  \x1b[2mshell integration\x1b[0m   eval \"$(orbit shell-init)\"  →  add to ~/.zshrc or ~/.bashrc"
+    );
     println!("  \x1b[2mtab completions\x1b[0m     orbit completions install");
     println!();
 
@@ -305,11 +322,14 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
     let has_npm = bin_available("npm");
 
     println!("engines\n");
-    println!(
-        "  \x1b[2mAI engines bring different AI assistants to your orbit sessions.\x1b[0m\n"
-    );
+    println!("  \x1b[2mAI engines bring different AI assistants to your orbit sessions.\x1b[0m\n");
 
-    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let name_w = engines
+        .iter()
+        .map(|e| e.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let desc_w: usize = 40;
     let sep_w = 5 + name_w + 2 + desc_w + 2 + 32;
 
@@ -392,10 +412,7 @@ async fn setup_engines(default_engine: &str, yes: bool) -> Result<()> {
                                 }
                                 AuthStatus::NotConfigured => {
                                     println!("     \x1b[33m○ auth\x1b[0m  not configured");
-                                    println!(
-                                        "     \x1b[2mrun: orbit auth {}\x1b[0m",
-                                        engine.name
-                                    );
+                                    println!("     \x1b[2mrun: orbit auth {}\x1b[0m", engine.name);
                                 }
                             }
                         }
@@ -422,9 +439,7 @@ fn setup_mcps() -> Result<()> {
     }
 
     println!("mcps\n");
-    println!(
-        "  \x1b[2mMCPs extend orbit sessions with external tools and data sources.\x1b[0m\n"
-    );
+    println!("  \x1b[2mMCPs extend orbit sessions with external tools and data sources.\x1b[0m\n");
 
     let name_w = mcps.iter().map(|m| m.name.len()).max().unwrap_or(8).max(8);
     let desc_w: usize = 48;

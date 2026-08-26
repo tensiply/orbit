@@ -239,9 +239,8 @@ mod tests {
 
     #[test]
     fn no_gaps_on_specific_intent() {
-        let backend = MockBackend::new(
-            r#"{"gaps": [], "enriched_intent": "fix the auth bug in orbit"}"#,
-        );
+        let backend =
+            MockBackend::new(r#"{"gaps": [], "enriched_intent": "fix the auth bug in orbit"}"#);
         let result = resolve_gaps("fix the auth bug in orbit", &scope(), &[], &backend).unwrap();
         assert!(!result.needs_user_input);
         assert!(result.gaps.is_empty());
@@ -250,10 +249,12 @@ mod tests {
 
     #[test]
     fn unresolved_gap_needs_user_input() {
-        let backend = MockBackend::new(r#"{
+        let backend = MockBackend::new(
+            r#"{
             "gaps": [{"kind":"MissingParameter","description":"Feature not specified","auto_resolved":false,"resolved_value":null,"user_question":"Which feature?"}],
             "enriched_intent": "add a feature"
-        }"#);
+        }"#,
+        );
         let result = resolve_gaps("add a feature", &scope(), &[], &backend).unwrap();
         assert!(result.needs_user_input);
         assert_eq!(result.user_questions, vec!["Which feature?"]);
@@ -261,10 +262,12 @@ mod tests {
 
     #[test]
     fn auto_resolved_gap_no_user_input() {
-        let backend = MockBackend::new(r#"{
+        let backend = MockBackend::new(
+            r#"{
             "gaps": [{"kind":"UnknownReference","description":"'the config' resolved to orbit/config.toml","auto_resolved":true,"resolved_value":"~/.config/orbit/config.toml","user_question":null}],
             "enriched_intent": "update ~/.config/orbit/config.toml planner section"
-        }"#);
+        }"#,
+        );
         let result = resolve_gaps("update the config", &scope(), &[], &backend).unwrap();
         assert!(!result.needs_user_input);
         assert_eq!(result.gaps.len(), 1);

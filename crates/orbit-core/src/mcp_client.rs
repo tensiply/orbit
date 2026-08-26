@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
@@ -62,15 +62,20 @@ impl McpSession {
             cmd.env(k, v);
         }
 
-        let mut child = cmd.spawn().with_context(|| {
-            format!("failed to spawn MCP server '{}'", cfg.command)
-        })?;
+        let mut child = cmd
+            .spawn()
+            .with_context(|| format!("failed to spawn MCP server '{}'", cfg.command))?;
 
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let reader = BufReader::new(stdout);
 
-        Ok(McpSession { child, stdin, reader, next_id: 1 })
+        Ok(McpSession {
+            child,
+            stdin,
+            reader,
+            next_id: 1,
+        })
     }
 
     fn send_request(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -85,14 +90,19 @@ impl McpSession {
         };
 
         let line = serde_json::to_string(&req)? + "\n";
-        self.stdin.write_all(line.as_bytes()).context("write to MCP stdin")?;
+        self.stdin
+            .write_all(line.as_bytes())
+            .context("write to MCP stdin")?;
         self.stdin.flush().context("flush MCP stdin")?;
 
         // Read lines until we get the response for our id
         let mut buf = String::new();
         loop {
             buf.clear();
-            let n = self.reader.read_line(&mut buf).context("read from MCP stdout")?;
+            let n = self
+                .reader
+                .read_line(&mut buf)
+                .context("read from MCP stdout")?;
             if n == 0 {
                 bail!("MCP server closed stdout unexpectedly");
             }
@@ -106,7 +116,9 @@ impl McpSession {
             if let Some(err) = resp.error {
                 bail!("MCP error {}: {}", err.code, err.message);
             }
-            return resp.result.context("MCP response has neither result nor error");
+            return resp
+                .result
+                .context("MCP response has neither result nor error");
         }
     }
 
@@ -126,7 +138,9 @@ impl McpSession {
             "params": {}
         });
         let line = serde_json::to_string(&notif)? + "\n";
-        self.stdin.write_all(line.as_bytes()).context("write initialized notification")?;
+        self.stdin
+            .write_all(line.as_bytes())
+            .context("write initialized notification")?;
         self.stdin.flush()?;
         Ok(())
     }

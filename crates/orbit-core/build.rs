@@ -18,7 +18,13 @@ fn embed_dir(dir: &Path, out_path: &Path, ext: &str) {
                 .unwrap()
                 .to_string_lossy()
                 .to_string();
-            let content = fs::read_to_string(entry.path()).unwrap();
+            let raw = fs::read_to_string(entry.path()).unwrap();
+            // For HTML templates: inline any local <link> CSS files so the builtin is self-contained.
+            let content = if ext == "html" {
+                inline_css_links(&raw, dir)
+            } else {
+                raw
+            };
             entries.push((name, content));
         }
     }
@@ -30,6 +36,53 @@ fn embed_dir(dir: &Path, out_path: &Path, ext: &str) {
     code.push(']');
 
     fs::write(out_path, code).unwrap();
+}
+
+/// Replace `<link rel="stylesheet" href="local/path.css">` with `<style>…</style>` at build time.
+fn inline_css_links(html: &str, base_dir: &Path) -> String {
+    let mut out = String::with_capacity(html.len() + 4096);
+    let mut rest = html;
+
+    while let Some(tag_start) = rest.find("<link") {
+        out.push_str(&rest[..tag_start]);
+        let after = &rest[tag_start..];
+        let tag_end = after.find('>').unwrap_or(after.len().saturating_sub(1));
+        let tag = &after[..tag_end + 1];
+
+        let inlined = if tag.contains("stylesheet") {
+            extract_href_build(tag).and_then(|href| {
+                if href.starts_with("http") || href.starts_with("//") {
+                    return None;
+                }
+                let css_path = base_dir.join(&href);
+                println!("cargo:rerun-if-changed={}", css_path.display());
+                let css = fs::read_to_string(&css_path).ok()?;
+                Some(format!("<style>{css}</style>"))
+            })
+        } else {
+            None
+        };
+
+        match inlined {
+            Some(block) => out.push_str(&block),
+            None => out.push_str(tag),
+        }
+        rest = &rest[tag_start + tag_end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn extract_href_build(tag: &str) -> Option<String> {
+    let start = tag.find("href")?;
+    let after_eq = tag[start + 4..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+    let quote = after_eq.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let inner = &after_eq[1..];
+    let end = inner.find(quote)?;
+    Some(inner[..end].to_string())
 }
 
 fn main() {

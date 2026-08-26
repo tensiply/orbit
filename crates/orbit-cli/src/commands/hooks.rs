@@ -45,7 +45,9 @@ fn list() -> Result<()> {
     let state = EngineHookState::load();
 
     println!("hooks\n");
-    println!("  \x1b[2mEngine hooks extend orbit sessions with automated behaviors on Claude Code events.\x1b[0m\n");
+    println!(
+        "  \x1b[2mEngine hooks extend orbit sessions with automated behaviors on Claude Code events.\x1b[0m\n"
+    );
 
     if hooks.is_empty() {
         println!("  No engine hooks defined.");
@@ -53,7 +55,12 @@ fn list() -> Result<()> {
     }
 
     let name_w = hooks.iter().map(|h| h.name.len()).max().unwrap_or(8).max(8);
-    let cat_w = hooks.iter().map(|h| h.category.len()).max().unwrap_or(8).max(8);
+    let cat_w = hooks
+        .iter()
+        .map(|h| h.category.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let desc_w: usize = 48;
     let sep_w = 5 + name_w + 2 + cat_w + 2 + desc_w + 2 + 12;
 

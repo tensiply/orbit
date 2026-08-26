@@ -2,8 +2,8 @@ use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
     plugin::{
-        self, add_instance_mcps, build_mcp_entries, instance_keychain_key, remove_instance_mcps,
-        InstallMethod, Plugin, PluginInstanceRecord, PluginInstances, PluginState,
+        self, InstallMethod, Plugin, PluginInstanceRecord, PluginInstances, PluginState,
+        add_instance_mcps, build_mcp_entries, instance_keychain_key, remove_instance_mcps,
     },
     secrets,
 };
@@ -13,7 +13,9 @@ use std::{
     process::Command,
 };
 
-use crate::commands::mcp::{mcp_json_path, remove_mcp_entry, resolve_write_scope, write_mcp_entry, ScopeLevel};
+use crate::commands::mcp::{
+    ScopeLevel, mcp_json_path, remove_mcp_entry, resolve_write_scope, write_mcp_entry,
+};
 
 use crate::output::truncate_desc;
 
@@ -144,10 +146,22 @@ fn list() -> Result<()> {
     }
 
     println!("plugins\n");
-    println!("  \x1b[2mPlugins extend orbit with tools, MCP servers, and session context.\x1b[0m\n");
+    println!(
+        "  \x1b[2mPlugins extend orbit with tools, MCP servers, and session context.\x1b[0m\n"
+    );
 
-    let name_w = plugins.iter().map(|p| p.name.len()).max().unwrap_or(8).max(8);
-    let cat_w = plugins.iter().map(|p| p.category.len()).max().unwrap_or(10).max(10);
+    let name_w = plugins
+        .iter()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+    let cat_w = plugins
+        .iter()
+        .map(|p| p.category.len())
+        .max()
+        .unwrap_or(10)
+        .max(10);
     let desc_w: usize = 50;
     let sep_w = 5 + name_w + 2 + cat_w + 2 + desc_w + 2 + 16;
 
@@ -185,11 +199,19 @@ fn list() -> Result<()> {
             let desc = truncate_desc(&p.description, desc_w);
 
             let mcp_tag = if p.has_mcp() {
-                if enabled { "\x1b[32mmcp ●\x1b[0m" } else { "\x1b[2mmcp ○\x1b[0m" }
+                if enabled {
+                    "\x1b[32mmcp ●\x1b[0m"
+                } else {
+                    "\x1b[2mmcp ○\x1b[0m"
+                }
             } else {
                 ""
             };
-            let exec_tag = if p.executor.is_some() { "\x1b[36m⚙\x1b[0m" } else { "" };
+            let exec_tag = if p.executor.is_some() {
+                "\x1b[36m⚙\x1b[0m"
+            } else {
+                ""
+            };
             let tags = match (!mcp_tag.is_empty(), !exec_tag.is_empty()) {
                 (true, true) => format!("{mcp_tag}  {exec_tag}"),
                 (true, false) => mcp_tag.to_string(),
@@ -208,7 +230,10 @@ fn list() -> Result<()> {
 
             let needs_install = !installed && p.best_install_method().is_some();
             let needs_auth = p.auth.as_ref().is_some_and(|a| {
-                !a.vars.is_empty() && a.vars.iter().any(|v| secrets::keychain_get(&v.name).is_err())
+                !a.vars.is_empty()
+                    && a.vars
+                        .iter()
+                        .any(|v| secrets::keychain_get(&v.name).is_err())
             });
             let needs_enable = p.has_mcp() && !enabled;
 
@@ -230,7 +255,9 @@ fn list() -> Result<()> {
     }
 
     println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
-    println!("  \x1b[2m● installed+MCP active  ✓ installed  ○ not installed  ·  mcp ● active  mcp ○ inactive  ⚙ executor\x1b[0m");
+    println!(
+        "  \x1b[2m● installed+MCP active  ✓ installed  ○ not installed  ·  mcp ● active  mcp ○ inactive  ⚙ executor\x1b[0m"
+    );
 
     if !pending.is_empty() {
         println!("\n  \x1b[2mPending Actions:\x1b[0m");
@@ -323,7 +350,10 @@ fn install_missing_components(plugin: &Plugin, yes: bool) -> Result<()> {
     let should_install = if yes {
         true
     } else {
-        confirm(&format!("  Install {} missing package(s)?", missing.len()), true)?
+        confirm(
+            &format!("  Install {} missing package(s)?", missing.len()),
+            true,
+        )?
     };
 
     if should_install {
@@ -605,7 +635,6 @@ fn auth(name: &str, list: bool, remove: Option<&str>) -> Result<()> {
     // ── collect and store credential vars ─────────────────────────────────────
     for var in &auth_spec.vars {
         let already_set = secrets::keychain_get(&var.name).is_ok();
-        let default_hint = if already_set { "<already set>" } else { "" };
 
         let value = if var.secret {
             ask_secret(
@@ -616,7 +645,12 @@ fn auth(name: &str, list: bool, remove: Option<&str>) -> Result<()> {
                 already_set,
             )?
         } else {
-            ask(&format!("  {}", var.description), default_hint)?
+            let prompt = if already_set {
+                format!("  {} [<already set>]", var.description)
+            } else {
+                format!("  {}", var.description)
+            };
+            ask(&prompt, "")?
         };
 
         if value.is_empty() {
@@ -726,7 +760,6 @@ fn auth_multi_instance(plugin: &Plugin, list: bool, remove: Option<&str>) -> Res
     for var in &spec.vars {
         let keychain_key = instance_keychain_key(name, &instance_name, &var.name);
         let already_set = secrets::keychain_get(&keychain_key).is_ok();
-        let default_hint = if already_set { "<already set>" } else { "" };
 
         let value = if var.secret {
             ask_secret(
@@ -737,7 +770,12 @@ fn auth_multi_instance(plugin: &Plugin, list: bool, remove: Option<&str>) -> Res
                 already_set,
             )?
         } else {
-            ask(&format!("  {}", var.description), default_hint)?
+            let prompt = if already_set {
+                format!("  {} [<already set>]", var.description)
+            } else {
+                format!("  {}", var.description)
+            };
+            ask(&prompt, "")?
         };
 
         if value.is_empty() {
@@ -764,7 +802,10 @@ fn auth_multi_instance(plugin: &Plugin, list: bool, remove: Option<&str>) -> Res
 
         if var.secret {
             secrets::keychain_set(&keychain_key, &value)?;
-            println!("    \x1b[32m✓\x1b[0m  {} stored in keychain ({})", var.name, keychain_key);
+            println!(
+                "    \x1b[32m✓\x1b[0m  {} stored in keychain ({})",
+                var.name, keychain_key
+            );
         } else {
             non_secret_vars.insert(var.name.clone(), value);
             println!("    \x1b[32m✓\x1b[0m  {} stored", var.name);
@@ -789,9 +830,7 @@ fn auth_multi_instance(plugin: &Plugin, list: bool, remove: Option<&str>) -> Res
         );
     } else {
         println!();
-        println!(
-            "  \x1b[32m✓\x1b[0m  Instance '{instance_name}' configured."
-        );
+        println!("  \x1b[32m✓\x1b[0m  Instance '{instance_name}' configured.");
         println!("     Run `orbit plugins enable {name}` to activate the MCP server.");
     }
 
@@ -1158,7 +1197,12 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
         "  \x1b[2mPlugins extend orbit with tools, MCP servers, and session context.\x1b[0m\n"
     );
 
-    let name_w = plugins.iter().map(|p| p.name.len()).max().unwrap_or(8).max(8);
+    let name_w = plugins
+        .iter()
+        .map(|p| p.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let desc_w: usize = 50;
     let sep_w = 5 + name_w + 2 + desc_w + 2 + 16;
 
@@ -1182,7 +1226,11 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
         };
         let desc = truncate_desc(&p.description, desc_w);
         let mcp_tag = if p.has_mcp() {
-            if enabled { "\x1b[32mmcp ●\x1b[0m" } else { "\x1b[2mmcp ○\x1b[0m" }
+            if enabled {
+                "\x1b[32mmcp ●\x1b[0m"
+            } else {
+                "\x1b[2mmcp ○\x1b[0m"
+            }
         } else {
             ""
         };
@@ -1225,10 +1273,7 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
                             );
                         }
                     }
-                    _ => println!(
-                        "  \x1b[31m✗\x1b[0m  failed — run: {}",
-                        m.cmd.join(" ")
-                    ),
+                    _ => println!("  \x1b[31m✗\x1b[0m  failed — run: {}", m.cmd.join(" ")),
                 }
             }
         }
@@ -1238,7 +1283,11 @@ pub fn setup_plugins(yes: bool) -> Result<()> {
 }
 
 fn ask(prompt: &str, default: &str) -> Result<String> {
-    print!("{prompt} [{default}]: ");
+    if default.is_empty() {
+        print!("{prompt}: ");
+    } else {
+        print!("{prompt} [{default}]: ");
+    }
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;

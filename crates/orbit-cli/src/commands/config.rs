@@ -69,13 +69,19 @@ fn cmd_list() -> Result<()> {
     let path = UserConfig::path();
 
     println!("config\n");
-    println!("  \x1b[2mOrbit global configuration. Set with `orbit config set <key> <value>`.\x1b[0m\n");
+    println!(
+        "  \x1b[2mOrbit global configuration. Set with `orbit config set <key> <value>`.\x1b[0m\n"
+    );
     println!("  \x1b[2m{}\x1b[0m\n", path.display());
 
     let key_w = VALID_KEYS.iter().map(|k| k.len()).max().unwrap_or(20);
     let sep_w = 2 + key_w + 2 + 40;
 
-    println!("  \x1b[2m{key:<key_w$}  value\x1b[0m", key = "key", key_w = key_w);
+    println!(
+        "  \x1b[2m{key:<key_w$}  value\x1b[0m",
+        key = "key",
+        key_w = key_w
+    );
     println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
 
     for key in VALID_KEYS {

@@ -18,7 +18,12 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     let ws_cfg = WorkspaceConfig::load(&ai_root);
 
     println!("doctor\n");
-    println!("  {}\n", dim("Environment diagnostics: engines, dependencies, plugins, workspace, daemon, and binary."));
+    println!(
+        "  {}\n",
+        dim(
+            "Environment diagnostics: engines, dependencies, plugins, workspace, daemon, and binary."
+        )
+    );
 
     // ── engines ───────────────────────────────────────────────────────────────
     section("engines");
@@ -151,7 +156,11 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
     if let Some(path) = &comp_path {
         check(
             &format!("{shell_name} completions  {}", path.display()),
-            if path.exists() { Ok(()) } else { Err("not installed") },
+            if path.exists() {
+                Ok(())
+            } else {
+                Err("not installed")
+            },
             Some("Run: orbit completions install"),
         );
     } else {
@@ -177,7 +186,11 @@ pub fn run(_args: DoctorArgs) -> Result<()> {
             .unwrap_or(false);
         check(
             &format!("{shell_name} rc  {}", rc.display()),
-            if integrated { Ok(()) } else { Err("orbit shell-init not found") },
+            if integrated {
+                Ok(())
+            } else {
+                Err("orbit shell-init not found")
+            },
             Some("Add to your shell profile: eval \"$(orbit shell-init)\""),
         );
     } else {

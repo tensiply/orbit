@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use orbit_core::{
     data_paths::scope_catalog_path,
-    scope_catalog::{check_workspaces, ScopeCatalog},
+    scope_catalog::{ScopeCatalog, check_workspaces},
     scope_index::ScopeIndexEntry,
     user_config::UserConfig,
     workspace_registry::{WorkspaceEntry, WorkspaceRegistry},
@@ -100,10 +100,30 @@ fn list(workspace: Option<String>, as_json: bool) -> Result<()> {
 }
 
 fn print_table(entries: &[ScopeIndexEntry]) {
-    let ws_w = entries.iter().map(|e| e.workspace.len()).max().unwrap_or(9).max(9);
-    let t_w = entries.iter().map(|e| e.tenant.len()).max().unwrap_or(6).max(6);
-    let p_w = entries.iter().map(|e| e.project.len()).max().unwrap_or(7).max(7);
-    let r_w = entries.iter().map(|e| e.repository.len()).max().unwrap_or(10).max(10);
+    let ws_w = entries
+        .iter()
+        .map(|e| e.workspace.len())
+        .max()
+        .unwrap_or(9)
+        .max(9);
+    let t_w = entries
+        .iter()
+        .map(|e| e.tenant.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+    let p_w = entries
+        .iter()
+        .map(|e| e.project.len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
+    let r_w = entries
+        .iter()
+        .map(|e| e.repository.len())
+        .max()
+        .unwrap_or(10)
+        .max(10);
     let sep = ws_w + 2 + t_w + 2 + p_w + 2 + r_w + 2 + 40;
 
     println!();
@@ -249,10 +269,7 @@ fn hint_unregistered(registered: &[WorkspaceEntry]) -> Vec<(String, std::path::P
         }
         let already = registered.iter().any(|e| e.ai_root == candidate_ai);
         if !already {
-            let name = entry
-                .file_name()
-                .to_string_lossy()
-                .to_string();
+            let name = entry.file_name().to_string_lossy().to_string();
             hints.push((name, candidate_ai));
         }
     }

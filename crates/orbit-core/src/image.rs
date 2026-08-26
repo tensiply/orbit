@@ -257,12 +257,18 @@ fn generate_from_template(req: &ImageGenerateRequest) -> Result<()> {
     let width = req.width.unwrap_or(rule.width).max(1);
     let height = req.height.unwrap_or(rule.height).max(1);
 
-    let rendered = render_template(req, &rule, width, height)?;
+    let (rendered, tpl_base_dir) = render_template(req, &rule, width, height)?;
+
+    // Inline any local CSS <link> tags so Chrome can resolve them from the temp dir.
+    let html = match tpl_base_dir {
+        Some(ref dir) => inline_local_css(&rendered, dir),
+        None => rendered,
+    };
 
     let tmp_dir = std::env::temp_dir().join("orbit-image");
     fs::create_dir_all(&tmp_dir)?;
     let tmp_html = tmp_dir.join(format!("orbit-img-{}.html", random_suffix()));
-    fs::write(&tmp_html, &rendered)
+    fs::write(&tmp_html, &html)
         .with_context(|| format!("cannot write temp HTML {}", tmp_html.display()))?;
 
     let result = chrome_screenshot(&tmp_html, &req.output, width, height);
@@ -275,14 +281,26 @@ fn render_template(
     rule: &ImageRule,
     width: u32,
     height: u32,
-) -> Result<String> {
+) -> Result<(String, Option<PathBuf>)> {
     let tpl_name = req
         .template
         .clone()
         .or_else(|| rule.template.clone())
         .unwrap_or_else(|| "notice".to_string());
 
-    let (_source, raw) = resolve_template(&tpl_name)?;
+    let (source, raw) = resolve_template(&tpl_name)?;
+
+    // Extract the template's directory from the source label ("user:/abs/path/tpl.html" → parent dir).
+    let tpl_base_dir: Option<PathBuf> = if source == "builtin" {
+        // Builtin templates are embedded strings — try to find the source file in the repo for dev.
+        // In production there's no file on disk, so CSS inlining is skipped for builtins.
+        None
+    } else {
+        source
+            .split_once(':')
+            .map(|(_, path)| PathBuf::from(path))
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    };
     let body = strip_front_matter(&raw);
 
     let scope = [
@@ -314,10 +332,62 @@ fn render_template(
     let mut env = minijinja::Environment::new();
     env.add_template("tpl", body)
         .context("invalid image template syntax")?;
-    env.get_template("tpl")
+    let rendered = env
+        .get_template("tpl")
         .unwrap()
         .render(vars)
-        .context("failed to render image template")
+        .context("failed to render image template")?;
+    Ok((rendered, tpl_base_dir))
+}
+
+/// Replace local `<link rel="stylesheet" href="...">` tags with inlined `<style>` blocks.
+/// This is required because Chrome renders from a temp file and can't resolve relative paths.
+fn inline_local_css(html: &str, base_dir: &Path) -> String {
+    let mut out = String::with_capacity(html.len() + 4096);
+    let mut rest = html;
+
+    while let Some(tag_start) = rest.find("<link") {
+        out.push_str(&rest[..tag_start]);
+        let after = &rest[tag_start..];
+
+        let tag_end = after.find('>').unwrap_or(after.len().saturating_sub(1));
+        let tag = &after[..tag_end + 1];
+
+        let inlined = if tag.contains("stylesheet") {
+            extract_href(tag).and_then(|href| {
+                if href.starts_with("http://") || href.starts_with("https://") || href.starts_with("//") {
+                    return None;
+                }
+                let css_path = base_dir.join(&href);
+                let css = fs::read_to_string(&css_path).ok()?;
+                Some(format!("<style>{css}</style>"))
+            })
+        } else {
+            None
+        };
+
+        match inlined {
+            Some(style_block) => out.push_str(&style_block),
+            None => out.push_str(tag),
+        }
+
+        rest = &rest[tag_start + tag_end + 1..];
+    }
+
+    out.push_str(rest);
+    out
+}
+
+fn extract_href(tag: &str) -> Option<String> {
+    let start = tag.find("href")?;
+    let after_eq = tag[start + 4..].trim_start_matches(|c: char| c.is_whitespace() || c == '=');
+    let quote = after_eq.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let inner = &after_eq[1..];
+    let end = inner.find(quote)?;
+    Some(inner[..end].to_string())
 }
 
 fn strip_front_matter(html: &str) -> &str {
@@ -343,6 +413,9 @@ fn chrome_screenshot(html: &Path, output: &Path, width: u32, height: u32) -> Res
             "--no-sandbox",
             "--disable-software-rasterizer",
             "--hide-scrollbars",
+            // Force 1:1 pixel ratio so high-DPI hosts don't scale the output.
+            "--force-device-scale-factor=1",
+            // Set viewport to exact output dimensions.
             &format!("--window-size={width},{height}"),
             &format!("--screenshot={}", output.display()),
             &format!("file://{}", abs.display()),

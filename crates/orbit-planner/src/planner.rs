@@ -282,7 +282,10 @@ pub fn engine_cli_command(engine: &Engine) -> (&'static str, Vec<&'static str>) 
 
 /// Build the argv for an engine call with an optional model override.
 /// Returns owned Strings so the caller can build a `Command` without lifetime issues.
-pub fn engine_cli_command_with_model(engine: &Engine, model: Option<&str>) -> (String, Vec<String>) {
+pub fn engine_cli_command_with_model(
+    engine: &Engine,
+    model: Option<&str>,
+) -> (String, Vec<String>) {
     match engine {
         Engine::Claude => {
             let mut args = vec!["-p".to_string()];
@@ -623,7 +626,8 @@ fn build_mcp_catalog(scope: &PlanScope) -> String {
         }
     };
 
-    let merged = match orbit_engine::config::load(&orbit_scope, orbit_core::engine::Engine::Claude) {
+    let merged = match orbit_engine::config::load(&orbit_scope, orbit_core::engine::Engine::Claude)
+    {
         Ok(m) => m,
         Err(e) => {
             tracing::debug!("build_mcp_catalog: config load failed ({e}), skipping");
@@ -697,7 +701,9 @@ fn build_agent_catalog(scope: &PlanScope) -> String {
     }
 
     let mut s = "\n## Available Specialist Agents\n\n".to_string();
-    s.push_str("Set `agent = \"<name>\"` on a node to use a specialist instead of the full catalog.\n\n");
+    s.push_str(
+        "Set `agent = \"<name>\"` on a node to use a specialist instead of the full catalog.\n\n",
+    );
     s.push_str("| Agent | Description |\n|-------|-------------|\n");
     for (name, meta) in &agents {
         let desc = meta

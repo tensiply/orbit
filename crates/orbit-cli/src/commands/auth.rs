@@ -171,27 +171,35 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     // which tenant or project the user is currently in.
     match resolver::resolve_from_cwd() {
         Ok(scope) => {
-            let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
-            let xdg_config = workspace_runtime.join("config");
-            let xdg_data = workspace_runtime.join("data");
-            fs::create_dir_all(&xdg_config)?;
-            fs::create_dir_all(&xdg_data)?;
-
-            cmd.env("XDG_CONFIG_HOME", &xdg_config);
-            cmd.env("XDG_DATA_HOME", &xdg_data);
-
-            // Gemini CLI reads GEMINI_CLI_HOME directly instead of XDG.
-            if engine.name == "gemini" {
-                cmd.env("GEMINI_CLI_HOME", &workspace_runtime);
-            }
-
             let workspace = scope
                 .workspace_root
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "unknown".into());
             println!("workspace: {workspace}");
-            println!("auth dir:  {}", xdg_data.display());
+
+            if engine.name == "claude" {
+                // Claude Code stores credentials in CLAUDE_CONFIG_DIR (defaults to ~/.claude/).
+                // XDG_CONFIG_HOME has no effect on credential location, so we redirect
+                // CLAUDE_CONFIG_DIR to a persistent workspace-scoped dir instead.
+                let claude_config_dir = runtime::workspace_claude_config_dir(&scope);
+                fs::create_dir_all(&claude_config_dir)?;
+                cmd.env("CLAUDE_CONFIG_DIR", &claude_config_dir);
+                println!("auth dir:  {}", claude_config_dir.display());
+            } else {
+                let workspace_runtime =
+                    runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
+                let xdg_config = workspace_runtime.join("config");
+                let xdg_data = workspace_runtime.join("data");
+                fs::create_dir_all(&xdg_config)?;
+                fs::create_dir_all(&xdg_data)?;
+                cmd.env("XDG_CONFIG_HOME", &xdg_config);
+                cmd.env("XDG_DATA_HOME", &xdg_data);
+                if engine.name == "gemini" {
+                    cmd.env("GEMINI_CLI_HOME", &workspace_runtime);
+                }
+                println!("auth dir:  {}", xdg_data.display());
+            }
         }
         Err(_) => {
             println!("  note: not inside a workspace — auth will be stored globally");

@@ -1,8 +1,9 @@
 BINARY     := orbit
 INSTALL_DIR ?= $(HOME)/.local/bin
 TARGET_DIR  := target/release
+DESKTOP_DIR := desktop
 
-.PHONY: build build-release install uninstall package test clean help
+.PHONY: build build-release install uninstall package test clean help desktop desktop-dev desktop-build
 
 ## Build debug binary (fast, for development)
 build:
@@ -22,8 +23,8 @@ install: build-release
 
 ## Remove installed binaries
 uninstall:
-	rm -f $(INSTALL_DIR)/$(BINARY) $(INSTALL_DIR)/orbit-dev
-	@echo "Removed $(INSTALL_DIR)/$(BINARY) and $(INSTALL_DIR)/orbit-dev"
+	rm -f $(INSTALL_DIR)/$(BINARY) $(INSTALL_DIR)/orbit-dev $(INSTALL_DIR)/orbit-desktop
+	@echo "Removed $(INSTALL_DIR)/$(BINARY), $(INSTALL_DIR)/orbit-dev, $(INSTALL_DIR)/orbit-desktop"
 
 ## Build release binary and create a distributable archive
 ## Output: orbit-<version>-<platform>.tar.gz
@@ -42,6 +43,23 @@ test:
 ## Remove build artifacts
 clean:
 	cargo clean
+
+## Open orbit desktop in dev mode (hot-reload)
+desktop-dev:
+	cd $(DESKTOP_DIR)/ui && npm install
+	cd $(DESKTOP_DIR) && npx @tauri-apps/cli@2 dev
+
+## Build orbit desktop for production
+desktop-build:
+	cd $(DESKTOP_DIR)/ui && npm install
+	cd $(DESKTOP_DIR) && npx @tauri-apps/cli@2 build
+
+## Install built orbit-desktop binary to INSTALL_DIR
+desktop-install: desktop-build
+	@mkdir -p $(INSTALL_DIR)
+	install -m 755 $(TARGET_DIR)/orbit-desktop $(INSTALL_DIR)/orbit-desktop
+	@echo "Installed to $(INSTALL_DIR)/orbit-desktop"
+	@echo "Run with: orbit desktop"
 
 ## Show this help
 help:

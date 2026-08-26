@@ -71,7 +71,11 @@ impl ValidationRule for McpServerExists {
         if node.executor.as_deref() != Some("mcp") {
             return None;
         }
-        let server = node.executor_params.get("server").map(|s| s.as_str()).unwrap_or("");
+        let server = node
+            .executor_params
+            .get("server")
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if server.is_empty() || !ctx.mcp_catalog.iter().any(|e| e.name == server) {
             Some(ValidationIssue {
                 node_id: node.id.clone(),
@@ -234,7 +238,10 @@ pub struct ValidationResult {
 
 fn build_feedback_prompt(issues: &[ValidationIssue]) -> String {
     let mut s = "The generated plan has validation errors that must be fixed:\n\n".to_string();
-    let errors: Vec<_> = issues.iter().filter(|i| i.severity == Severity::Error).collect();
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .collect();
     for (idx, issue) in errors.iter().enumerate() {
         s.push_str(&format!(
             "{}. Node '{}' — [{}] {}\n",
@@ -315,7 +322,9 @@ mod tests {
     use super::*;
     use orbit_core::{
         engine::Engine,
-        plan::{NodePolicy, NodeStatus, Plan, PlanNode, PlanNodeType, PlanPolicy, PlanScope, PlanStatus},
+        plan::{
+            NodePolicy, NodeStatus, Plan, PlanNode, PlanNodeType, PlanPolicy, PlanScope, PlanStatus,
+        },
     };
 
     fn make_scope() -> PlanScope {
@@ -449,8 +458,17 @@ mod tests {
     #[test]
     fn infer_injection_levels() {
         assert_eq!(infer_scope_injection(&None), ScopeInjection::Full);
-        assert_eq!(infer_scope_injection(&Some("mcp".into())), ScopeInjection::SingleMcp);
-        assert_eq!(infer_scope_injection(&Some("shell".into())), ScopeInjection::Minimal);
-        assert_eq!(infer_scope_injection(&Some("cargo".into())), ScopeInjection::Credentials);
+        assert_eq!(
+            infer_scope_injection(&Some("mcp".into())),
+            ScopeInjection::SingleMcp
+        );
+        assert_eq!(
+            infer_scope_injection(&Some("shell".into())),
+            ScopeInjection::Minimal
+        );
+        assert_eq!(
+            infer_scope_injection(&Some("cargo".into())),
+            ScopeInjection::Credentials
+        );
     }
 }

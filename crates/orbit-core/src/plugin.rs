@@ -549,8 +549,8 @@ pub fn build_mcp_entries(
                 && let (Some(user), Some(pass)) = (all_vars.get(&ba.user), all_vars.get(&ba.pass))
             {
                 use base64::Engine as _;
-                let encoded = base64::engine::general_purpose::STANDARD
-                    .encode(format!("{user}:{pass}"));
+                let encoded =
+                    base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
                 all_vars.insert(ba.var.clone(), encoded);
             }
             let entry = if let Some(url_template) = &spec.mcp.url {
@@ -579,7 +579,11 @@ pub fn build_mcp_entries(
                         .filter_map(|(k, v)| {
                             let val = substitute(v, &all_vars);
                             // Drop empty values and unresolved placeholders.
-                            if val.is_empty() || val.contains('{') { None } else { Some((k.clone(), val)) }
+                            if val.is_empty() || val.contains('{') {
+                                None
+                            } else {
+                                Some((k.clone(), val))
+                            }
                         })
                         .collect();
                     if !env.is_empty() {
@@ -671,7 +675,12 @@ pub fn remove_plugin_mcps(plugin: &Plugin) -> Result<()> {
 /// Keychain key for an instance secret: `PLUGIN_INSTANCE_VAR` (all uppercase, dashes → underscores).
 pub fn instance_keychain_key(plugin: &str, instance_name: &str, var: &str) -> String {
     let normalize = |s: &str| s.to_uppercase().replace('-', "_");
-    format!("{}_{}_{}",  normalize(plugin), normalize(instance_name), normalize(var))
+    format!(
+        "{}_{}_{}",
+        normalize(plugin),
+        normalize(instance_name),
+        normalize(var)
+    )
 }
 
 fn substitute(template: &str, vars: &HashMap<String, String>) -> String {
@@ -708,8 +717,8 @@ pub fn add_instance_mcps(plugin: &Plugin, instances: &PluginInstances) -> Result
             && let (Some(user), Some(pass)) = (all_vars.get(&ba.user), all_vars.get(&ba.pass))
         {
             use base64::Engine as _;
-            let encoded = base64::engine::general_purpose::STANDARD
-                .encode(format!("{user}:{pass}"));
+            let encoded =
+                base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
             all_vars.insert(ba.var.clone(), encoded);
         }
         let entry = if let Some(url_template) = &spec.mcp.url {

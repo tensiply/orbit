@@ -71,7 +71,12 @@ fn cmd_list() -> Result<()> {
     println!("engines\n");
     println!("  \x1b[2mAI engines bring different AI assistants to your orbit sessions.\x1b[0m\n");
 
-    let name_w = engines.iter().map(|e| e.name.len()).max().unwrap_or(8).max(8);
+    let name_w = engines
+        .iter()
+        .map(|e| e.name.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
     let desc_w: usize = 48;
     let ver_w: usize = 16;
     let sep_w = 5 + name_w + 2 + desc_w + 2 + ver_w + 2 + 20;
@@ -135,7 +140,9 @@ fn cmd_list() -> Result<()> {
     }
 
     println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
-    println!("  \x1b[2m✓ installed  ○ not installed  ·  auth ✓ configured  auth ○ not configured\x1b[0m");
+    println!(
+        "  \x1b[2m✓ installed  ○ not installed  ·  auth ✓ configured  auth ○ not configured\x1b[0m"
+    );
     println!();
 
     let installed_count = engines.iter().filter(|e| bin_available(&e.bin)).count();
@@ -342,7 +349,10 @@ fn cmd_info(name: &str) -> Result<()> {
     let auth_str = match detect_auth(&engine) {
         AuthStatus::Configured(s) => format!("\x1b[32mconfigured\x1b[0m  {s}"),
         AuthStatus::NotConfigured => {
-            format!("\x1b[33mnot configured\x1b[0m  orbit engines auth {}", engine.name)
+            format!(
+                "\x1b[33mnot configured\x1b[0m  orbit engines auth {}",
+                engine.name
+            )
         }
     };
     info_row("auth", info_w, &auth_str);

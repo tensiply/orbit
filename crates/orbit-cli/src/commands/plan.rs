@@ -517,7 +517,9 @@ pub async fn run(args: PlanArgs) -> Result<()> {
                         println!("[replan] → {child_plan_id}");
                     }
                     PlanStreamEvent::NodeAwaitingApproval { node_id, label, .. } => {
-                        println!("[approve] node '{node_id}' ({label}) — run: orbit plan approve {id} {node_id}");
+                        println!(
+                            "[approve] node '{node_id}' ({label}) — run: orbit plan approve {id} {node_id}"
+                        );
                     }
                 }
             }
@@ -1109,8 +1111,14 @@ async fn stream_until_done(id: &str) {
                     PlanStreamEvent::PlanReplanning { child_plan_id, .. } => {
                         println!("[replan] → {child_plan_id}");
                     }
-                    PlanStreamEvent::NodeAwaitingApproval { node_id, label, plan_id } => {
-                        println!("[approve] node '{node_id}' ({label}) — run: orbit plan approve {plan_id} {node_id}");
+                    PlanStreamEvent::NodeAwaitingApproval {
+                        node_id,
+                        label,
+                        plan_id,
+                    } => {
+                        println!(
+                            "[approve] node '{node_id}' ({label}) — run: orbit plan approve {plan_id} {node_id}"
+                        );
                     }
                 }
             }
@@ -1735,11 +1743,7 @@ async fn run_template(command: TemplateCommand) -> Result<()> {
             })
             .await?
             {
-                Response::PlanCreated {
-                    id,
-                    node_count,
-                    ..
-                } => {
+                Response::PlanCreated { id, node_count, .. } => {
                     println!("Plan created: {id} ({node_count} node(s))");
                     if !dry_run {
                         let cwd = std::env::current_dir().unwrap_or_default();
@@ -2071,23 +2075,65 @@ async fn run_audit(id: &str, json: bool) -> Result<()> {
                     let short: String = reason.chars().take(55).collect();
                     (*timestamp, format!("PolicyBlocked   {node_id}  — {short}"))
                 }
-                AuditEvent::ScopeDetected { timestamp, scope_key, confidence, .. } => {
-                    (*timestamp, format!("ScopeDetected   {scope_key}  [{confidence}]"))
+                AuditEvent::ScopeDetected {
+                    timestamp,
+                    scope_key,
+                    confidence,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("ScopeDetected   {scope_key}  [{confidence}]"),
+                ),
+                AuditEvent::GapResolved {
+                    timestamp,
+                    gaps_found,
+                    gaps_auto_resolved,
+                    needed_user_input,
+                    ..
+                } => {
+                    let user = if *needed_user_input {
+                        "↑user"
+                    } else {
+                        "auto"
+                    };
+                    (
+                        *timestamp,
+                        format!("GapResolved     {gaps_auto_resolved}/{gaps_found} gaps  [{user}]"),
+                    )
                 }
-                AuditEvent::GapResolved { timestamp, gaps_found, gaps_auto_resolved, needed_user_input, .. } => {
-                    let user = if *needed_user_input { "↑user" } else { "auto" };
-                    (*timestamp, format!("GapResolved     {gaps_auto_resolved}/{gaps_found} gaps  [{user}]"))
-                }
-                AuditEvent::NodeDispatched { timestamp, node_id, executor, injection_level, .. } => {
-                    (*timestamp, format!("NodeDispatched  {node_id}  [{executor}:{injection_level}]"))
-                }
-                AuditEvent::McpCall { timestamp, server, tool, duration_ms, success, .. } => {
+                AuditEvent::NodeDispatched {
+                    timestamp,
+                    node_id,
+                    executor,
+                    injection_level,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("NodeDispatched  {node_id}  [{executor}:{injection_level}]"),
+                ),
+                AuditEvent::McpCall {
+                    timestamp,
+                    server,
+                    tool,
+                    duration_ms,
+                    success,
+                    ..
+                } => {
                     let ok = if *success { "ok" } else { "err" };
-                    (*timestamp, format!("McpCall         {server}:{tool}  ({duration_ms}ms/{ok})"))
+                    (
+                        *timestamp,
+                        format!("McpCall         {server}:{tool}  ({duration_ms}ms/{ok})"),
+                    )
                 }
-                AuditEvent::ValidationRetry { timestamp, retry_count, issues_count, .. } => {
-                    (*timestamp, format!("ValidationRetry #{retry_count}  ({issues_count} issues)"))
-                }
+                AuditEvent::ValidationRetry {
+                    timestamp,
+                    retry_count,
+                    issues_count,
+                    ..
+                } => (
+                    *timestamp,
+                    format!("ValidationRetry #{retry_count}  ({issues_count} issues)"),
+                ),
             };
             let elapsed = ts.saturating_sub(base);
             println!("  +{elapsed:>5}s  {label}");

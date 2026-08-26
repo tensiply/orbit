@@ -8,6 +8,10 @@ use std::{
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     /// `{pid}-{started_at}` — unique per launch
@@ -21,6 +25,10 @@ pub struct Session {
     /// Unix timestamp (seconds)
     pub started_at: u64,
     pub global_mode: bool,
+    /// Set by the server when this entry is loaded from history (not currently
+    /// running). Not stored on disk — populated at read time only.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_history: bool,
     /// tmux session name, if the engine was launched inside tmux
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tmux_session: Option<String>,
@@ -50,6 +58,7 @@ impl Session {
             work_dir,
             started_at,
             global_mode,
+            is_history: false,
             tmux_session,
         }
     }
@@ -64,9 +73,16 @@ impl Session {
         crate::data_paths::orbit_data_root().join("sessions")
     }
 
-    /// Persist the session file.
+    /// `~/.orbit/data/session-history.ndjson` — append-only session history log.
+    pub fn history_path() -> PathBuf {
+        crate::data_paths::orbit_data_root().join("session-history.ndjson")
+    }
+
+    /// Persist the session file and record it in the history log.
     pub fn save(&self) -> Result<()> {
-        self.save_to(&Self::sessions_dir())
+        self.save_to(&Self::sessions_dir())?;
+        let _ = self.append_to_history(); // best-effort; never fail the launch
+        Ok(())
     }
 
     pub fn save_to(&self, dir: &Path) -> Result<()> {
@@ -74,6 +90,18 @@ impl Session {
         let path = dir.join(format!("{}.json", self.id));
         fs::write(path, serde_json::to_string_pretty(self)?)?;
         Ok(())
+    }
+
+    /// One-time migration: seed the history log from existing session files so
+    /// sessions launched before history tracking was introduced are visible.
+    pub fn seed_history_from_existing() {
+        let path = Self::history_path();
+        if path.exists() {
+            return; // already seeded
+        }
+        for session in Self::load_all() {
+            let _ = session.append_to_history();
+        }
     }
 
     /// Delete the session file.
@@ -87,6 +115,50 @@ impl Session {
             fs::remove_file(path)?;
         }
         Ok(())
+    }
+
+    /// Append this session to the history log (NDJSON, one entry per line).
+    /// Called once at session creation — history is recorded at launch time,
+    /// not at cleanup time, so it survives any deletion path.
+    pub fn append_to_history(&self) -> Result<()> {
+        use std::io::Write as _;
+        let path = Self::history_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        writeln!(file, "{}", serde_json::to_string(self)?)?;
+        Ok(())
+    }
+
+    /// Load up to `limit` recent sessions from the history log, excluding IDs
+    /// already present in `exclude_ids` (the active sessions).
+    /// Returns entries sorted by `started_at` descending (most recent first).
+    pub fn load_history_excluding(
+        limit: usize,
+        exclude_ids: &std::collections::HashSet<String>,
+    ) -> Vec<Session> {
+        let Ok(content) = fs::read_to_string(Self::history_path()) else {
+            return vec![];
+        };
+        // Deduplicate by id — last line wins (future: could carry ended_at updates).
+        let mut by_id: std::collections::HashMap<String, Session> =
+            std::collections::HashMap::new();
+        for line in content.lines() {
+            if let Ok(s) = serde_json::from_str::<Session>(line) {
+                by_id.insert(s.id.clone(), s);
+            }
+        }
+        let mut sessions: Vec<Session> = by_id
+            .into_values()
+            .filter(|s| !exclude_ids.contains(&s.id))
+            .collect();
+        sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        sessions.truncate(limit);
+        sessions
     }
 
     /// Load all session files from the sessions directory.
@@ -131,7 +203,7 @@ impl Session {
             .unwrap_or(false)
     }
 
-    /// Human-readable scope label.
+    /// Human-readable scope label, always prefixed with workspace name.
     pub fn scope_label(&self) -> String {
         if self.global_mode {
             return "(global)".to_string();
@@ -141,7 +213,24 @@ impl Session {
             .map(|s| s.as_str())
             .filter(|s| !s.is_empty())
             .collect();
-        parts.join(" / ")
+        if parts.is_empty() {
+            return "(unknown)".to_string();
+        }
+        if let Some(ws) = self.workspace_prefix() {
+            let mut all = vec![ws.as_str()];
+            all.extend_from_slice(&parts);
+            return all.join(" > ");
+        }
+        parts.join(" > ")
+    }
+
+    fn workspace_prefix(&self) -> Option<String> {
+        let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
+        let rel = self.work_dir.strip_prefix(&home).ok()?;
+        rel.components()
+            .next()
+            .and_then(|c| c.as_os_str().to_str())
+            .map(|s| s.to_owned())
     }
 
     /// Human-readable "Xm ago" / "Xh ago" elapsed time.
@@ -185,7 +274,6 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -215,7 +303,7 @@ mod tests {
     #[test]
     fn scope_label_full() {
         let s = make_session(1);
-        assert_eq!(s.scope_label(), "AIDEV / AI-ECOSYSTEM / orbit");
+        assert_eq!(s.scope_label(), "AIDEV > AI-ECOSYSTEM > orbit");
     }
 
     #[test]
@@ -237,7 +325,7 @@ mod tests {
             false,
             None,
         );
-        assert_eq!(s.scope_label(), "AIDEV / AI-ECOSYSTEM");
+        assert_eq!(s.scope_label(), "AIDEV > AI-ECOSYSTEM");
     }
 
     #[test]

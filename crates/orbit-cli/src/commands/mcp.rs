@@ -1,5 +1,5 @@
-use anyhow::{Context, Result, bail};
 use crate::output::truncate_desc;
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{catalog, catalog::McpEntry, context::OrbitScope};
 use orbit_engine::{config::jsonc, resolver};
@@ -129,7 +129,9 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
 
     let scope_label = scope_description(&scope, scope_override);
     println!("mcps\n");
-    println!("  \x1b[2mMCPs extend orbit sessions with external tools and data sources.  (scope: {scope_label})\x1b[0m\n");
+    println!(
+        "  \x1b[2mMCPs extend orbit sessions with external tools and data sources.  (scope: {scope_label})\x1b[0m\n"
+    );
 
     let name_w = rows.iter().map(|r| r.name.len()).max().unwrap_or(8).max(8);
     let desc_w: usize = 48;
@@ -180,11 +182,7 @@ fn cmd_list(scope_override: Option<ScopeLevel>) -> Result<()> {
 
 // ── enable ────────────────────────────────────────────────────────────────────
 
-fn cmd_enable(
-    name: &str,
-    custom_cmd: &[String],
-    scope_override: Option<ScopeLevel>,
-) -> Result<()> {
+fn cmd_enable(name: &str, custom_cmd: &[String], scope_override: Option<ScopeLevel>) -> Result<()> {
     let (scope, level) = resolve_write_scope(scope_override)?;
     let path = mcp_json_path(scope.as_ref(), level)?;
 
@@ -339,7 +337,10 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
             } else {
                 "\x1b[2m○ disabled\x1b[0m"
             };
-            println!("    project     {marker}  \x1b[2m({})\x1b[0m", scope.project);
+            println!(
+                "    project     {marker}  \x1b[2m({})\x1b[0m",
+                scope.project
+            );
         }
         if !scope.repository.is_empty() {
             let p = scope
@@ -437,7 +438,10 @@ pub fn mcp_json_path(scope: Option<&OrbitScope>, level: ScopeLevel) -> Result<Pa
         }
         ScopeLevel::Tenant => {
             let s = scope.context("scope required for tenant level")?;
-            Ok(s.ai_context_root.join("tenants").join(&s.tenant).join("mcp.json"))
+            Ok(s.ai_context_root
+                .join("tenants")
+                .join(&s.tenant)
+                .join("mcp.json"))
         }
         ScopeLevel::Project => {
             let s = scope.context("scope required for project level")?;

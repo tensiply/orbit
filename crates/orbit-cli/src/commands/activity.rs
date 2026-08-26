@@ -91,9 +91,21 @@ fn resolve_scope(arg: Option<String>) -> String {
     let project = std::env::var("AI_PROJECT").unwrap_or_default();
     let repository = std::env::var("AI_REPOSITORY").unwrap_or_default();
     activity::scope_key(
-        if tenant.is_empty() { None } else { Some(tenant.as_str()) },
-        if project.is_empty() { None } else { Some(project.as_str()) },
-        if repository.is_empty() { None } else { Some(repository.as_str()) },
+        if tenant.is_empty() {
+            None
+        } else {
+            Some(tenant.as_str())
+        },
+        if project.is_empty() {
+            None
+        } else {
+            Some(project.as_str())
+        },
+        if repository.is_empty() {
+            None
+        } else {
+            Some(repository.as_str())
+        },
     )
 }
 
@@ -109,7 +121,12 @@ fn print_activity_table(entries: &[ActivityEntry]) {
     }
 
     let ts_w = 16usize;
-    let scope_w = entries.iter().map(|e| e.scope.len()).max().unwrap_or(20).max(5);
+    let scope_w = entries
+        .iter()
+        .map(|e| e.scope.len())
+        .max()
+        .unwrap_or(20)
+        .max(5);
     let summary_w: usize = 55;
     let sep_w = 2 + ts_w + 2 + scope_w + 2 + summary_w;
 

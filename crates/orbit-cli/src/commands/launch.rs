@@ -64,9 +64,18 @@ pub struct LaunchArgs {
     /// Open a new session even if one for this scope is already running
     #[arg(short = 'n', long)]
     pub new_session: bool,
+
+    /// Print the resolved work directory and exit (used by shell-init integration)
+    #[arg(long, hide = true)]
+    pub print_work_dir: bool,
 }
 
 pub async fn run(args: LaunchArgs) -> Result<()> {
+    // "recent" — interactive picker of recently visited scopes
+    if args.workspace.as_deref() == Some("recent") && args.tenant.is_none() {
+        return run_recent_picker(args).await;
+    }
+
     let engine = match args.engine {
         Some(e) => Engine::from(e),
         None => {
@@ -99,6 +108,11 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         global_mode = scope.global_mode,
         "scope resolved"
     );
+
+    if args.print_work_dir {
+        println!("{}", scope.work_dir.display());
+        return Ok(());
+    }
 
     // Load and merge config from all scope layers
     let merged = config::load(&scope, engine)?;
@@ -712,4 +726,127 @@ fn gemini_include_dirs(paths: &[&std::path::Path]) -> Vec<std::path::PathBuf> {
         }
     }
     dirs
+}
+
+// ── recent picker ─────────────────────────────────────────────────────────────
+
+async fn run_recent_picker(args: LaunchArgs) -> Result<()> {
+    // Load recent activity, deduplicated by scope (newest first)
+    let raw = orbit_core::activity::list(None, None, None, 100).unwrap_or_default();
+
+    let mut seen = std::collections::HashSet::new();
+    let scopes: Vec<(String, u64)> = raw
+        .into_iter()
+        .filter(|e| !e.scope.is_empty())
+        .filter_map(|e| {
+            if seen.insert(e.scope.clone()) {
+                Some((e.scope, e.ts))
+            } else {
+                None
+            }
+        })
+        .take(20)
+        .collect();
+
+    if scopes.is_empty() {
+        println!(
+            "  \x1b[2mNo recent activity found. Launch a scope first with: orbit launch WORKSPACE TENANT ...\x1b[0m"
+        );
+        return Ok(());
+    }
+
+    // Display "AIDEV/AI-ECOSYSTEM/orbit" as "AIDEV / AI-ECOSYSTEM / orbit"
+    let pretty: Vec<String> = scopes.iter().map(|(s, _)| s.replace('/', " / ")).collect();
+    let label_w = pretty.iter().map(|s| s.len()).max().unwrap_or(10).max(10);
+    let sep_w = 6 + label_w + 2 + 12;
+
+    println!();
+    println!("  \x1b[2mRecent scopes — select to re-launch (new session):\x1b[0m");
+    println!();
+    println!(
+        "  \x1b[2m{:>3}  {:<label_w$}  last seen\x1b[0m",
+        "#",
+        "scope",
+        label_w = label_w
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    for (i, (label, (_, ts))) in pretty.iter().zip(scopes.iter()).enumerate() {
+        println!(
+            "  {:>3}  {:<label_w$}  \x1b[2m{}\x1b[0m",
+            i + 1,
+            label,
+            ts_ago(*ts),
+            label_w = label_w
+        );
+    }
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!();
+
+    let n = scopes.len();
+    print!("  Select [1-{n}] (q to quit): ");
+    {
+        use std::io::Write;
+        std::io::stdout().flush()?;
+    }
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+
+    if trimmed.eq_ignore_ascii_case("q") || trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let idx: usize = trimmed
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid selection: {trimmed}"))?;
+    anyhow::ensure!(idx >= 1 && idx <= n, "selection out of range: {idx}");
+
+    let (scope, _) = &scopes[idx - 1];
+
+    // Split "TENANT/PROJECT/REPO" back into components
+    let mut parts = scope.splitn(3, '/');
+    let tenant = parts.next().filter(|s| !s.is_empty()).map(str::to_string);
+    let project = parts.next().filter(|s| !s.is_empty()).map(str::to_string);
+    let repository = parts.next().filter(|s| !s.is_empty()).map(str::to_string);
+
+    println!();
+    println!(
+        "  \x1b[32m→\x1b[0m launching \x1b[1m{}\x1b[0m",
+        scope.replace('/', " / ")
+    );
+    println!();
+
+    Box::pin(run(LaunchArgs {
+        workspace: None,
+        tenant,
+        project,
+        repository,
+        engine: args.engine,
+        dry_run: args.dry_run,
+        no_tmux: args.no_tmux,
+        task: args.task,
+        no_task: args.no_task,
+        new_session: true,
+        print_work_dir: args.print_work_dir,
+    }))
+    .await
+}
+
+fn ts_ago(ts: u64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let elapsed = now.saturating_sub(ts);
+    if elapsed < 60 {
+        "just now".to_string()
+    } else if elapsed < 3600 {
+        format!("{}m ago", elapsed / 60)
+    } else if elapsed < 86400 {
+        format!("{}h ago", elapsed / 3600)
+    } else {
+        format!("{}d ago", elapsed / 86400)
+    }
 }

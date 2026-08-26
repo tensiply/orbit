@@ -197,7 +197,13 @@ mod tests {
     use super::*;
     use orbit_core::scope_index::ScopeIndexEntry;
 
-    fn make_entry(ws: &str, tenant: &str, project: &str, repo: &str, desc: Option<&str>) -> ScopeIndexEntry {
+    fn make_entry(
+        ws: &str,
+        tenant: &str,
+        project: &str,
+        repo: &str,
+        desc: Option<&str>,
+    ) -> ScopeIndexEntry {
         let mut keywords = vec![];
         for seg in [ws, tenant, project, repo] {
             for part in seg.split(['-', '_']) {
@@ -227,10 +233,20 @@ mod tests {
     #[test]
     fn high_confidence_exact_match() {
         let index = vec![
-            make_entry("BeFra", "JAFRAMX", "INTERFACES", "jf-cdc-interfaces", Some("CDC query stuff")),
+            make_entry(
+                "BeFra",
+                "JAFRAMX",
+                "INTERFACES",
+                "jf-cdc-interfaces",
+                Some("CDC query stuff"),
+            ),
             make_entry("AI", "AIDEV", "AI-ECOSYSTEM", "orbit", None),
         ];
-        let result = resolve_scope_from_intent("quiero cambiar la query del cdc jfp-prom-card", &index, None);
+        let result = resolve_scope_from_intent(
+            "quiero cambiar la query del cdc jfp-prom-card",
+            &index,
+            None,
+        );
         assert_eq!(result.confidence, Confidence::High);
         assert_eq!(result.repository.as_deref(), Some("jf-cdc-interfaces"));
         assert_eq!(result.workspace.as_deref(), Some("BeFra"));

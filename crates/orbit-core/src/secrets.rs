@@ -77,9 +77,7 @@ fn interpolate_scoped(template: &str, slug: Option<&str>) -> String {
                 match std::env::var(expr) {
                     Ok(v) => v,
                     Err(_) => {
-                        tracing::warn!(
-                            "env var '{expr}' not set (referenced as '${{{expr}}}')"
-                        );
+                        tracing::warn!("env var '{expr}' not set (referenced as '${{{expr}}}')");
                         format!("${{{expr}}}")
                     }
                 }
@@ -152,7 +150,9 @@ fn resolve_keychain_scoped(key: &str, original: &str, slug: Option<&str>) -> Str
     match keychain_get(key) {
         Ok(secret) => secret,
         Err(e) => {
-            let hint_key = slug.map(|s| format!("{s}/{key}")).unwrap_or_else(|| key.to_string());
+            let hint_key = slug
+                .map(|s| format!("{s}/{key}"))
+                .unwrap_or_else(|| key.to_string());
             tracing::warn!(
                 "keychain lookup failed for '{key}': {e} (referenced as '{original}')\n  \
                  hint: run `orbit secret set {hint_key} <value>` to store it"
@@ -242,6 +242,9 @@ mod tests {
     fn inline_interpolation_missing_keychain_leaves_placeholder() {
         // Key that definitely does not exist in keychain
         let result = resolve("Bearer ${keychain://ORBIT_DEFINITELY_NOT_SET_KC_XYZ}");
-        assert_eq!(result, "Bearer ${keychain://ORBIT_DEFINITELY_NOT_SET_KC_XYZ}");
+        assert_eq!(
+            result,
+            "Bearer ${keychain://ORBIT_DEFINITELY_NOT_SET_KC_XYZ}"
+        );
     }
 }

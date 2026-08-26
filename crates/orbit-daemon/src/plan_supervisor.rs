@@ -4,7 +4,9 @@ use orbit_core::{
     hooks::{HookEvent, run_hooks},
     ipc::PlanStreamEvent,
     memory::{NodeOutcomeSummary, PlanRunRecord, append_plan_run_for, load_recent_runs},
-    plan::{NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, ScopeInjection, TokenUsage},
+    plan::{
+        NodeStatus, Plan, PlanNode, PlanNodeType, PlanScope, PlanStatus, ScopeInjection, TokenUsage,
+    },
     session::Session,
 };
 
@@ -634,12 +636,12 @@ fn dispatch_node(
     if let Some(exec_name) = executor {
         // ── MCP executor: synchronous JSON-RPC call over stdio ────────────────
         if exec_name == "mcp" {
-            let server_name = executor_params
-                .get("server")
-                .ok_or_else(|| anyhow::anyhow!("mcp executor requires 'server' in executor_params"))?;
-            let tool = executor_params
-                .get("tool")
-                .ok_or_else(|| anyhow::anyhow!("mcp executor requires 'tool' in executor_params"))?;
+            let server_name = executor_params.get("server").ok_or_else(|| {
+                anyhow::anyhow!("mcp executor requires 'server' in executor_params")
+            })?;
+            let tool = executor_params.get("tool").ok_or_else(|| {
+                anyhow::anyhow!("mcp executor requires 'tool' in executor_params")
+            })?;
             let arguments: serde_json::Value = executor_params
                 .get("arguments")
                 .and_then(|s| serde_json::from_str(s).ok())
@@ -653,8 +655,8 @@ fn dispatch_node(
             })?;
 
             // Find the rendered mcp.json for this scope
-            let mcp_config_path = orbit_core::data_paths::orbit_data_root()
-                .join(format!("mcp-{node_id}.json"));
+            let mcp_config_path =
+                orbit_core::data_paths::orbit_data_root().join(format!("mcp-{node_id}.json"));
 
             // Try scope-rendered config first, fall back to the runtime config dir
             let mcp_config_path = if mcp_config_path.exists() {
@@ -684,7 +686,10 @@ fn dispatch_node(
             let log_path = log_dir.join(format!("{session_name}.log"));
             match &result {
                 Ok(val) => {
-                    let _ = std::fs::write(&log_path, serde_json::to_string_pretty(val).unwrap_or_default());
+                    let _ = std::fs::write(
+                        &log_path,
+                        serde_json::to_string_pretty(val).unwrap_or_default(),
+                    );
                 }
                 Err(e) => {
                     let _ = std::fs::write(&log_path, format!("MCP error: {e}"));
@@ -772,8 +777,10 @@ fn dispatch_node(
         orbit_env.insert("ORBIT_NODE_INTENT".to_string(), node_intent.to_string());
 
         // Credentials level: add MCP secrets and ORBIT_* scope vars
-        if matches!(effective_injection, ScopeInjection::Full | ScopeInjection::Credentials)
-            && let Ok(merged) = config::load(&orbit_scope, engine)
+        if matches!(
+            effective_injection,
+            ScopeInjection::Full | ScopeInjection::Credentials
+        ) && let Ok(merged) = config::load(&orbit_scope, engine)
         {
             for (k, v) in &merged.env {
                 orbit_env.insert(k.clone(), v.clone());
@@ -784,7 +791,10 @@ fn dispatch_node(
             );
             orbit_env.insert("ORBIT_TENANT".to_string(), orbit_scope.tenant.clone());
             orbit_env.insert("ORBIT_PROJECT".to_string(), orbit_scope.project.clone());
-            orbit_env.insert("ORBIT_REPOSITORY".to_string(), orbit_scope.repository.clone());
+            orbit_env.insert(
+                "ORBIT_REPOSITORY".to_string(),
+                orbit_scope.repository.clone(),
+            );
         }
 
         // SingleMcp level: expose only the specific MCP server JSON

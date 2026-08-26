@@ -78,6 +78,12 @@ pub struct CreateArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Replace an existing image instead of creating a new one.
+    /// Without a value, replaces the most recently created image in the workspace.
+    /// With a value (IMG-ID or path), replaces that specific image.
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    pub replace: Option<String>,
+
     /// Workspace name override (auto-detected from AI_WORKSPACE_ROOT)
     #[arg(long)]
     pub workspace: Option<String>,
@@ -150,11 +156,30 @@ fn run_create(args: CreateArgs) -> Result<()> {
     let content = resolve_content(args.content.as_deref(), args.content_file.as_deref())?;
     let (workspace_name, tenant, project, repository) = resolve_scope(args.workspace.as_deref());
 
+    // --replace: reuse an existing entry's path and ID instead of creating a new file.
+    // Empty string → last entry in workspace; non-empty → specific IMG-ID or path.
+    let replace_entry: Option<ImageEntry> = if let Some(ref key) = args.replace {
+        if key.is_empty() {
+            last_entry(&workspace_name)
+                .with_context(|| "no images found in this workspace to replace")?
+                .into()
+        } else {
+            let (_, e) = find_entry(key)
+                .with_context(|| format!("image '{key}' not found in the index"))?;
+            Some(e)
+        }
+    } else {
+        None
+    };
+
     // Resolve output path and ID together so the filename can include the ID.
+    // --replace → reuse existing entry's path and ID (skip title/output lookup).
     // Same title → find existing entry → reuse its path and ID (idempotent re-generation).
     // New title → allocate ID first, then build {ID}-{slug}.{ext}.
     let (output, alloc_id, existing): (PathBuf, String, Option<ImageEntry>) =
-        if let Some(p) = args.output {
+        if let Some(ref e) = replace_entry {
+            (e.output_path.clone(), e.id.clone(), replace_entry)
+        } else if let Some(p) = args.output {
             let ex = find_by_output(&p, &workspace_name);
             let id = ex
                 .as_ref()
@@ -180,8 +205,9 @@ fn run_create(args: CreateArgs) -> Result<()> {
         };
 
     // Backup existing file before overwriting.
-    // --force skips the backup and overwrites directly.
-    if output.exists() && !args.force {
+    // --force and --replace both skip the backup and overwrite directly.
+    let skip_backup = args.force || args.replace.is_some();
+    if output.exists() && !skip_backup {
         let backup = PathBuf::from(format!("{}.bk", output.display()));
         if let Err(e) = fs::copy(&output, &backup) {
             eprintln!("[orbit image] warn: could not backup existing file: {e}");
@@ -254,6 +280,11 @@ fn find_by_title(title: &str, workspace_name: &str) -> Option<ImageEntry> {
     load_all_entries(workspace_name)
         .into_iter()
         .find(|e| e.title == title)
+}
+
+/// Returns the most recently created image entry in the workspace (by index order).
+fn last_entry(workspace_name: &str) -> Option<ImageEntry> {
+    load_all_entries(workspace_name).into_iter().last()
 }
 
 fn run_list(args: ListArgs) -> Result<()> {

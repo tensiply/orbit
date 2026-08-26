@@ -1,5 +1,5 @@
-pub mod chat;
 mod adf;
+pub mod chat;
 mod launch;
 mod peers;
 mod plans;

@@ -60,7 +60,12 @@ fn read_first_line(path: &Path) -> Option<String> {
         .map(|l| l.to_string())
 }
 
-fn try_read_description(ai_root: &Path, tenant: &str, project: &str, repository: &str) -> Option<String> {
+fn try_read_description(
+    ai_root: &Path,
+    tenant: &str,
+    project: &str,
+    repository: &str,
+) -> Option<String> {
     let readme = ai_root
         .join("tenants")
         .join(tenant)
@@ -111,7 +116,8 @@ pub fn build_scope_index(workspaces: &[WorkspaceEntry]) -> Vec<ScopeIndexEntry> 
                         .join(&repository);
 
                     let keywords = extract_keywords(&ws.name, &tenant, &project, &repository);
-                    let description = try_read_description(&ws.ai_root, &tenant, &project, &repository);
+                    let description =
+                        try_read_description(&ws.ai_root, &tenant, &project, &repository);
 
                     entries.push(ScopeIndexEntry {
                         workspace: ws.name.clone(),
@@ -137,15 +143,28 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn make_workspace(dir: &TempDir, name: &str, tenant: &str, project: &str, repo: &str) -> WorkspaceEntry {
+    fn make_workspace(
+        dir: &TempDir,
+        name: &str,
+        tenant: &str,
+        project: &str,
+        repo: &str,
+    ) -> WorkspaceEntry {
         let ai_root = dir.path().join(name).join("AI");
         let repo_dir = ai_root
-            .join("tenants").join(tenant)
-            .join("projects").join(project)
-            .join("repositories").join(repo)
+            .join("tenants")
+            .join(tenant)
+            .join("projects")
+            .join(project)
+            .join("repositories")
+            .join(repo)
             .join("source-of-truth");
         fs::create_dir_all(&repo_dir).unwrap();
-        fs::write(repo_dir.join("README.md"), format!("# {repo}\nDoes CDC query stuff.")).unwrap();
+        fs::write(
+            repo_dir.join("README.md"),
+            format!("# {repo}\nDoes CDC query stuff."),
+        )
+        .unwrap();
         WorkspaceEntry {
             name: name.to_string(),
             slug: name.to_lowercase(),
@@ -182,7 +201,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let ws = make_workspace(&dir, "BeFra", "JAFRAMX", "INTERFACES", "jf-cdc-interfaces");
         let index = build_scope_index(&[ws]);
-        assert_eq!(index[0].description.as_deref(), Some("Does CDC query stuff."));
+        assert_eq!(
+            index[0].description.as_deref(),
+            Some("Does CDC query stuff.")
+        );
     }
 
     #[test]

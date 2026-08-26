@@ -892,7 +892,10 @@ pub enum AsyncAction {
     /// Carries the already-dispatched chat action so the user message renders
     /// before we block on the IPC call.
     ChatAction(chat::ChatAsyncAction),
-    ChatApprove { plan_id: String, node_id: String },
+    ChatApprove {
+        plan_id: String,
+        node_id: String,
+    },
     ChatCancel(Option<String>),
     ChatListPlans,
     DaemonStart,
@@ -1255,10 +1258,23 @@ impl App {
                 self.tab = Tab::Chat;
                 return;
             }
-            KeyCode::Char('1') => { self.tab = Tab::Sessions; return; }
-            KeyCode::Char('2') => { self.tab = Tab::Launch; return; }
-            KeyCode::Char('3') => { self.tab = Tab::Plans; self.pending_async = Some(AsyncAction::RefreshPlans); return; }
-            KeyCode::Char('4') => { self.tab = Tab::System; return; }
+            KeyCode::Char('1') => {
+                self.tab = Tab::Sessions;
+                return;
+            }
+            KeyCode::Char('2') => {
+                self.tab = Tab::Launch;
+                return;
+            }
+            KeyCode::Char('3') => {
+                self.tab = Tab::Plans;
+                self.pending_async = Some(AsyncAction::RefreshPlans);
+                return;
+            }
+            KeyCode::Char('4') => {
+                self.tab = Tab::System;
+                return;
+            }
             KeyCode::Char('5') => {
                 self.tab = Tab::Tasks;
                 if !self.tasks.loaded && !self.tasks.loading {
@@ -1266,7 +1282,11 @@ impl App {
                 }
                 return;
             }
-            KeyCode::Char('6') => { self.tab = Tab::Schedules; self.pending_async = Some(AsyncAction::RefreshSchedules); return; }
+            KeyCode::Char('6') => {
+                self.tab = Tab::Schedules;
+                self.pending_async = Some(AsyncAction::RefreshSchedules);
+                return;
+            }
             KeyCode::Char('q') if self.chat.mode == ChatMode::Scroll => {
                 self.should_quit = true;
                 return;
@@ -1872,12 +1892,11 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                             .filter(|s| !s.is_empty())
                             .map(str::to_string)
                     };
-                    let chat_tenant =
-                        std::env::var("AI_TENANT").ok().filter(|s| !s.is_empty());
-                    let chat_project =
-                        std::env::var("AI_PROJECT").ok().filter(|s| !s.is_empty());
-                    let chat_repository =
-                        std::env::var("AI_REPOSITORY").ok().filter(|s| !s.is_empty());
+                    let chat_tenant = std::env::var("AI_TENANT").ok().filter(|s| !s.is_empty());
+                    let chat_project = std::env::var("AI_PROJECT").ok().filter(|s| !s.is_empty());
+                    let chat_repository = std::env::var("AI_REPOSITORY")
+                        .ok()
+                        .filter(|s| !s.is_empty());
                     tokio::spawn(async move {
                         let req = Request::CreatePlan {
                             intent: goal,
@@ -1926,7 +1945,12 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                                 } else {
                                     None
                                 };
-                                chat::ChatTaskResult::PlanCreated { id, nodes, dry_run, stream_rx }
+                                chat::ChatTaskResult::PlanCreated {
+                                    id,
+                                    nodes,
+                                    dry_run,
+                                    stream_rx,
+                                }
                             }
                             Ok(Ok(Response::Error { message })) => {
                                 chat::ChatTaskResult::PlanError(message)
@@ -1962,21 +1986,22 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
             .await
             {
                 Ok(Ok(())) => {
-                    app.chat.push_orbit(chat::OrbitContent::Text(format!("Approved {node_id}.")));
+                    app.chat
+                        .push_orbit(chat::OrbitContent::Text(format!("Approved {node_id}.")));
                 }
                 Ok(Err(e)) => {
-                    app.chat.push_orbit(chat::OrbitContent::Error(format!("Approve failed: {e}")));
+                    app.chat
+                        .push_orbit(chat::OrbitContent::Error(format!("Approve failed: {e}")));
                 }
                 _ => {
-                    app.chat.push_orbit(chat::OrbitContent::Error("Approve timed out.".into()));
+                    app.chat
+                        .push_orbit(chat::OrbitContent::Error("Approve timed out.".into()));
                 }
             }
         }
 
         AsyncAction::ChatCancel(id) => {
-            let id = id.or_else(|| {
-                app.chat.active_plan.as_ref().map(|ap| ap.plan_id.clone())
-            });
+            let id = id.or_else(|| app.chat.active_plan.as_ref().map(|ap| ap.plan_id.clone()));
             if let Some(id) = id {
                 match tokio::time::timeout(
                     Duration::from_millis(500),
@@ -1986,31 +2011,35 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                 {
                     Ok(Ok(())) => {
                         app.chat.active_plan = None;
-                        app.chat.push_orbit(chat::OrbitContent::Text(format!("Plan {id} cancelled.")));
+                        app.chat
+                            .push_orbit(chat::OrbitContent::Text(format!("Plan {id} cancelled.")));
                     }
                     Ok(Err(e)) => {
-                        app.chat.push_orbit(chat::OrbitContent::Error(format!("Cancel failed: {e}")));
+                        app.chat
+                            .push_orbit(chat::OrbitContent::Error(format!("Cancel failed: {e}")));
                     }
                     _ => {
-                        app.chat.push_orbit(chat::OrbitContent::Error("Cancel timed out.".into()));
+                        app.chat
+                            .push_orbit(chat::OrbitContent::Error("Cancel timed out.".into()));
                     }
                 }
             } else {
-                app.chat.push_orbit(chat::OrbitContent::Error("No active plan to cancel.".into()));
+                app.chat.push_orbit(chat::OrbitContent::Error(
+                    "No active plan to cancel.".into(),
+                ));
             }
         }
 
         AsyncAction::ChatListPlans => {
-            if let Ok(Ok(plans)) = tokio::time::timeout(
-                Duration::from_millis(500),
-                orbit_client::ipc::list_plans(),
-            )
-            .await
+            if let Ok(Ok(plans)) =
+                tokio::time::timeout(Duration::from_millis(500), orbit_client::ipc::list_plans())
+                    .await
             {
                 let text = chat::format_plan_list(&plans);
                 app.chat.push_orbit(chat::OrbitContent::Text(text));
             } else {
-                app.chat.push_orbit(chat::OrbitContent::Error("Could not list plans.".into()));
+                app.chat
+                    .push_orbit(chat::OrbitContent::Error("Could not list plans.".into()));
             }
         }
 
@@ -2348,9 +2377,16 @@ where
             while let Ok(result) = rx.try_recv() {
                 match result {
                     chat::ChatTaskResult::System(msg) => {
-                        app.chat.messages.push(chat::ChatMessage::System { text: msg });
+                        app.chat
+                            .messages
+                            .push(chat::ChatMessage::System { text: msg });
                     }
-                    chat::ChatTaskResult::PlanCreated { id, nodes, dry_run, stream_rx } => {
+                    chat::ChatTaskResult::PlanCreated {
+                        id,
+                        nodes,
+                        dry_run,
+                        stream_rx,
+                    } => {
                         chat::apply_plan_created(&mut app.chat, id, nodes, dry_run, stream_rx);
                         done = true;
                         break;
