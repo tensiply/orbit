@@ -319,8 +319,12 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
         let scan = |path: &std::path::Path| -> Vec<String> {
-            let Ok(text) = std::fs::read_to_string(path) else { return vec![] };
-            let Ok(val) = jsonc::parse(&text) else { return vec![] };
+            let Ok(text) = std::fs::read_to_string(path) else {
+                return vec![];
+            };
+            let Ok(val) = jsonc::parse(&text) else {
+                return vec![];
+            };
             val.get("mcpServers")
                 .and_then(|s| s.as_object())
                 .map(|m| m.keys().cloned().collect())
@@ -353,17 +357,22 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
             }
             if !scope.project.is_empty() {
                 let pp = ws
-                    .join("tenants").join(&scope.tenant)
-                    .join("projects").join(&scope.project)
+                    .join("tenants")
+                    .join(&scope.tenant)
+                    .join("projects")
+                    .join(&scope.project)
                     .join("mcp.json");
                 for name in scan(&pp) {
                     map.insert(name, format!("project:{}", scope.project));
                 }
                 if !scope.repository.is_empty() {
                     let rp = ws
-                        .join("tenants").join(&scope.tenant)
-                        .join("projects").join(&scope.project)
-                        .join("repositories").join(&scope.repository)
+                        .join("tenants")
+                        .join(&scope.tenant)
+                        .join("projects")
+                        .join(&scope.project)
+                        .join("repositories")
+                        .join(&scope.repository)
                         .join("mcp.json");
                     for name in scan(&rp) {
                         map.insert(name, format!("repo:{}", scope.repository));
@@ -913,7 +922,10 @@ mod tests {
         );
         let mut cfg = MergedConfig::default();
         merge_file_into(&mut cfg, &tmp.path().join("cfg.json"), Engine::Claude);
-        assert!(cfg.mcp.contains_key("gh"), "mcpServers must be parsed for Claude");
+        assert!(
+            cfg.mcp.contains_key("gh"),
+            "mcpServers must be parsed for Claude"
+        );
     }
 
     #[test]
@@ -926,7 +938,10 @@ mod tests {
         );
         let mut cfg = MergedConfig::default();
         merge_file_into(&mut cfg, &tmp.path().join("cfg.json"), Engine::Opencode);
-        assert!(cfg.mcp.contains_key("srv"), "mcpServers must be parsed for OpenCode");
+        assert!(
+            cfg.mcp.contains_key("srv"),
+            "mcpServers must be parsed for OpenCode"
+        );
     }
 
     #[test]
@@ -958,9 +973,12 @@ mod tests {
         let global_root = tmp.path().join("global");
         let ws_root = tmp.path().join("ws");
         let repo_dir = ws_root
-            .join("tenants").join("T")
-            .join("projects").join("P")
-            .join("repositories").join("R");
+            .join("tenants")
+            .join("T")
+            .join("projects")
+            .join("P")
+            .join("repositories")
+            .join("R");
         std::fs::create_dir_all(&global_root).unwrap();
         std::fs::create_dir_all(&repo_dir).unwrap();
 
@@ -974,7 +992,8 @@ mod tests {
         std::fs::write(
             repo_dir.join("mcp.json"),
             r#"{ "mcpServers": { "shared-server": { "command": "repo-cmd" } } }"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let scope = OrbitScope {
             global_ai_root: global_root.clone(),
@@ -1004,9 +1023,12 @@ mod tests {
         let global_root = tmp.path().join("global");
         let ws_root = tmp.path().join("ws");
         let repo_dir = ws_root
-            .join("tenants").join("T")
-            .join("projects").join("P")
-            .join("repositories").join("R");
+            .join("tenants")
+            .join("T")
+            .join("projects")
+            .join("P")
+            .join("repositories")
+            .join("R");
         std::fs::create_dir_all(&global_root).unwrap();
         std::fs::create_dir_all(&repo_dir).unwrap();
 
@@ -1019,7 +1041,8 @@ mod tests {
         std::fs::write(
             repo_dir.join("mcp.json"),
             r#"{ "mcpServers": { "repo-only": { "command": "repo-cmd" } } }"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let scope = OrbitScope {
             global_ai_root: global_root.clone(),
