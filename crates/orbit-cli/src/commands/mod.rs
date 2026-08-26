@@ -1,10 +1,12 @@
 pub mod activity;
+pub mod architecture;
 pub mod auth;
 pub mod command;
 pub mod completions;
 pub mod config;
 pub mod context;
 pub mod daemon;
+pub mod desktop;
 pub mod discover;
 pub mod doctor;
 pub mod document;

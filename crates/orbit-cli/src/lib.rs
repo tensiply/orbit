@@ -35,12 +35,15 @@ pub enum Commands {
     Init(commands::init::InitArgs),
     /// Sync governance configs and/or update the binary
     Update(commands::update::UpdateArgs),
-    /// Launch an AI engine (opencode/gemini/claude) with full context resolution
+    /// Launch an AI engine (opencode/gemini/claude) with full context resolution.
+    /// Use "recent" as workspace to pick from recently visited scopes.
     Launch(commands::launch::LaunchArgs),
     /// Manage active sessions
     Session(commands::session::SessionArgs),
     /// Interact with the orbit daemon
     Daemon(commands::daemon::DaemonArgs),
+    /// Open the orbit desktop app
+    Desktop(commands::desktop::DesktopArgs),
     /// Browse workspace / tenant / project / repository hierarchy
     Ls(commands::ls::LsArgs),
     /// Print shell completion script
@@ -92,6 +95,8 @@ pub enum Commands {
     /// Print shell integration (eval in .zshrc/.bashrc)
     #[command(name = "shell-init")]
     ShellInit(commands::shell_init::ShellInitArgs),
+    /// View the architecture catalog for a scope (services, databases, integrations, etc.)
+    Architecture(commands::architecture::ArchitectureArgs),
 }
 
 impl Cli {
@@ -160,6 +165,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Launch(args)) => commands::launch::run(args).await,
         Some(Commands::Session(args)) => commands::session::run(args).await,
         Some(Commands::Daemon(args)) => commands::daemon::run(args).await,
+        Some(Commands::Desktop(args)) => commands::desktop::run(args),
         Some(Commands::Ls(args)) => commands::ls::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args),
         Some(Commands::Mcp(args)) => commands::mcp::run(args),
@@ -185,6 +191,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Document(args)) => commands::document::run(args),
         Some(Commands::Image(args)) => commands::image::run(args),
         Some(Commands::ShellInit(args)) => commands::shell_init::run(args),
+        Some(Commands::Architecture(args)) => commands::architecture::run(args),
         None => {
             update_check::check_and_print(&ws_cfg).await;
 
