@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Loader2, SquareTerminal, Settings, X, Plus, ChevronRight, Layers, BookOpen, Minus, Square } from 'lucide-react'
+import { Drawer } from './ui/drawer'
 import { cn } from '@/lib/utils'
 import { STATUS_COLORS } from '../theme'
 import { Button } from './ui/button'
@@ -157,6 +159,53 @@ function PreviewDocumentItem() {
         </span>
       </div>
     </div>
+  )
+}
+
+// ── Drawer demo ───────────────────────────────────────────────────────────────
+
+function DrawerDemo() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Section title="Drawer">
+      <div className="flex items-start gap-2">
+        {/* Trigger + host area that mimics the flex-row sibling pattern */}
+        <div className="flex gap-2 flex-1 h-44 border border-foreground/8 rounded-xl overflow-hidden">
+          {/* "Principal" stand-in */}
+          <div className="flex-1 bg-background flex flex-col items-center justify-center gap-2">
+            <span className="text-[10px] text-foreground/20">principal</span>
+            <button
+              onClick={() => setOpen((o) => !o)}
+              className="h-6 px-2.5 rounded border border-foreground/15 text-[10px] text-foreground/50 hover:text-foreground/70 hover:border-foreground/25 transition-colors"
+            >
+              {open ? 'close drawer' : 'open drawer'}
+            </button>
+          </div>
+
+          {/* Live Drawer — same component used in production */}
+          <Drawer
+            open={open}
+            onClose={() => setOpen(false)}
+            title="Drawer"
+            width={220}
+            zone="orbit.desktop.drawer.demo"
+            className="bg-card"
+          >
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-[10px] text-foreground/20">children</span>
+            </div>
+          </Drawer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-0.5 text-[9px] text-foreground/40">
+        <code>{'<Drawer open={bool} onClose={fn} width={288} zone="orbit.desktop.drawer.*" className="bg-card">'}</code>
+        <code>{'width — number (px) or string ("25%"). Default: 288'}</code>
+        <code>{'contentDelayMs — delay children render after open (pass 210 for xterm to avoid resize flicker)'}</code>
+        <code>{'children: ReactNode | ((contentReady: boolean) => ReactNode)'}</code>
+      </div>
+    </Section>
   )
 }
 
@@ -746,6 +795,9 @@ export function UIKitView() {
             <code>terminal drawer: 25% width — arch-editor drawer: 288px fixed</code>
           </div>
         </Section>
+
+        {/* ── Drawer component ─────────────────────────────────── */}
+        <DrawerDemo />
 
       </div>
     </div>

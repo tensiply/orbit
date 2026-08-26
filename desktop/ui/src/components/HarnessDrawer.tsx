@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { X, CheckCircle2, Circle, Loader2, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, AlertCircle, CheckCircle2, Circle, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 import { useAppStore } from '../store'
+import { Drawer } from './ui/drawer'
 import type { HarnessReport } from '../types'
 
 // ── collapsible section ───────────────────────────────────────────────────────
@@ -73,7 +74,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
   return (
     <div className="flex-1 overflow-y-auto text-xs">
 
-      {/* ── Scope ── */}
       <Section title="Scope">
         <Row label="workspace"  value={scope.workspace} />
         {scope.tenant     && <Row label="tenant"     value={scope.tenant} />}
@@ -87,28 +87,24 @@ function HarnessContent({ report }: { report: HarnessReport }) {
         </div>
       </Section>
 
-      {/* ── Config layers ── */}
       <Section title="Config layers" count={loadedConfig.length}>
         {loadedConfig.length === 0
           ? <p className="px-3 text-[10px] text-foreground/20 italic">none loaded</p>
           : loadedConfig.map((l, i) => <LayerRow key={i} {...l} />)}
       </Section>
 
-      {/* ── Agent overlays ── */}
       {loadedOverlays.length > 0 && (
         <Section title="Agent overlays" count={loadedOverlays.length}>
           {loadedOverlays.map((l, i) => <LayerRow key={i} {...l} />)}
         </Section>
       )}
 
-      {/* ── MCP layers ── */}
       <Section title="MCP layers" count={loadedMcp.length}>
         {loadedMcp.length === 0
           ? <p className="px-3 text-[10px] text-foreground/20 italic">none loaded</p>
           : loadedMcp.map((l, i) => <LayerRow key={i} {...l} />)}
       </Section>
 
-      {/* ── Instructions ── */}
       <Section title="Instructions" count={loadedInst.length} defaultOpen={false}>
         {loadedInst.length === 0
           ? <p className="px-3 text-[10px] text-foreground/20 italic">none</p>
@@ -120,7 +116,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
           ))}
       </Section>
 
-      {/* ── MCP servers ── */}
       <Section title="MCP Servers" count={mcp_servers.length} defaultOpen={false}>
         {mcp_servers.length === 0
           ? <p className="px-3 text-[10px] text-foreground/20 italic">none</p>
@@ -136,7 +131,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
           ))}
       </Section>
 
-      {/* ── Env vars ── */}
       {env_vars.length > 0 && (
         <Section title="Env vars" count={env_vars.length} defaultOpen={false}>
           {env_vars.map((v, i) => (
@@ -151,7 +145,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
         </Section>
       )}
 
-      {/* ── Commands ── */}
       <Section title="Commands" count={commands.length} defaultOpen={false}>
         {commands.length === 0
           ? <p className="px-3 text-[10px] text-foreground/20 italic">none</p>
@@ -164,7 +157,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
           ))}
       </Section>
 
-      {/* ── Engine hooks ── */}
       {scope.engine === 'claude' && (
         <Section title="Engine hooks" count={engine_hooks.length} defaultOpen={false}>
           {engine_hooks.length === 0
@@ -179,7 +171,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
         </Section>
       )}
 
-      {/* ── Plugin context (dynamic injections) ── */}
       {plugin_context.length > 0 && (
         <Section title="Plugin context" count={plugin_context.length} defaultOpen={false}>
           <p className="px-3 pb-1 text-[9px] text-foreground/20 italic">injected at launch — not in config layers</p>
@@ -200,7 +191,6 @@ function HarnessContent({ report }: { report: HarnessReport }) {
         </Section>
       )}
 
-      {/* ── Activity context ── */}
       {activity_preview.length > 0 && (
         <Section title="Activity context" count={activity_preview.length} defaultOpen={false}>
           <p className="px-3 pb-1 text-[9px] text-foreground/20 italic">last {activity_preview.length} sessions injected at launch</p>
@@ -225,48 +215,18 @@ export function HarnessDrawer() {
   const error       = useAppStore((s) => s.harnessError)
   const closeDrawer = useAppStore((s) => s.closeHarnessDrawer)
 
-  const [mounted, setMounted] = useState(false)
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      setMounted(true)
-      requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)))
-    } else {
-      setVisible(false)
-      const t = setTimeout(() => setMounted(false), 210)
-      return () => clearTimeout(t)
-    }
-  }, [open])
-
-  if (!mounted) return null
-
   const label = session
     ? [session.tenant, session.project, session.repository].filter(Boolean).join(' › ') || session.work_dir
     : 'Harness'
 
   return (
-    <div
-      data-orbit-zone="orbit.desktop.drawer.harness"
-      className="relative flex flex-col shrink-0 overflow-hidden rounded-2xl bg-card transition-all duration-200 ease-in-out"
-      style={{ width: visible ? 288 : 0, opacity: visible ? 1 : 0 }}
+    <Drawer
+      open={open}
+      onClose={closeDrawer}
+      title={label}
+      zone="orbit.desktop.drawer.harness"
+      className="bg-card"
     >
-      {/* Floating close button — mirrors ArchEditDrawer */}
-      <button
-        onClick={closeDrawer}
-        className="absolute top-2 right-2 z-10 p-1 rounded-md text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 transition-colors"
-        aria-label="Close harness drawer"
-      >
-        <X size={12} />
-      </button>
-
-      {/* Header */}
-      <div className="flex flex-col gap-0 px-3 pt-3 pb-2 border-b border-border/30 shrink-0">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-foreground/25">Harness</span>
-        <span className="text-xs font-medium text-foreground/60 truncate pr-6">{label}</span>
-      </div>
-
-      {/* Body */}
       {loading && (
         <div className="flex-1 flex items-center justify-center gap-2 text-foreground/30">
           <Loader2 size={14} className="animate-spin" />
@@ -280,6 +240,6 @@ export function HarnessDrawer() {
         </div>
       )}
       {report && !loading && <HarnessContent report={report} />}
-    </div>
+    </Drawer>
   )
 }
