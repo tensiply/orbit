@@ -321,6 +321,27 @@ pub fn next_id(workspace_name: &str) -> String {
     format!("DOC-{:06}", count + 1)
 }
 
+/// Remove an entry from the NDJSON index by ID.
+pub fn remove_entry(workspace_name: &str, id: &str) -> Result<()> {
+    let path = data_paths::documents_index_path_for(Some(workspace_name));
+    if !path.exists() {
+        return Ok(());
+    }
+    let entries: Vec<DocumentEntry> = fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .filter(|e: &DocumentEntry| e.id != id)
+        .collect();
+    let mut content = String::new();
+    for e in &entries {
+        content.push_str(&serde_json::to_string(e)?);
+        content.push('\n');
+    }
+    fs::write(&path, content)?;
+    Ok(())
+}
+
 /// Overwrite an existing entry in the NDJSON index (rewrites the whole file).
 pub fn update_stored_entry(workspace_name: &str, id: &str, updated: DocumentEntry) -> Result<()> {
     let path = data_paths::documents_index_path_for(Some(workspace_name));
