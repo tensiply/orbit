@@ -310,6 +310,7 @@ fn exec_with_tmux(
         "OPENCODE_CONFIG",
         "GEMINI_CLI_HOME",
         "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
+        "CLAUDE_CONFIG_DIR",
     ] {
         if let Ok(val) = std::env::var(var) {
             cmd.arg("-e").arg(format!("{var}={val}"));
@@ -578,7 +579,14 @@ fn set_env(
                 std::env::set_var("GEMINI_CLI_HOME", &paths.runtime_dir);
                 std::env::set_var("GEMINI_CLI_SYSTEM_SETTINGS_PATH", &paths.config_file);
             }
-            Engine::Claude => {}
+            Engine::Claude => {
+                // Claude Code stores credentials in CLAUDE_CONFIG_DIR (defaults to ~/.claude/).
+                // XDG_CONFIG_HOME has no effect on Claude's credential location, so we set
+                // CLAUDE_CONFIG_DIR explicitly to a persistent workspace-scoped dir.
+                let claude_config_dir = runtime::workspace_claude_config_dir(scope);
+                let _ = std::fs::create_dir_all(&claude_config_dir);
+                std::env::set_var("CLAUDE_CONFIG_DIR", claude_config_dir);
+            }
         }
 
         // gh CLI uses GH_CONFIG_DIR if set, otherwise falls back to $XDG_CONFIG_HOME/gh.
@@ -598,7 +606,10 @@ fn set_env(
         // can override any of the above if needed. Values are resolved through
         // the secrets layer ($VAR, env://, file://, keychain://).
         for (k, v) in extra_env {
-            std::env::set_var(k, orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref()));
+            std::env::set_var(
+                k,
+                orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref()),
+            );
         }
     }
 }
@@ -675,7 +686,14 @@ fn collect_session_env(
                 paths.config_file.to_string_lossy().into_owned(),
             ));
         }
-        Engine::Claude => {}
+        Engine::Claude => {
+            let claude_config_dir = runtime::workspace_claude_config_dir(scope);
+            let _ = std::fs::create_dir_all(&claude_config_dir);
+            env.push((
+                "CLAUDE_CONFIG_DIR".into(),
+                claude_config_dir.to_string_lossy().into_owned(),
+            ));
+        }
     }
 
     // gh: prefer workspace-scoped auth; fall back to global ~/.orbit/gh.
@@ -696,7 +714,10 @@ fn collect_session_env(
     }
 
     for (k, v) in extra_env {
-        env.push((k.clone(), orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref())));
+        env.push((
+            k.clone(),
+            orbit_core::secrets::resolve_scoped(v, ws_slug.as_deref()),
+        ));
     }
 
     env
@@ -970,7 +991,11 @@ pub fn spawn_plan_node(
         let base = window_title(scope, engine);
         // Strip the engine tag and re-insert with :node marker so the status bar
         // makes it obvious this is a headless plan node, not an interactive session.
-        base.replacen(&format!("[{}]", engine.as_str()), &format!("[{}:node]", engine.as_str()), 1)
+        base.replacen(
+            &format!("[{}]", engine.as_str()),
+            &format!("[{}:node]", engine.as_str()),
+            1,
+        )
     };
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
     let mut cmd = Command::new("tmux");
@@ -1146,11 +1171,23 @@ fn configure_tmux_session(session_name: &str) {
     // Lock the window name: prevent both application OSC sequences and tmux's
     // own automatic-rename from overriding the title we set via -n.
     Command::new("tmux")
-        .args(["set-window-option", "-t", session_name, "allow-rename", "off"])
+        .args([
+            "set-window-option",
+            "-t",
+            session_name,
+            "allow-rename",
+            "off",
+        ])
         .status()
         .ok();
     Command::new("tmux")
-        .args(["set-window-option", "-t", session_name, "automatic-rename", "off"])
+        .args([
+            "set-window-option",
+            "-t",
+            session_name,
+            "automatic-rename",
+            "off",
+        ])
         .status()
         .ok();
     // Forward the window name to the outer terminal emulator's title bar.
@@ -1159,28 +1196,32 @@ fn configure_tmux_session(session_name: &str) {
         .status()
         .ok();
     Command::new("tmux")
-        .args(["set-option", "-t", session_name, "set-titles-string", "#{window_name}"])
+        .args([
+            "set-option",
+            "-t",
+            session_name,
+            "set-titles-string",
+            "#{window_name}",
+        ])
         .status()
         .ok();
     Command::new("tmux")
         .args(["set-option", "-t", session_name, "mouse", "on"])
         .status()
         .ok();
+    Command::new("tmux")
+        .args(["set-option", "-t", session_name, "status", "off"])
+        .status()
+        .ok();
 }
 
 /// Build a human-readable window title.
-/// Format: `[orbit][<engine>] - <last_scope> - <workspace>/<parent_scopes>`
-/// Example: `[orbit][claude] - orbit - AI/AIDEV/AI-ECOSYSTEM`
+/// Format: `[<engine>] <last_scope>` (scoped) or `[<engine>]` (global)
+/// Example: `[claude] orbit`
 fn window_title(scope: &OrbitScope, engine: Engine) -> String {
     if scope.global_mode {
-        return format!("[orbit][{}]", engine.as_str());
+        return format!("[{}]", engine.as_str());
     }
-
-    let workspace = scope
-        .workspace_root
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
 
     // Build ordered scope segments: tenant [project [repository]]
     let mut all: Vec<&str> = vec![&scope.tenant];
@@ -1192,15 +1233,8 @@ fn window_title(scope: &OrbitScope, engine: Engine) -> String {
     }
 
     let last = all.last().copied().unwrap_or("");
-    let parent_path: Vec<&str> = all[..all.len().saturating_sub(1)].to_vec();
 
-    let path = if parent_path.is_empty() {
-        workspace
-    } else {
-        format!("{}/{}", workspace, parent_path.join("/"))
-    };
-
-    format!("[orbit][{}] - {} - {}", engine.as_str(), last, path)
+    format!("[{}] {}", engine.as_str(), last)
 }
 
 /// Public alias used by the CLI to set the terminal title before attaching to tmux.
@@ -1383,7 +1417,7 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(window_title(&scope, Engine::Claude), "[orbit][claude]");
+        assert_eq!(window_title(&scope, Engine::Claude), "[claude]");
     }
 
     #[test]
@@ -1396,10 +1430,7 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(
-            window_title(&scope, Engine::Claude),
-            "[orbit][claude] - orbit - AI/AIDEV/AI-ECOSYSTEM"
-        );
+        assert_eq!(window_title(&scope, Engine::Claude), "[claude] orbit");
     }
 
     #[test]
@@ -1413,7 +1444,7 @@ mod tests {
         };
         assert_eq!(
             window_title(&scope, Engine::Opencode),
-            "[orbit][opencode] - AI-ECOSYSTEM - AI/AIDEV"
+            "[opencode] AI-ECOSYSTEM"
         );
     }
 
@@ -1425,9 +1456,6 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(
-            window_title(&scope, Engine::Gemini),
-            "[orbit][gemini] - AIDEV - AI"
-        );
+        assert_eq!(window_title(&scope, Engine::Gemini), "[gemini] AIDEV");
     }
 }

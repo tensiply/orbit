@@ -336,7 +336,10 @@ mod tests {
             },
         );
         let val = render(&cfg, Engine::Claude);
-        assert_eq!(val["mcpServers"]["secure"]["headers"]["Authorization"], "Bearer tok");
+        assert_eq!(
+            val["mcpServers"]["secure"]["headers"]["Authorization"],
+            "Bearer tok"
+        );
     }
 
     #[test]
@@ -354,7 +357,10 @@ mod tests {
             },
         );
         let val = render(&cfg, Engine::Opencode);
-        assert_eq!(val["mcp"]["secure"]["headers"]["Authorization"], "Bearer tok");
+        assert_eq!(
+            val["mcp"]["secure"]["headers"]["Authorization"],
+            "Bearer tok"
+        );
     }
 
     #[test]

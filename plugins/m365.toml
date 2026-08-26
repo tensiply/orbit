@@ -1,0 +1,54 @@
+name = "m365"
+description = "Microsoft 365 — Mail, Calendar, Teams, OneDrive via Microsoft Graph MCP with per-workspace OAuth"
+category = "productivity"
+url = "https://www.npmjs.com/package/@softeria/ms-365-mcp-server"
+
+[check]
+# No local binary — uses npx. Requires Node.js 18+.
+
+[auth]
+hint = """Run `orbit plugins auth m365` to authenticate.
+
+Prerequisites — Azure app registration (portal.azure.com → App registrations):
+  - Supported account types: Personal Microsoft accounts AND work accounts (AzureADandPersonalMicrosoftAccount)
+  - Authentication platform: Mobile/desktop app with redirect URI:
+      https://login.microsoftonline.com/common/oauth2/nativeclient
+  - Allow public client flows: Yes (Authentication → Advanced settings)
+  - Delegated permissions: Mail.ReadWrite, Mail.Send, Calendars.ReadWrite, Files.ReadWrite.All,
+      Chat.ReadWrite, Team.ReadBasic.All, Tasks.ReadWrite, User.Read, offline_access
+  - No client secret needed — device code flow only
+
+Then store the client ID in keychain:
+  orbit secret set MS365_MCP_CLIENT_ID --workspace <workspace>
+
+Tenant ID is set per workspace in mcp.json (not in keychain):
+  - Personal (Outlook.com, Hotmail): consumers  ← IMPORTANT: not 'common' (causes ~1h token expiry)
+  - Work/org accounts (Entra): organizations  (or paste the specific tenant UUID)
+
+Run device code login:
+  MS365_MCP_CLIENT_ID=<id> MS365_MCP_TENANT_ID=consumers \\
+    npx -y @softeria/ms-365-mcp-server --login
+
+Or from within Claude Code: call the `login` MCP tool, then `verify-login`."""
+cmd = """
+echo "  Starting Microsoft 365 device code login..."
+echo "  Make sure MS365_MCP_CLIENT_ID and MS365_MCP_TENANT_ID are set in mcp.json for this workspace."
+echo "  To trigger login: call the 'login' tool from the microsoft365 MCP server in Claude Code."
+echo "  Or run manually:"
+echo "    MS365_MCP_CLIENT_ID=<your-client-id> MS365_MCP_TENANT_ID=consumers npx -y @softeria/ms-365-mcp-server --login"
+"""
+
+[[auth.vars]]
+name = "MS365_MCP_CLIENT_ID"
+description = "Azure AD app client ID (Application ID from portal.azure.com → App registrations)"
+secret = false
+
+[context]
+prompt = "You have access to Microsoft 365 via Microsoft Graph MCP. You can read and manage email (Outlook/Mail), calendar events, Teams chats, To Do tasks, and OneDrive/SharePoint files. When referencing emails or events, include subject and date. Always confirm before sending emails, creating calendar events, or modifying tasks on the user's behalf."
+
+[[mcp]]
+name = "microsoft365"
+command = "npx"
+args = ["-y", "@softeria/ms-365-mcp-server"]
+env = { MS365_MCP_CLIENT_ID = "keychain://MS365_MCP_CLIENT_ID", MS365_MCP_TENANT_ID = "consumers" }
+label = "Microsoft 365 MCP (Mail, Calendar, Teams, OneDrive)"

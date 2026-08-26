@@ -1,0 +1,34 @@
+name = "hledger"
+description = "hledger double-entry accounting — query balances, register, budgets and add transactions to the journal"
+category = "finance"
+url = "https://github.com/eloircorona/hledger-mcp"
+
+[check]
+binary = "hledger"
+
+[[install]]
+method = "apt"
+cmd = ["apt-get", "install", "-y", "hledger"]
+label = "apt (Debian/Ubuntu)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "hledger"]
+label = "Homebrew (macOS)"
+
+[instance]
+
+[[instance.vars]]
+name = "journal_path"
+description = "Absolute path to the hledger journal file (e.g. /home/user/finance/ledger.journal)"
+secret = false
+
+[instance.mcp]
+command = "uvx"
+args = ["--from", "git+https://github.com/eloircorona/hledger-mcp", "hledger-mcp"]
+
+[instance.mcp.env]
+HLEDGER_JOURNAL = "{journal_path}"
+
+[context]
+prompt = "You have access to hledger via MCP for double-entry bookkeeping. You can query account balances, transaction history, and budget reports, and add new transactions to the journal. Use hledger MCP tools when the user asks about finances, expenses, income, or accounting."

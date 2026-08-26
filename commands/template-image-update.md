@@ -14,6 +14,15 @@ Show all available image templates (from all scopes) and update one by editing i
    This shows each template name, its source (builtin / user / workspace / tenant / project / repo), and its description.
 
 2. Ask the user which template they want to update and what changes they want.
+   If the user wants to change the dimensions, present the 4 standard ratios:
+
+   | # | Ratio | Dimensions | Nombre     | Uso típico                                 |
+   |---|-------|------------|------------|--------------------------------------------|
+   | 1 | 16:9  | 1200×630   | Panorámica  | OG images, presentaciones, YouTube thumb   |
+   | 2 | 1:1   | 1080×1080  | Cuadrado    | Instagram feed, avatar, post cuadrado      |
+   | 3 | 4:5   | 1080×1350  | Retrato     | Instagram portrait, pin vertical           |
+   | 4 | 9:16  | 1080×1920  | Story       | Instagram/TikTok Stories, Reels            |
+   | 5 | Custom | —         | Personalizado | pedir width y height exactos             |
 
 3. Show the current HTML source of the selected template:
    ```bash
@@ -28,6 +37,7 @@ Show all available image templates (from all scopes) and update one by editing i
    - Preserve the `<!-- --- … --- -->` YAML front matter block.
    - Keep inline CSS only — no CDN or remote assets.
    - Update the `variables:` list in the front matter if new `{{ var }}` placeholders were added.
+   - If dimensions changed: update `width` and `height` in the front matter **and** in the CSS. Always use `{{ width }}px`/`{{ height }}px` variables in `html, body` — never hardcode pixel values.
 
 6. Confirm the changes:
    ```bash

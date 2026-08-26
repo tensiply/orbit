@@ -152,6 +152,18 @@ pub fn workspace_runtime_dir_for_slug(scope: &OrbitScope, engine_slug: &str) -> 
         .join(engine_slug)
 }
 
+/// Persistent workspace-level Claude config dir: `~/.orbit/data/workspaces/<slug>/claude/`
+///
+/// Used for CLAUDE_CONFIG_DIR so that each workspace has its own Claude account.
+/// Unlike the session runtime dir, this dir is never cleaned up between sessions.
+pub fn workspace_claude_config_dir(scope: &OrbitScope) -> PathBuf {
+    let ws = workspace_slug(scope);
+    orbit_core::data_paths::orbit_data_root()
+        .join("workspaces")
+        .join(ws)
+        .join("claude")
+}
+
 /// Lowercase name of the workspace root dir (e.g. `~/BeFra` → `"befra"`).
 fn workspace_slug(scope: &OrbitScope) -> String {
     scope

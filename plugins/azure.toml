@@ -1,0 +1,92 @@
+name = "azure"
+description = "Azure CLI — scope-aware account isolation per orbit scope, Microsoft Graph MCP for infra, and service principal provisioning"
+category = "infra"
+url = "https://learn.microsoft.com/en-us/cli/azure/install-azure-cli"
+
+[check]
+binary = "az"
+
+[[install]]
+method = "curl"
+cmd = ["bash", "-c", "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"]
+label = "curl (Debian/Ubuntu official)"
+
+[[install]]
+method = "brew"
+cmd = ["brew", "install", "azure-cli"]
+label = "Homebrew (macOS)"
+
+[[install]]
+method = "apt"
+cmd = ["bash", "-c", "sudo apt-get install -y apt-transport-https gnupg lsb-release && sudo mkdir -p /etc/apt/keyrings && curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null && AZ_DIST=$(lsb_release -cs) && printf 'Types: deb\\nURIs: https://packages.microsoft.com/repos/azure-cli/\\nSuites: %s\\nComponents: main\\nArchitectures: %s\\nSigned-by: /etc/apt/keyrings/microsoft.gpg\\n' \"$AZ_DIST\" \"$(dpkg --print-architecture)\" | sudo tee /etc/apt/sources.list.d/azure-cli.sources > /dev/null && sudo apt-get update && sudo apt-get install -y azure-cli"]
+label = "apt (Debian/Ubuntu — official Microsoft repo)"
+
+[auth]
+# orbit plugins auth azure → prompts for auth method, then handles each flow:
+#   'login' → device code OAuth (no browser required; credentials stored under AZURE_CONFIG_DIR)
+#   'sp'    → service principal (client ID + secret stored in keychain, no interactive prompt)
+#
+# Workspace isolation via AZURE_CONFIG_DIR — bind one isolated az config dir per workspace:
+#   mkdir -p ~/.orbit/azure/ai && orbit env set AZURE_CONFIG_DIR ~/.orbit/azure/ai --scope workspace
+#   mkdir -p ~/.orbit/azure/befra && orbit env set AZURE_CONFIG_DIR ~/.orbit/azure/befra --scope workspace
+#
+# Scope routing vars (subscription, tenant) belong in orbit.json env blocks, not keychain:
+#   orbit env set AZURE_SUBSCRIPTION_ID "<id>" --scope tenant
+#   orbit env set AZURE_TENANT_ID "<id>"        --scope workspace
+hint = "Choose auth method: 'login' for interactive device code, or 'sp' for service principal (client ID + secret in keychain). Workspace isolation via AZURE_CONFIG_DIR — set once per workspace: `mkdir -p ~/.orbit/azure/ai && orbit env set AZURE_CONFIG_DIR ~/.orbit/azure/ai --scope workspace`."
+cmd = "case \"$AZURE_AUTH_METHOD\" in login) echo '  Initiating Azure device code login...' && az login --use-device-code && echo '' && echo 'Active account:' && az account show --output table && echo '' && echo 'Workspace isolation tip:' && echo '  mkdir -p ~/.orbit/azure/<name> && orbit env set AZURE_CONFIG_DIR ~/.orbit/azure/<name> --scope workspace' ;; sp) [ -z \"$AZURE_TENANT_ID\" ] && echo 'AZURE_TENANT_ID is required for service principal auth.' && exit 1; [ -z \"$AZURE_CLIENT_ID\" ] && echo 'AZURE_CLIENT_ID is required for service principal auth.' && exit 1; [ -z \"$AZURE_CLIENT_SECRET\" ] && echo 'AZURE_CLIENT_SECRET is required for service principal auth.' && exit 1; az login --service-principal --tenant \"$AZURE_TENANT_ID\" --username \"$AZURE_CLIENT_ID\" --password \"$AZURE_CLIENT_SECRET\" && echo '' && echo 'Service principal authenticated.' && echo 'Wire to scope:' && echo '  orbit env set AZURE_AUTH_METHOD sp --scope workspace' && echo '  orbit env set AZURE_TENANT_ID \"keychain://AZURE_TENANT_ID\" --scope workspace' && echo '  orbit env set AZURE_CLIENT_ID \"keychain://AZURE_CLIENT_ID\" --scope workspace' && echo '  orbit env set AZURE_CLIENT_SECRET \"keychain://AZURE_CLIENT_SECRET\" --scope workspace' ;; *) echo \"Unknown method '$AZURE_AUTH_METHOD'. Use 'login' or 'sp'.\" && exit 1 ;; esac"
+
+[[auth.vars]]
+name = "AZURE_AUTH_METHOD"
+description = "Auth method — type 'login' for interactive device code, or 'sp' for service principal"
+secret = false
+
+[[auth.vars]]
+name = "AZURE_TENANT_ID"
+description = "[sp only] Azure AD tenant ID (press Enter to skip if using login)"
+secret = false
+optional = true
+
+[[auth.vars]]
+name = "AZURE_CLIENT_ID"
+description = "[sp only] Service principal application (client) ID (press Enter to skip if using login)"
+secret = false
+optional = true
+
+[[auth.vars]]
+name = "AZURE_CLIENT_SECRET"
+description = "[sp only] Service principal client secret (press Enter to skip if using login)"
+secret = true
+optional = true
+
+[context]
+prompt = "You have access to Azure CLI (az). Each orbit scope targets a different Azure tenant/subscription — AZURE_CONFIG_DIR isolates az credentials per workspace. Run `az account show` to confirm the active identity for the current scope. For orbit-managed service principals, use naming convention `orbit-{tenant}-{project}-{repo}` with tag `orbit-scope={scope}` for traceability. Follow principle of least privilege — prefer scoped roles over Owner or Contributor."
+
+[pre_launch]
+cmd = "az account show --output yaml 2>/dev/null || echo 'Azure: not authenticated — run `orbit plugins auth azure` or set AZURE_CONFIG_DIR for this scope'"
+output = "context"
+timeout_secs = 10
+cache_ttl_secs = 300
+
+[[mcp]]
+name = "azure"
+command = "bash"
+args = ["-c", "npx -y @azure/mcp@latest server start"]
+label = "Azure MCP (AKS, App Service, Storage, Cosmos DB, Azure infrastructure)"
+
+# Executor: create an Azure service principal named after the orbit scope for traceability.
+# Usage in orbit plan: plugin:azure with params scope, role.
+# Naming convention: orbit-{scope} → orbit-aidev-ecosystem-orbit
+[executor]
+command = ["bash", "-c", "set -euo pipefail && SP_NAME=\"orbit-{scope}\" && SUBSCRIPTION=$(az account show --query id -o tsv) && TENANT=$(az account show --query tenantId -o tsv) && az ad sp create-for-rbac --name \"$SP_NAME\" --role \"{role}\" --scopes \"/subscriptions/$SUBSCRIPTION\" --only-show-errors --output json > /tmp/orbit-azure-sp.json && CLIENT_ID=$(python3 -c 'import json; d=json.load(open(\"/tmp/orbit-azure-sp.json\")); print(d[\"appId\"])') && CLIENT_SECRET=$(python3 -c 'import json; d=json.load(open(\"/tmp/orbit-azure-sp.json\")); print(d[\"password\"])') && rm /tmp/orbit-azure-sp.json && SCOPE_UPPER=$(echo {scope} | tr '-' '_' | tr '[:lower:]' '[:upper:]') && echo '' && echo \"Service principal ready: $SP_NAME\" && echo \"  Tenant: $TENANT  Subscription: $SUBSCRIPTION\" && echo 'Store credentials in orbit secrets:' && echo \"  orbit secret set AZURE_TENANT_ID_$SCOPE_UPPER \\\"$TENANT\\\"\" && echo \"  orbit secret set AZURE_CLIENT_ID_$SCOPE_UPPER \\\"$CLIENT_ID\\\"\" && echo \"  orbit secret set AZURE_CLIENT_SECRET_$SCOPE_UPPER \\\"$CLIENT_SECRET\\\"\" && echo 'Bind to scope:' && echo \"  orbit env set AZURE_AUTH_METHOD sp --scope repo\" && echo \"  orbit env set AZURE_TENANT_ID \\\"keychain://AZURE_TENANT_ID_$SCOPE_UPPER\\\" --scope repo\" && echo \"  orbit env set AZURE_CLIENT_ID \\\"keychain://AZURE_CLIENT_ID_$SCOPE_UPPER\\\" --scope repo\" && echo \"  orbit env set AZURE_CLIENT_SECRET \\\"keychain://AZURE_CLIENT_SECRET_$SCOPE_UPPER\\\" --scope repo\""]
+
+[[executor.params]]
+name = "scope"
+description = "Orbit scope slug for naming the service principal (e.g., aidev-ecosystem-orbit → creates orbit-aidev-ecosystem-orbit)"
+required = true
+
+[[executor.params]]
+name = "role"
+description = "Azure built-in role to assign to the service principal (e.g., Reader, Contributor)"
+required = false
+default = "Reader"
