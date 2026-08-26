@@ -1,43 +1,24 @@
 import { useEffect, useRef } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { useAppStore } from '../store'
+import { tauriService } from '../services/tauri'
+import type { TerminalCmd } from '../lib/terminalBus'
+import { TERMINAL_THEME_DARK, TERMINAL_THEME_LIGHT, cssVarToHex } from '../theme'
 
 interface Props {
-  tabId: string
-  active: boolean
+  tabId:        string
+  active:       boolean
+  panelFocused?: boolean
 }
 
-const THEME = {
-  background: '#0a0a0b',
-  foreground: '#f4f4f5',
-  cursor: '#a1a1aa',
-  cursorAccent: '#09090b',
-  selectionBackground: '#3f3f4660',
-  black: '#18181b',
-  red: '#ef4444',
-  green: '#22c55e',
-  yellow: '#eab308',
-  blue: '#3b82f6',
-  magenta: '#a855f7',
-  cyan: '#06b6d4',
-  white: '#d4d4d8',
-  brightBlack: '#52525b',
-  brightRed: '#f87171',
-  brightGreen: '#4ade80',
-  brightYellow: '#fde047',
-  brightBlue: '#60a5fa',
-  brightMagenta: '#c084fc',
-  brightCyan: '#22d3ee',
-  brightWhite: '#f4f4f5',
-}
-
-export function TerminalPane({ tabId, active }: Props) {
+export function TerminalPane({ tabId, active, panelFocused }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitRef = useRef<FitAddon | null>(null)
+  const termRef      = useRef<Terminal | null>(null)
+  const fitRef       = useRef<FitAddon | null>(null)
+  const theme        = useAppStore((s) => s.theme)
 
   useEffect(() => {
     const el = containerRef.current
@@ -48,9 +29,12 @@ export function TerminalPane({ tabId, active }: Props) {
       fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Courier New", monospace',
       fontSize: 13,
       lineHeight: 1.25,
-      theme: THEME,
-      // Allow the terminal to receive all keyboard events
+      theme: {
+        ...(theme === 'light' ? TERMINAL_THEME_LIGHT : TERMINAL_THEME_DARK),
+        background: cssVarToHex('--card'),
+      },
       allowTransparency: false,
+      scrollback: 0,
     })
 
     const fit = new FitAddon()
@@ -59,29 +43,23 @@ export function TerminalPane({ tabId, active }: Props) {
     term.open(el)
 
     termRef.current = term
-    fitRef.current = fit
+    fitRef.current  = fit
 
-    // ResizeObserver fires whenever the container gets real dimensions —
-    // more reliable than setTimeout because it reacts to actual layout changes
+    let fitTimer: ReturnType<typeof setTimeout> | null = null
     const ro = new ResizeObserver(() => {
       if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-        fit.fit()
+        if (fitTimer !== null) clearTimeout(fitTimer)
+        fitTimer = setTimeout(() => { fit.fit(); fitTimer = null }, 30)
       }
     })
     ro.observe(el)
 
-    // Initial fit after the next paint
-    requestAnimationFrame(() => {
-      fit.fit()
-      term.focus()
-    })
-
     term.onData((data) => {
-      invoke('pty_write', { tabId, data }).catch(console.error)
+      tauriService.ptyWrite(tabId, data).catch(console.error)
     })
 
     term.onResize(({ cols, rows }) => {
-      invoke('pty_resize', { tabId, cols, rows }).catch(console.error)
+      tauriService.ptyResize(tabId, cols, rows).catch(console.error)
     })
 
     let unlisten: (() => void) | null = null
@@ -91,18 +69,39 @@ export function TerminalPane({ tabId, active }: Props) {
       }
     }).then((fn) => {
       unlisten = fn
+      // Double RAF: first frame settles flex layout, second gives the WebView
+      // time to report final dimensions. fit() and SIGWINCH run together so
+      // the PTY always receives the correct post-fit size.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          fit.fit()
+          term.focus()
+          const { cols, rows } = term
+          tauriService.ptyResize(tabId, cols + 1, rows)
+            .then(() => tauriService.ptyResize(tabId, cols, rows))
+            .catch(console.error)
+        })
+      })
     })
 
     return () => {
       ro.disconnect()
+      if (fitTimer !== null) clearTimeout(fitTimer)
       unlisten?.()
       term.dispose()
       termRef.current = null
-      fitRef.current = null
+      fitRef.current  = null
     }
   }, [tabId])
 
-  // Focus when this tab becomes active
+  // Apply theme to live terminal instance when it changes
+  useEffect(() => {
+    if (termRef.current) {
+      const baseTheme = theme === 'light' ? TERMINAL_THEME_LIGHT : TERMINAL_THEME_DARK
+      termRef.current.options.theme = { ...baseTheme, background: cssVarToHex('--card') }
+    }
+  }, [theme])
+
   useEffect(() => {
     if (active) {
       requestAnimationFrame(() => {
@@ -112,14 +111,34 @@ export function TerminalPane({ tabId, active }: Props) {
     }
   }, [active])
 
-  // Click anywhere in the terminal area → ensure xterm has focus
+  useEffect(() => {
+    if (panelFocused) {
+      requestAnimationFrame(() => termRef.current?.focus())
+    }
+  }, [panelFocused])
+
+  // Listen for terminal commands dispatched by the global shortcut handler.
+  useEffect(() => {
+    if (!active) return
+    const handler = (e: Event) => {
+      const { tabId: t, cmd } = (e as CustomEvent<{ tabId: string; cmd: TerminalCmd }>).detail
+      if (t !== tabId || !termRef.current) return
+      if (cmd === 'clear')             termRef.current.clear()
+      else if (cmd === 'scroll_up')   termRef.current.scrollLines(-termRef.current.rows)
+      else if (cmd === 'scroll_down') termRef.current.scrollLines(termRef.current.rows)
+      else if (cmd === 'focus')       termRef.current.focus()
+    }
+    document.addEventListener('orbit:terminal-cmd', handler)
+    return () => document.removeEventListener('orbit:terminal-cmd', handler)
+  }, [active, tabId])
+
   const handleClick = () => termRef.current?.focus()
 
   return (
-    <div className="w-full h-full p-1 bg-[#0a0a0b]">
+    <div className="w-full h-full p-2.5 bg-card">
       <div
         ref={containerRef}
-        className="w-full h-full"
+        className="w-full h-full bg-"
         onClick={handleClick}
       />
     </div>
