@@ -10,12 +10,19 @@ export function applyTheme(theme: Theme) {
 
 export type FocusedPanel = 'main' | 'drawer'
 
+export interface TabDrawerEntry {
+  ptyId: string
+  open:  boolean
+}
+
 export interface UiSlice {
   navView:              NavView
   theme:                Theme
   sidebarHidden:        boolean
   drawerOpen:           boolean
   drawerTabId:          string | null
+  /** Per-tab drawer registry: main tab id → { ptyId, open } */
+  tabDrawers:           Record<string, TabDrawerEntry>
   focusedPanel:         FocusedPanel
   sidebarFocused:       boolean
   sidebarSelectedIdx:   number
@@ -29,6 +36,10 @@ export interface UiSlice {
   toggleSidebar:         () => void
   toggleDrawer:          () => Promise<void>
   closeDrawer:           () => void
+  /** Sync drawerOpen + drawerTabId to the given tab's entry in tabDrawers. */
+  syncDrawerToTab:       (tabId: string | null) => void
+  /** Close and remove the drawer PTY for a tab (called when closing a tab). */
+  closeTabDrawer:        (tabId: string) => Promise<void>
   setFocusedPanel:       (panel: FocusedPanel) => void
   focusSidebar:          () => void
   blurSidebar:           () => void
@@ -44,6 +55,7 @@ export const createUiSlice: StateCreator<AppStore, [], [], UiSlice> = (set, get)
   sidebarHidden:         false,
   drawerOpen:            false,
   drawerTabId:           null,
+  tabDrawers:            {},
   focusedPanel:          'main',
   sidebarFocused:        false,
   sidebarSelectedIdx:    0,
@@ -65,20 +77,68 @@ export const createUiSlice: StateCreator<AppStore, [], [], UiSlice> = (set, get)
   toggleSidebar: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
 
   toggleDrawer: async () => {
-    const { drawerOpen, drawerTabId } = get()
-    if (drawerOpen) {
-      set({ drawerOpen: false, focusedPanel: 'main' })
+    const activeTabId = get().activeTabId
+    if (!activeTabId) return
+
+    const { tabDrawers } = get()
+    const existing = tabDrawers[activeTabId]
+
+    if (existing?.open) {
+      set((s) => ({
+        drawerOpen: false,
+        focusedPanel: 'main',
+        tabDrawers: { ...s.tabDrawers, [activeTabId]: { ...s.tabDrawers[activeTabId], open: false } },
+      }))
       return
     }
-    let tabId = drawerTabId
-    if (!tabId) {
-      tabId = await tauriService.ptyOpen(null)
-      set({ drawerTabId: tabId })
+
+    let ptyId = existing?.ptyId
+    if (!ptyId) {
+      ptyId = await tauriService.ptyOpen(null)
     }
-    set({ drawerOpen: true, focusedPanel: 'drawer' })
+    set((s) => ({
+      drawerOpen: true,
+      drawerTabId: ptyId!,
+      focusedPanel: 'drawer',
+      tabDrawers: { ...s.tabDrawers, [activeTabId]: { ptyId: ptyId!, open: true } },
+    }))
   },
 
-  closeDrawer: () => set({ drawerOpen: false, focusedPanel: 'main' }),
+  closeDrawer: () => {
+    const activeTabId = get().activeTabId
+    set((s) => ({
+      drawerOpen: false,
+      focusedPanel: 'main',
+      ...(activeTabId && s.tabDrawers[activeTabId]
+        ? { tabDrawers: { ...s.tabDrawers, [activeTabId]: { ...s.tabDrawers[activeTabId], open: false } } }
+        : {}),
+    }))
+  },
+
+  syncDrawerToTab: (tabId: string | null) => {
+    const { tabDrawers, focusedPanel } = get()
+    if (!tabId) {
+      set({ drawerOpen: false, drawerTabId: null, focusedPanel: 'main' })
+      return
+    }
+    const d = tabDrawers[tabId]
+    set({
+      drawerOpen:  d?.open  ?? false,
+      drawerTabId: d?.ptyId ?? null,
+      ...(!d?.open && focusedPanel === 'drawer' ? { focusedPanel: 'main' } : {}),
+    })
+  },
+
+  closeTabDrawer: async (tabId: string) => {
+    const { tabDrawers } = get()
+    const d = tabDrawers[tabId]
+    if (!d) return
+    await tauriService.ptyClose(d.ptyId).catch(console.error)
+    set((s) => {
+      const { [tabId]: _removed, ...rest } = s.tabDrawers
+      return { tabDrawers: rest }
+    })
+  },
 
   setFocusedPanel: (focusedPanel) => set({ focusedPanel }),
 

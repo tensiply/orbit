@@ -22,6 +22,7 @@ export function TerminalDrawer() {
         <div className="flex-1 min-h-0 overflow-hidden">
           {contentReady && drawerTabId && (
             <TerminalPane
+              key={drawerTabId}
               tabId={drawerTabId}
               active={drawerOpen}
               panelFocused={focusedPanel === 'drawer'}
