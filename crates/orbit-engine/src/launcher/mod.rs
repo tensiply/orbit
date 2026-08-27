@@ -249,6 +249,7 @@ pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> 
     parts.join("-")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn exec_with_tmux(
     engine: Engine,
     config_file: &Path,

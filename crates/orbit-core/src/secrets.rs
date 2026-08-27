@@ -30,10 +30,10 @@ pub fn resolve(value: &str) -> String {
 pub fn resolve_scoped(value: &str, workspace_slug: Option<&str>) -> String {
     let slug = workspace_slug.filter(|s| !s.is_empty());
 
-    if let Some(var) = value.strip_prefix('$') {
-        if !var.starts_with('{') {
-            return resolve_env(var, value);
-        }
+    if let Some(var) = value.strip_prefix('$')
+        && !var.starts_with('{')
+    {
+        return resolve_env(var, value);
     }
     if let Some(var) = value.strip_prefix("env://") {
         return resolve_env(var, value);

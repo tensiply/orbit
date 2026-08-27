@@ -395,7 +395,7 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", tmp.path().join("data").to_str().unwrap());
+            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data").to_str().unwrap());
         }
 
         let e = AuditEvent::PlanCreated {

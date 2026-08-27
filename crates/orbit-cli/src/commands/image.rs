@@ -18,6 +18,7 @@ pub struct ImageArgs {
     pub subcommand: ImageSubcommand,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum ImageSubcommand {
     /// Generate an image from a template or using AI

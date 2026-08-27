@@ -211,7 +211,7 @@ impl ServerState {
                 use std::collections::HashSet;
                 // Active sessions, most recently started first.
                 let mut active = Session::load_all();
-                active.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                active.sort_by_key(|s| std::cmp::Reverse(s.started_at));
 
                 // History from the NDJSON log — exclude IDs already active.
                 let active_ids: HashSet<String> = active.iter().map(|s| s.id.clone()).collect();

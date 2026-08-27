@@ -326,10 +326,10 @@ pub fn load_catalog(tenant_dir: &Path) -> CatalogLoadResult {
                         entity.kind = inferred_kind.clone();
                     }
                     // Infer id from filename if missing
-                    if entity.id.is_empty() {
-                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            entity.id = stem.to_string();
-                        }
+                    if entity.id.is_empty()
+                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                    {
+                        entity.id = stem.to_string();
                     }
                     entities.push(entity);
                 }
@@ -548,13 +548,16 @@ lifecycle: production
 
     #[test]
     fn filter_by_project_matches_tags() {
-        let mut e1 = CatalogEntity::default();
-        e1.id = "svc-a".to_string();
-        e1.tags = vec!["ecom".to_string(), "bwco".to_string()];
-
-        let mut e2 = CatalogEntity::default();
-        e2.id = "svc-b".to_string();
-        e2.tags = vec!["jafra".to_string()];
+        let e1 = CatalogEntity {
+            id: "svc-a".to_string(),
+            tags: vec!["ecom".to_string(), "bwco".to_string()],
+            ..Default::default()
+        };
+        let e2 = CatalogEntity {
+            id: "svc-b".to_string(),
+            tags: vec!["jafra".to_string()],
+            ..Default::default()
+        };
 
         let entities = vec![e1, e2];
         let filtered = filter_by_project(&entities, "BWCO");

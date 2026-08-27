@@ -71,7 +71,7 @@ pub fn document_reveal(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn document_list() -> Vec<DocInfo> {
     let mut entries = load_all_entries_global();
-    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.updated_at));
     entries
         .into_iter()
         .map(|e| DocInfo {

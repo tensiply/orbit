@@ -60,7 +60,7 @@ pub async fn get_session_title(work_dir: String, started_at: u64) -> Option<Stri
     let mut candidates: Vec<(u64, std::path::PathBuf)> = std::fs::read_dir(&projects_dir)
         .ok()?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "jsonl"))
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
         .filter_map(|e| {
             let mtime = e
                 .metadata()
@@ -75,14 +75,14 @@ pub async fn get_session_title(work_dir: String, started_at: u64) -> Option<Stri
         .collect();
 
     // Most recently modified first → most likely current session
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
 
     // ai-title is written asynchronously after the first response — scan the full file
     // and keep the last occurrence (Claude Code updates it as conversation continues).
     for (_, path) in candidates {
         if let Ok(f) = std::fs::File::open(&path) {
             let mut last_title: Option<String> = None;
-            for line in BufReader::new(f).lines().flatten() {
+            for line in BufReader::new(f).lines().map_while(Result::ok) {
                 if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
                     if obj.get("type").and_then(|t| t.as_str()) == Some("ai-title") {
                         if let Some(title) = obj.get("aiTitle").and_then(|t| t.as_str()) {

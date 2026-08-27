@@ -168,8 +168,7 @@ fn show(result: &CatalogLoadResult, project: Option<&str>, tenant: &str) -> Resu
             .map(|e| e.id.len())
             .max()
             .unwrap_or(8)
-            .max(8)
-            .min(40);
+            .clamp(8, 40);
 
         for e in &kind_entities {
             let crit_color = match e.criticality.as_deref() {
@@ -254,8 +253,7 @@ fn list(
         .map(|e| e.id.len())
         .max()
         .unwrap_or(8)
-        .max(8)
-        .min(40);
+        .clamp(8, 40);
     let kind_w = 14usize;
     let name_w = 36usize;
     let crit_w = 8usize;
@@ -327,32 +325,32 @@ fn validate(result: &CatalogLoadResult, check_refs: bool) -> Result<()> {
 
         for e in &result.entities {
             // Check depends_on.services
-            if let Some(deps) = &e.depends_on {
-                if let Some(services) = deps.get("services").and_then(|v| v.as_sequence()) {
-                    for svc in services {
-                        if let Some(id) = svc.as_str() {
-                            if !all_ids.contains(id) {
-                                issues.push((
-                                    e.id.clone(),
-                                    format!("depends_on.services references unknown id: {id}"),
-                                ));
-                            }
-                        }
+            if let Some(deps) = &e.depends_on
+                && let Some(services) = deps.get("services").and_then(|v| v.as_sequence())
+            {
+                for svc in services {
+                    if let Some(id) = svc.as_str()
+                        && !all_ids.contains(id)
+                    {
+                        issues.push((
+                            e.id.clone(),
+                            format!("depends_on.services references unknown id: {id}"),
+                        ));
                     }
                 }
             }
             // Check used_by.services
-            if let Some(used) = &e.used_by {
-                if let Some(services) = used.get("services").and_then(|v| v.as_sequence()) {
-                    for svc in services {
-                        if let Some(id) = svc.as_str() {
-                            if !all_ids.contains(id) {
-                                issues.push((
-                                    e.id.clone(),
-                                    format!("used_by.services references unknown id: {id}"),
-                                ));
-                            }
-                        }
+            if let Some(used) = &e.used_by
+                && let Some(services) = used.get("services").and_then(|v| v.as_sequence())
+            {
+                for svc in services {
+                    if let Some(id) = svc.as_str()
+                        && !all_ids.contains(id)
+                    {
+                        issues.push((
+                            e.id.clone(),
+                            format!("used_by.services references unknown id: {id}"),
+                        ));
                     }
                 }
             }
@@ -395,7 +393,7 @@ fn export(result: &CatalogLoadResult, project: Option<&str>, format: &str) -> Re
         "json" => {
             println!("{}", serde_json::to_string_pretty(&entities)?);
         }
-        "md" | _ => {
+        _ => {
             let ordered_kinds = [
                 EntityKind::Service,
                 EntityKind::Database,

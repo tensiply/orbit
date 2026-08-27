@@ -477,7 +477,7 @@ mod tests {
     fn setup_tmp() -> TempDir {
         let dir = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("XDG_DATA_HOME", dir.path().to_str().unwrap());
+            std::env::set_var("ORBIT_DATA_HOME", dir.path().to_str().unwrap());
         }
         dir
     }

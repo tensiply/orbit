@@ -250,7 +250,7 @@ async fn wait_for_callback(
         .and_then(|l| l.split_whitespace().nth(1))
         .unwrap_or("/");
 
-    let query = path.splitn(2, '?').nth(1).unwrap_or("");
+    let query = path.split_once('?').map(|x| x.1).unwrap_or("");
     // URL-decode values: authorization codes often contain percent-encoded chars.
     let params: HashMap<String, String> = query
         .split('&')

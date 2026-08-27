@@ -63,19 +63,19 @@ pub fn scope_tree() -> Vec<ScopeTreeWorkspace> {
         let tenant_names = scan_dirs(&tenants_dir);
 
         let mut tenant_names = tenant_names;
-        tenant_names.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        tenant_names.sort_unstable_by_key(|s: &String| s.to_lowercase());
 
         let mut tenants = Vec::new();
         for tenant in tenant_names {
             let projects_dir = tenants_dir.join(&tenant).join("projects");
             let mut project_names = scan_dirs(&projects_dir);
-            project_names.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            project_names.sort_unstable_by_key(|s: &String| s.to_lowercase());
 
             let mut projects = Vec::new();
             for project in project_names {
                 let repos_dir = projects_dir.join(&project).join("repositories");
                 let mut repo_names = scan_dirs(&repos_dir);
-                repo_names.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                repo_names.sort_unstable_by_key(|s: &String| s.to_lowercase());
 
                 let repositories = repo_names
                     .into_iter()

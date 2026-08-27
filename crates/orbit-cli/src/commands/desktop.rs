@@ -54,10 +54,10 @@ fn stable_binary() -> Result<PathBuf> {
         .ok()
         .map(|h| PathBuf::from(h).join(".local/bin/orbit-desktop"));
 
-    if let Some(ref p) = local_bin {
-        if p.exists() {
-            return Ok(p.clone());
-        }
+    if let Some(ref p) = local_bin
+        && p.exists()
+    {
+        return Ok(p.clone());
     }
 
     // Let the OS resolve via PATH — exec() will fail with ENOENT if not found

@@ -218,23 +218,23 @@ fn cmd_run_auth(name: &str) -> Result<()> {
     // Resolve and cache the GitHub username from opencode's OAuth token so
     // dry-run can display it without a network call. Opencode-specific — other
     // engines use different auth formats and don't produce an auth.json here.
-    if engine.name == "opencode" {
-        if let Ok(scope) = resolver::resolve_from_cwd() {
-            let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
-            let auth_file = workspace_runtime
+    if engine.name == "opencode"
+        && let Ok(scope) = resolver::resolve_from_cwd()
+    {
+        let workspace_runtime = runtime::workspace_runtime_dir_for_slug(&scope, &engine.name);
+        let auth_file = workspace_runtime
+            .join("data")
+            .join("opencode")
+            .join("auth.json");
+        if auth_file.exists()
+            && let Some(username) = resolve_github_username(&auth_file)
+        {
+            let account_file = workspace_runtime
                 .join("data")
                 .join("opencode")
-                .join("auth.json");
-            if auth_file.exists()
-                && let Some(username) = resolve_github_username(&auth_file)
-            {
-                let account_file = workspace_runtime
-                    .join("data")
-                    .join("opencode")
-                    .join("account.json");
-                let _ = fs::write(&account_file, format!("{{\"username\":\"{username}\"}}"));
-                println!("account:   {username}");
-            }
+                .join("account.json");
+            let _ = fs::write(&account_file, format!("{{\"username\":\"{username}\"}}"));
+            println!("account:   {username}");
         }
     }
 
