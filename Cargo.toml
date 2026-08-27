@@ -2,7 +2,6 @@
 members = [
     "bins/orbit",
     "bins/orbit-dev",
-    "desktop/src-tauri",
     "crates/orbit-core",
     "crates/orbit-cli",
     "crates/orbit-tui",
