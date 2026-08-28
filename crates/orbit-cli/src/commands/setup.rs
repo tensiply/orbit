@@ -3,6 +3,7 @@ use clap::Args;
 use orbit_core::{
     builtin_command,
     catalog::{self, McpEntry},
+    engine_hook::{self, EngineHookState},
     user_config::UserConfig,
 };
 use std::{
@@ -66,6 +67,10 @@ pub struct SetupArgs {
     /// Skip MCP configuration prompts
     #[arg(long)]
     pub no_mcps: bool,
+
+    /// Skip engine hook configuration prompts
+    #[arg(long)]
+    pub no_hooks: bool,
 
     /// Skip built-in command announcement
     #[arg(long)]
@@ -287,6 +292,16 @@ pub async fn run(args: SetupArgs) -> Result<()> {
     } else if args.yes && !args.no_mcps {
         println!(
             "  \x1b[2mMCPs skipped (--yes) — run `orbit mcp enable <name>` to configure later.\x1b[0m"
+        );
+    }
+
+    // ── engine hooks ──────────────────────────────────────────────────────────
+    if !args.no_hooks && !args.yes {
+        println!();
+        setup_hooks()?;
+    } else if args.yes && !args.no_hooks {
+        println!(
+            "  \x1b[2mHooks skipped (--yes) — run `orbit hooks enable <name>` to configure later.\x1b[0m"
         );
     }
 
@@ -545,6 +560,123 @@ fn setup_mcps() -> Result<()> {
     println!();
     println!("  \x1b[32m✓\x1b[0m  MCPs saved  {}", mcps_path.display());
 
+    Ok(())
+}
+
+// ── hooks setup ───────────────────────────────────────────────────────────────
+
+fn setup_hooks() -> Result<()> {
+    let hooks = engine_hook::load_all();
+    if hooks.is_empty() {
+        return Ok(());
+    }
+
+    let state = EngineHookState::load();
+
+    println!("hooks\n");
+    println!(
+        "  \x1b[2mEngine hooks extend Claude Code sessions with automated behaviors on events.\x1b[0m\n"
+    );
+
+    let name_w = hooks.iter().map(|h| h.name.len()).max().unwrap_or(8).max(8);
+    let cat_w = hooks
+        .iter()
+        .map(|h| h.category.len())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+    let desc_w: usize = 48;
+    let sep_w = 5 + name_w + 2 + cat_w + 2 + desc_w + 2 + 12;
+
+    println!(
+        "     \x1b[2m{name:<name_w$}  {cat:<cat_w$}  {desc:<desc_w$}\x1b[0m",
+        name = "name",
+        cat = "category",
+        desc = "description",
+        name_w = name_w,
+        cat_w = cat_w,
+        desc_w = desc_w,
+    );
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+
+    for h in &hooks {
+        let enabled = state.is_enabled(&h.name);
+        let status = if enabled {
+            "\x1b[32m●\x1b[0m"
+        } else {
+            "\x1b[2m○\x1b[0m"
+        };
+        let bin_tag = if h
+            .requires_binary
+            .as_deref()
+            .is_some_and(|b| !bin_available(b))
+        {
+            "  \x1b[33m⚙\x1b[0m"
+        } else {
+            ""
+        };
+        let desc = truncate_desc(&h.description, desc_w);
+        println!(
+            "  {status}  {name:<name_w$}  \x1b[2m{cat:<cat_w$}\x1b[0m  {desc:<desc_w$}{bin_tag}",
+            name = h.name,
+            cat = h.category,
+            name_w = name_w,
+            cat_w = cat_w,
+            desc_w = desc_w,
+        );
+    }
+
+    println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
+    println!("  \x1b[2m● enabled  ○ disabled  ·  ⚙ binary not found\x1b[0m");
+    println!();
+
+    let enabled_count = hooks.iter().filter(|h| state.is_enabled(&h.name)).count();
+    println!(
+        "  {enabled_count}/{total} enabled  ·  orbit hooks enable/disable <name>",
+        total = hooks.len()
+    );
+    println!();
+
+    if !confirm("Configure any hooks now?", false)? {
+        println!("  \x1b[2mSkipped. Use `orbit hooks enable <name>` to configure later.\x1b[0m");
+        return Ok(());
+    }
+
+    let mut state = EngineHookState::load();
+
+    for h in &hooks {
+        if state.is_enabled(&h.name) {
+            continue;
+        }
+
+        if let Some(bin) = &h.requires_binary
+            && !bin_available(bin)
+        {
+            println!(
+                "  \x1b[33m!\x1b[0m  {} requires `{bin}` (not found) — skipping",
+                h.name
+            );
+            continue;
+        }
+
+        if confirm(&format!("Enable {}?", h.name), false)? {
+            state.enable(&h.name);
+            match engine_hook::install_scripts(h) {
+                Ok(paths) => {
+                    for p in &paths {
+                        println!("     script → {}", p.display());
+                    }
+                    println!("  \x1b[32m✓\x1b[0m  {} enabled", h.name);
+                }
+                Err(e) => {
+                    println!("  \x1b[31m✗\x1b[0m  {}: {e}", h.name);
+                    state.disable(&h.name);
+                }
+            }
+        }
+    }
+
+    state.save()?;
     Ok(())
 }
 
