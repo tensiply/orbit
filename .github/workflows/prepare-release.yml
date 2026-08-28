@@ -54,6 +54,15 @@ jobs:
             exit 1
           fi
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Security audit — block on critical/high
+        run: cargo audit --deny warnings --deny unsound
+
       - name: Write summary
         env:
           VERSION: ${{ inputs.version }}
@@ -87,7 +96,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           git config user.name  "Eloir Corona"
-          git config user.email "ecorona@better.com.mx"
+          git config user.email "eloircoronah@outlook.com"
           git add CHANGELOG.md Cargo.toml Cargo.lock
           git commit -m "chore: release v${VERSION}"
           git tag "v${VERSION}"
