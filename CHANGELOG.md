@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-14
+
+### Features
+
+- **Scope catalog** — `orbit scope` command lists all workspaces, tenants, projects, and repositories known to the daemon. Scope entries include path, engine config, and last-used timestamp.
+- **Image generation pipeline** — `orbit image create` generates PNG, JPEG, and WEBP from HTML templates via Chrome headless. Scope-aware template cascade: repo → project → tenant → workspace → user → builtin. `IMG-ID` included in output filename; auto-backup on regeneration; output folder opens automatically.
+- **`template-image-create` / `template-image-update` commands** — Interactive commands to create and update image templates scoped to any level of the hierarchy. Integrates with the image generation pipeline.
+- **Scope-aware command materialization** — Global command catalog with per-scope enable/disable. Commands are materialized at launch time based on the active scope. `orbit command list|info|enable|disable`.
+- **FTP/SFTP plugin** — New built-in plugin with stdio MCP instance support for FTP/SFTP servers.
+- **Plugins scope-aware enable/disable** — `orbit plugins enable/disable` now writes to the current scope's `mcp.json` instead of the user config. Respects scope hierarchy for plugin resolution.
+- **Document pipeline improvements** — `DOC-ID` included in output filename; `find_entry` searches by title for idempotency across renames.
+
+### Fixed
+
+- `orbit mode stable/beta` handles 404 gracefully instead of panicking.
+- `orbit setup`: consolidate `bin_available` check, preserve existing config on re-run, improve UX messaging.
+- MCP: recognize `mcpServers` key for all engines; add workspace scope level and layer attribution to `orbit mcp list`.
+- Launcher + daemon: capture shell executor output and surface it in the chat view.
+- TUI: push `orbiting` state after `PlanReplanning` to keep spinner active during replanning.
+- Workspace-scope commands not discovered at launch when workspace root differs from working directory.
+- Plugins: use `ORBIT_CONFIG_HOME` in `user_config_dir`; fix `build_mcp_entries` for plugins without explicit scope.
+
+### Refactor
+
+- `~/.orbit` fully centralized: `data/`, `cache/`, `state/`, `run/` layout. All path helpers updated.
+- Workspace-scoped keychain: secrets are now namespaced by workspace slug in the OS keychain.
+
+## [0.19.0] - 2026-08-07
+
+### Features
+
+- **Chat tab** — New Tab 0 in the TUI with a full-width chat interface. Submits messages as orbit plans; renders responses as bordered message boxes. Auto-starts the daemon and cleans stale sockets on submit.
+- **3-level intent router** — Planner now classifies intents at three levels: scope detection, gap resolver, and validator. Reduces false-positive plan triggers and improves response accuracy for ambiguous queries.
+- **OAuth 2.1 PKCE auth flow** — `orbit plugins auth` supports the full PKCE flow for OAuth 2.1 providers. Keychain interpolation: `$secret:keychain:VAR` syntax in plugin configs is resolved at launch time.
+- **Linear plugin** — New built-in plugin with OAuth 2.1 PKCE auth, issue search/create/update, and project listing. Requires `orbit plugins auth linear`.
+- **Jenkins plugin** — New built-in plugin with API token auth, pipeline status, build history, and trigger support.
+- **Output formatting layer** — Structured output for `orbit` CLI commands: table, JSON, and plain text modes. `--output` flag added to relevant subcommands.
+- **Setup wizard improvements** — `orbit setup` now detects existing config and offers a guided update flow instead of overwriting.
+- **tmux session management** — Launcher sets window title to the active scope, exposes a `configure` helper, and passes `work_dir` to the session.
+
+### Fixed
+
+- Supervisor: stop runaway plan loops; deduplicate plan entries in the plan list.
+- TUI chat: orbit animation and ANSI output cleanup in async plan creation flow.
+- Install: use `install -m 755` instead of `cp` to allow hot-replacing a running binary.
+
 ## [0.18.0] - 2026-07-28
 
 ### Features
