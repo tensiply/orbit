@@ -54,7 +54,7 @@ pub struct CreateArgs {
     #[arg(long)]
     pub template: Option<String>,
 
-    /// Output path. Defaults to `~/.orbit/documents/{scope}/{slug}.{ext}`.
+    /// Output path. Defaults to `~/.orbit/files/documents/{scope}/{slug}.{ext}`.
     #[arg(long, short = 'o')]
     pub output: Option<PathBuf>,
 
@@ -160,31 +160,28 @@ fn run_create(args: CreateArgs) -> Result<()> {
     // Resolve output path and ID together so the filename includes the ID.
     // Same title → find existing entry → reuse its path and ID (idempotent re-generation).
     // New title → allocate ID first, build {ID}-{slug}.{ext}.
-    let (output, alloc_id, existing): (PathBuf, String, Option<DocumentEntry>) =
-        if let Some(p) = args.output {
-            let ex = find_by_output(&p, &workspace_name);
-            let id = ex
-                .as_ref()
-                .map(|e| e.id.clone())
-                .unwrap_or_else(|| next_id(&workspace_name));
-            (p, id, ex)
+    let (output, alloc_id, existing): (PathBuf, String, Option<DocumentEntry>) = if let Some(p) =
+        args.output
+    {
+        let ex = find_by_output(&p, &workspace_name);
+        let id = ex
+            .as_ref()
+            .map(|e| e.id.clone())
+            .unwrap_or_else(|| next_id(&workspace_name));
+        (p, id, ex)
+    } else {
+        let ex = find_by_title(&args.title, &workspace_name);
+        if let Some(ref e) = ex {
+            (e.output_path.clone(), e.id.clone(), ex)
         } else {
-            let ex = find_by_title(&args.title, &workspace_name);
-            if let Some(ref e) = ex {
-                (e.output_path.clone(), e.id.clone(), ex)
-            } else {
-                let id = next_id(&workspace_name);
-                let slug = slugify_title(&args.title);
-                let scope_dir = data_paths::documents_scope_dir(
-                    &workspace_name,
-                    &tenant,
-                    &project,
-                    &repository,
-                );
-                let path = scope_dir.join(format!("{id}-{slug}.{}", format.extension()));
-                (path, id, None)
-            }
-        };
+            let id = next_id(&workspace_name);
+            let slug = slugify_title(&args.title);
+            let scope_dir =
+                data_paths::documents_scope_dir(&workspace_name, &tenant, &project, &repository);
+            let path = scope_dir.join(format!("{id}-{slug}.{}", format.extension()));
+            (path, id, None)
+        }
+    };
 
     // Backup existing file before overwriting.
     // --force skips the backup and overwrites directly.

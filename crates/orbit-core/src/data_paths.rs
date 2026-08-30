@@ -155,15 +155,15 @@ pub fn document_rules_dir() -> PathBuf {
     orbit_home().join("document-rules")
 }
 
-/// Root for user-visible generated documents: `~/.orbit/documents/`
+/// Root for user-visible generated documents: `~/.orbit/files/documents/`
 /// (NOT XDG data home — this is an intentionally accessible location).
 pub fn documents_output_base() -> PathBuf {
     directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit/documents"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/documents"))
+        .map(|b| b.home_dir().join(".orbit/files/documents"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/documents"))
 }
 
-/// Scope-based output directory: `~/.orbit/documents/{workspace}/{tenant}/{project}/{repo}/`
+/// Scope-based output directory: `~/.orbit/files/documents/{workspace}/{tenant}/{project}/{repo}/`
 pub fn documents_scope_dir(workspace: &str, tenant: &str, project: &str, repo: &str) -> PathBuf {
     let mut path = documents_output_base();
     for part in [workspace, tenant, project, repo] {
@@ -205,7 +205,10 @@ pub fn workspace_image_templates_dir() -> Option<PathBuf> {
 /// repo > project > tenant > workspace.
 /// Each `Option<PathBuf>` is `None` when the corresponding env var is unset.
 pub fn scoped_image_template_dirs() -> Vec<(String, PathBuf)> {
-    let context_root = match std::env::var("AI_CONTEXT_ROOT").ok().filter(|s| !s.is_empty()) {
+    let context_root = match std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
         Some(r) => PathBuf::from(r),
         None => return vec![],
     };
@@ -252,7 +255,10 @@ pub fn scoped_image_template_dirs() -> Vec<(String, PathBuf)> {
         ));
     }
     // workspace
-    dirs.push(("workspace".to_string(), context_root.join("templates/image")));
+    dirs.push((
+        "workspace".to_string(),
+        context_root.join("templates/image"),
+    ));
 
     dirs
 }
@@ -273,14 +279,14 @@ pub fn image_rules_dir() -> PathBuf {
     orbit_home().join("image-rules")
 }
 
-/// Root for user-visible generated images: `~/.orbit/images/`
+/// Root for user-visible generated images: `~/.orbit/files/images/`
 pub fn images_output_base() -> PathBuf {
     directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit/images"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/images"))
+        .map(|b| b.home_dir().join(".orbit/files/images"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/images"))
 }
 
-/// Scope-based output directory: `~/.orbit/images/{workspace}/{tenant}/{project}/{repo}/`
+/// Scope-based output directory: `~/.orbit/files/images/{workspace}/{tenant}/{project}/{repo}/`
 pub fn images_scope_dir(workspace: &str, tenant: &str, project: &str, repo: &str) -> PathBuf {
     let mut path = images_output_base();
     for part in [workspace, tenant, project, repo] {
@@ -316,6 +322,120 @@ pub fn all_images_index_paths() -> Vec<PathBuf> {
         }
     }
     paths
+}
+
+// ── svg paths ─────────────────────────────────────────────────────────────────
+
+/// User SVG templates: `~/.orbit/data/templates/svgs/`
+pub fn svg_templates_dir() -> PathBuf {
+    orbit_data_root().join("templates/svgs")
+}
+
+/// Workspace-scoped SVG templates: `$AI_CONTEXT_ROOT/templates/svg/`
+pub fn workspace_svg_templates_dir() -> Option<PathBuf> {
+    std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|root| PathBuf::from(root).join("templates/svg"))
+}
+
+/// All scope-level SVG template directories, from most-specific to least-specific.
+pub fn scoped_svg_template_dirs() -> Vec<(String, std::path::PathBuf)> {
+    let context_root = match std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        Some(r) => PathBuf::from(r),
+        None => return vec![],
+    };
+    let tenant = std::env::var("AI_TENANT").unwrap_or_default();
+    let project = std::env::var("AI_PROJECT").unwrap_or_default();
+    let repo = std::env::var("AI_REPOSITORY").unwrap_or_default();
+
+    let mut dirs: Vec<(String, PathBuf)> = Vec::new();
+
+    if !tenant.is_empty() && !project.is_empty() && !repo.is_empty() {
+        dirs.push((
+            format!("repo:{repo}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("projects")
+                .join(&project)
+                .join("repositories")
+                .join(&repo)
+                .join("templates/svg"),
+        ));
+    }
+    if !tenant.is_empty() && !project.is_empty() {
+        dirs.push((
+            format!("project:{project}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("projects")
+                .join(&project)
+                .join("templates/svg"),
+        ));
+    }
+    if !tenant.is_empty() {
+        dirs.push((
+            format!("tenant:{tenant}"),
+            context_root
+                .join("tenants")
+                .join(&tenant)
+                .join("templates/svg"),
+        ));
+    }
+    dirs.push(("workspace".to_string(), context_root.join("templates/svg")));
+
+    dirs
+}
+
+/// User SVG rule overrides: `~/.orbit/svg-rules/`
+pub fn svg_rules_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("ORBIT_CONFIG_HOME") {
+        return PathBuf::from(p).join("svg-rules");
+    }
+    orbit_home().join("svg-rules")
+}
+
+/// Workspace-scoped SVG rule overrides: `$AI_CONTEXT_ROOT/svg-rules/`
+pub fn workspace_svg_rules_dir() -> Option<PathBuf> {
+    std::env::var("AI_CONTEXT_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|root| PathBuf::from(root).join("svg-rules"))
+}
+
+/// Root for user-visible generated SVGs: `~/.orbit/files/svgs/`
+pub fn svgs_output_base() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|b| b.home_dir().join(".orbit/files/svgs"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/svgs"))
+}
+
+/// Scope-based output directory: `~/.orbit/files/svgs/{workspace}/{tenant}/{project}/{repo}/`
+pub fn svgs_scope_dir(workspace: &str, tenant: &str, project: &str, repo: &str) -> PathBuf {
+    let mut path = svgs_output_base();
+    for part in [workspace, tenant, project, repo] {
+        if !part.is_empty() {
+            path = path.join(part);
+        }
+    }
+    path
+}
+
+/// NDJSON index of SVG entries for a workspace.
+pub fn svgs_index_path_for(workspace_name: Option<&str>) -> PathBuf {
+    let root = orbit_data_root();
+    match workspace_name.filter(|s| !s.is_empty()) {
+        None => root.join("svgs/index.jsonl"),
+        Some(name) => root
+            .join("workspaces")
+            .join(slugify(name))
+            .join("svgs/index.jsonl"),
+    }
 }
 
 /// Flat scope catalog: `~/.orbit/cache/scope-catalog.json`

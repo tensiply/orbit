@@ -71,7 +71,7 @@ pub struct CreateArgs {
     #[arg(long = "var", short = 'v', value_name = "KEY=VALUE")]
     pub vars: Vec<String>,
 
-    /// Output path. Defaults to `~/.orbit/images/{scope}/{slug}.{ext}`.
+    /// Output path. Defaults to `~/.orbit/files/images/{scope}/{slug}.{ext}`.
     #[arg(long, short = 'o')]
     pub output: Option<PathBuf>,
 
@@ -165,8 +165,8 @@ fn run_create(args: CreateArgs) -> Result<()> {
                 .with_context(|| "no images found in this workspace to replace")?
                 .into()
         } else {
-            let (_, e) = find_entry(key)
-                .with_context(|| format!("image '{key}' not found in the index"))?;
+            let (_, e) =
+                find_entry(key).with_context(|| format!("image '{key}' not found in the index"))?;
             Some(e)
         }
     } else {
@@ -194,12 +194,8 @@ fn run_create(args: CreateArgs) -> Result<()> {
             } else {
                 let id = next_id(&workspace_name);
                 let slug = slugify(&args.title);
-                let scope_dir = data_paths::images_scope_dir(
-                    &workspace_name,
-                    &tenant,
-                    &project,
-                    &repository,
-                );
+                let scope_dir =
+                    data_paths::images_scope_dir(&workspace_name, &tenant, &project, &repository);
                 let path = scope_dir.join(format!("{id}-{slug}.{}", format.extension()));
                 (path, id, None)
             }
