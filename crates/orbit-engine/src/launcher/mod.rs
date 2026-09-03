@@ -75,6 +75,11 @@ pub fn launch(
     let hooks_settings_path = if engine == Engine::Claude {
         let state = orbit_core::engine_hook::EngineHookState::load();
         let catalog = orbit_core::engine_hook::load_all();
+        // Always-on hooks never pass through `hooks enable`, so their scripts are
+        // installed here at launch to guarantee the command paths exist on disk.
+        for hook in catalog.iter().filter(|h| h.always_on) {
+            let _ = orbit_core::engine_hook::install_scripts(hook);
+        }
         if let Some(val) = engine_hooks::build_settings(&state, &catalog) {
             let path = paths.runtime_dir.join("claude-hooks-settings.json");
             fs::write(&path, serde_json::to_string_pretty(&val)?)?;

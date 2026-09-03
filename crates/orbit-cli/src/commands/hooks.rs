@@ -77,12 +77,16 @@ fn list() -> Result<()> {
 
     for h in &hooks {
         let enabled = state.is_enabled(&h.name);
-        let status = if enabled {
+        let status = if h.always_on {
+            "\x1b[34m◆\x1b[0m"
+        } else if enabled {
             "\x1b[32m●\x1b[0m"
         } else {
             "\x1b[2m○\x1b[0m"
         };
-        let status_tag = if enabled {
+        let status_tag = if h.always_on {
+            "\x1b[34m[always-on]\x1b[0m"
+        } else if enabled {
             "\x1b[32m[enabled]\x1b[0m "
         } else {
             "\x1b[2m[disabled]\x1b[0m"
@@ -104,10 +108,13 @@ fn list() -> Result<()> {
     }
 
     println!("  \x1b[2m{}\x1b[0m", "─".repeat(sep_w));
-    println!("  \x1b[2m● enabled  ○ disabled  ·  ⚙ requires binary\x1b[0m");
+    println!("  \x1b[2m● enabled  ○ disabled  ◆ always-on  ·  ⚙ requires binary\x1b[0m");
     println!();
 
-    let enabled_count = hooks.iter().filter(|h| state.is_enabled(&h.name)).count();
+    let enabled_count = hooks
+        .iter()
+        .filter(|h| h.always_on || state.is_enabled(&h.name))
+        .count();
     println!(
         "  {enabled_count}/{total} enabled  ·  orbit hooks enable/disable <name>",
         total = hooks.len()
@@ -123,6 +130,11 @@ fn enable(name: &str) -> Result<()> {
             "unknown engine hook: '{name}'. Run `orbit hooks list` to see available hooks."
         )
     })?;
+
+    if hook.always_on {
+        println!("Engine hook '{name}' is always-on — it already loads into every session.");
+        return Ok(());
+    }
 
     let mut state = EngineHookState::load();
     if state.is_enabled(name) {
@@ -142,6 +154,12 @@ fn enable(name: &str) -> Result<()> {
 }
 
 fn disable(name: &str) -> Result<()> {
+    if engine_hook::find(name).is_some_and(|h| h.always_on) {
+        println!(
+            "Engine hook '{name}' is always-on and cannot be disabled — it loads into every session by design."
+        );
+        return Ok(());
+    }
     let mut state = EngineHookState::load();
     if !state.is_enabled(name) {
         println!("Engine hook '{name}' is not enabled.");
@@ -163,7 +181,9 @@ fn info(name: &str) -> Result<()> {
     println!("Category:    {}", hook.category);
     println!(
         "Status:      {}",
-        if state.is_enabled(&hook.name) {
+        if hook.always_on {
+            "always-on (cannot be disabled)"
+        } else if state.is_enabled(&hook.name) {
             "enabled"
         } else {
             "disabled"

@@ -2,6 +2,7 @@ name = "aws-destructive-guard"
 description = "Block AWS CLI commands that create, disable, or delete resources in any profile"
 category = "security"
 requires_binary = "python3"
+always_on = true
 
 [[events]]
 event = "PreToolUse"

@@ -12,6 +12,10 @@ pub struct EngineHookCatalog {
     pub name: String,
     pub description: String,
     pub category: String,
+    /// When true the hook always materializes into sessions, bypassing the
+    /// enable/disable state. Cannot be turned off via `orbit hooks disable`.
+    #[serde(default)]
+    pub always_on: bool,
     #[serde(default)]
     pub events: Vec<EngineHookEventDef>,
     pub requires_binary: Option<String>,
