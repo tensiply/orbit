@@ -5,16 +5,28 @@ use std::path::PathBuf;
 #[derive(Debug, Args)]
 #[command(about = "Open the orbit desktop app")]
 pub struct DesktopArgs {
-    /// Force using the dev build from the current repo
+    /// Launch the dev desktop build (dev-orbit-desktop) instead of the stable app
     #[arg(long)]
     pub dev: bool,
 }
 
 pub fn run(args: DesktopArgs) -> Result<()> {
-    let binary = if args.dev || is_dev_binary() {
-        dev_binary()?
+    // The desktop app ships as a separate product (repo orbit-desktop). The dev
+    // build installs as `dev-orbit-desktop`, the stable one as `orbit-desktop`.
+    // A dev CLI (dev-orbit) launches the dev app so both stay on ~/.orbit-dev.
+    let dev = args.dev || is_dev_binary();
+    let binary = if dev {
+        resolve("dev-orbit-desktop").ok_or_else(|| {
+            anyhow::anyhow!(
+                "dev-orbit-desktop is not installed.\n  Build and link it: cd orbit-desktop && make dev-install"
+            )
+        })?
     } else {
-        stable_binary()?
+        resolve("orbit-desktop").ok_or_else(|| {
+            anyhow::anyhow!(
+                "orbit-desktop is not installed.\n  Build and install: cd orbit-desktop && make bundle install\n  Or run the dev build: orbit desktop --dev"
+            )
+        })?
     };
 
     use std::os::unix::process::CommandExt;
@@ -22,7 +34,7 @@ pub fn run(args: DesktopArgs) -> Result<()> {
     bail!("failed to launch {}: {err}", binary.display())
 }
 
-/// True when the current executable is orbit-dev (binary name contains "dev").
+/// True when the current executable is a dev build (binary name contains "dev").
 fn is_dev_binary() -> bool {
     std::env::current_exe()
         .ok()
@@ -31,48 +43,21 @@ fn is_dev_binary() -> bool {
         .unwrap_or(false)
 }
 
-/// Dev binary: look for orbit-desktop next to the current exe (same target/{profile}/ dir).
-fn dev_binary() -> Result<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("cannot determine exe directory"))?;
-    let candidate = dir.join("orbit-desktop");
-    if candidate.exists() {
-        return Ok(candidate);
-    }
-    bail!(
-        "orbit-desktop dev binary not found at {}.\n  Build it with: cargo build -p orbit-desktop",
-        candidate.display()
-    )
-}
-
-/// Stable binary: orbit-desktop resolved via PATH (respects any install location).
-fn stable_binary() -> Result<PathBuf> {
-    // Check ~/.local/bin first (default make install) to give a better error if missing
-    let local_bin = std::env::var("HOME")
-        .ok()
-        .map(|h| PathBuf::from(h).join(".local/bin/orbit-desktop"));
-
-    if let Some(ref p) = local_bin
-        && p.exists()
-    {
-        return Ok(p.clone());
+/// Resolve a desktop binary by name: `~/.local/bin` first (default install
+/// location), then anywhere on PATH. Returns `None` if not found.
+fn resolve(name: &str) -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME") {
+        let p = PathBuf::from(home).join(".local/bin").join(name);
+        if p.exists() {
+            return Some(p);
+        }
     }
 
-    // Let the OS resolve via PATH — exec() will fail with ENOENT if not found
-    // We check explicitly so we can show a helpful message
-    let in_path = std::env::var("PATH")
-        .unwrap_or_default()
-        .split(':')
-        .map(PathBuf::from)
-        .any(|dir| dir.join("orbit-desktop").exists());
+    let on_path = std::env::var_os("PATH")
+        .map(|paths| {
+            std::env::split_paths(&paths).any(|dir| dir.join(name).exists())
+        })
+        .unwrap_or(false);
 
-    if in_path {
-        return Ok(PathBuf::from("orbit-desktop"));
-    }
-
-    bail!(
-        "orbit-desktop is not installed.\n  Build and install: make desktop-build && make desktop-install\n  Or run the dev build:  orbit-dev desktop"
-    )
+    on_path.then(|| PathBuf::from(name))
 }
