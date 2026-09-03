@@ -27,6 +27,7 @@ pub mod scope_catalog;
 pub mod scope_index;
 pub mod secrets;
 pub mod session;
+pub mod svg;
 pub mod task;
 pub mod template;
 pub mod user_config;

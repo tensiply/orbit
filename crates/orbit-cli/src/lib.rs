@@ -92,6 +92,8 @@ pub enum Commands {
     Document(commands::document::DocumentArgs),
     /// Generate images (PNG, JPEG, WEBP) from HTML templates or AI
     Image(commands::image::ImageArgs),
+    /// Generate SVG files from templates or raw SVG content
+    Svg(commands::svg::SvgArgs),
     /// Print shell integration (eval in .zshrc/.bashrc)
     #[command(name = "shell-init")]
     ShellInit(commands::shell_init::ShellInitArgs),
@@ -190,6 +192,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Discover(args)) => commands::discover::run(args),
         Some(Commands::Document(args)) => commands::document::run(args),
         Some(Commands::Image(args)) => commands::image::run(args),
+        Some(Commands::Svg(args)) => commands::svg::run(args),
         Some(Commands::ShellInit(args)) => commands::shell_init::run(args),
         Some(Commands::Architecture(args)) => commands::architecture::run(args),
         None => {

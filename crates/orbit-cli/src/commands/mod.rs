@@ -34,6 +34,7 @@ pub mod setup;
 pub mod shell_init;
 pub mod snapshot;
 pub mod status;
+pub mod svg;
 pub mod task;
 pub mod update;
 pub mod workspace;
