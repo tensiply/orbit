@@ -11,6 +11,12 @@ on:
       tag:
         description: "Tag to release (e.g. v0.5.0)"
         required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.5.0)"
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,12 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Extract version
         id: ver
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${{ inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
           # Enforce the policy: stable releases must be vX.Y.0.
           if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.0$ ]]; then
@@ -43,7 +49,7 @@ jobs:
 
       - name: Check Cargo.toml matches tag
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${{ inputs.tag || github.ref_name }}"
           CARGO_VER=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           if [ "v${CARGO_VER}" != "${TAG}" ]; then
             echo "::error::Version mismatch — Cargo.toml has v${CARGO_VER} but tag is ${TAG}"
@@ -86,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -131,7 +137,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
