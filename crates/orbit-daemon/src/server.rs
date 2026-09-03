@@ -217,7 +217,10 @@ impl ServerState {
                 let active_ids: HashSet<String> = active.iter().map(|s| s.id.clone()).collect();
                 let history = Session::load_history_excluding(50, &active_ids)
                     .into_iter()
-                    .map(|mut s| { s.is_history = true; s })
+                    .map(|mut s| {
+                        s.is_history = true;
+                        s
+                    })
                     .collect::<Vec<_>>();
 
                 let mut sessions = active;

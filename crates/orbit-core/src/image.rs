@@ -355,7 +355,10 @@ fn inline_local_css(html: &str, base_dir: &Path) -> String {
 
         let inlined = if tag.contains("stylesheet") {
             extract_href(tag).and_then(|href| {
-                if href.starts_with("http://") || href.starts_with("https://") || href.starts_with("//") {
+                if href.starts_with("http://")
+                    || href.starts_with("https://")
+                    || href.starts_with("//")
+                {
                     return None;
                 }
                 let css_path = base_dir.join(&href);
@@ -566,7 +569,9 @@ fn load_image_rule(format: &ImageFormat) -> ImageRule {
     }
 
     for (name, content) in BUILTIN_IMAGE_RULES {
-        if *name == fmt && let Ok(rule) = serde_yml::from_str::<ImageRule>(content) {
+        if *name == fmt
+            && let Ok(rule) = serde_yml::from_str::<ImageRule>(content)
+        {
             return rule;
         }
     }
@@ -615,7 +620,9 @@ fn append_templates_from_dir(
     paths.sort_by_key(|e| e.path());
     for entry in paths {
         let name = stem(&entry.path());
-        if seen.insert(name.clone()) && let Ok(raw) = fs::read_to_string(entry.path()) {
+        if seen.insert(name.clone())
+            && let Ok(raw) = fs::read_to_string(entry.path())
+        {
             let src = if is_workspace {
                 TemplateSource::Workspace(entry.path())
             } else {

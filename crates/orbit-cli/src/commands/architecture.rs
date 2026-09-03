@@ -1,9 +1,7 @@
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
-    architecture::{
-        CatalogEntity, CatalogLoadResult, EntityKind, filter_by_project, load_catalog,
-    },
+    architecture::{CatalogEntity, CatalogLoadResult, EntityKind, filter_by_project, load_catalog},
     resolver::{self, ResolveArgs, resolve_from_cwd},
 };
 
@@ -53,9 +51,7 @@ pub enum ArchSubcommand {
 
 pub fn run(args: ArchitectureArgs) -> Result<()> {
     let scope = if args.workspace.is_none() {
-        resolve_from_cwd().or_else(|_| {
-            resolver::resolve(ResolveArgs::default())
-        })?
+        resolve_from_cwd().or_else(|_| resolver::resolve(ResolveArgs::default()))?
     } else {
         resolver::resolve(ResolveArgs {
             workspace: args.workspace.clone(),
@@ -105,7 +101,9 @@ fn show(result: &CatalogLoadResult, project: Option<&str>, tenant: &str) -> Resu
 
     println!();
     if let Some(proj) = project {
-        println!("  \x1b[1marchitecture\x1b[0m  {tenant}  /  {proj}  \x1b[2m({workspace_hint})\x1b[0m");
+        println!(
+            "  \x1b[1marchitecture\x1b[0m  {tenant}  /  {proj}  \x1b[2m({workspace_hint})\x1b[0m"
+        );
     } else {
         println!("  \x1b[1marchitecture\x1b[0m  {tenant}  \x1b[2m({workspace_hint})\x1b[0m");
     }
@@ -206,7 +204,11 @@ fn show(result: &CatalogLoadResult, project: Option<&str>, tenant: &str) -> Resu
     let hint = if !result.tenant_dir.exists() {
         format!(
             "  \x1b[33mNo catalog found at {}\x1b[0m",
-            result.tenant_dir.join("source-of-truth").join("catalog").display()
+            result
+                .tenant_dir
+                .join("source-of-truth")
+                .join("catalog")
+                .display()
         )
     } else {
         String::new()
@@ -311,10 +313,16 @@ fn validate(result: &CatalogLoadResult, check_refs: bool) -> Result<()> {
             issues.push((e.id.clone(), "missing required field: name".to_string()));
         }
         if e.criticality.is_none() {
-            issues.push((e.id.clone(), "missing recommended field: criticality".to_string()));
+            issues.push((
+                e.id.clone(),
+                "missing recommended field: criticality".to_string(),
+            ));
         }
         if e.lifecycle.is_none() {
-            issues.push((e.id.clone(), "missing recommended field: lifecycle".to_string()));
+            issues.push((
+                e.id.clone(),
+                "missing recommended field: lifecycle".to_string(),
+            ));
         }
     }
 
@@ -369,7 +377,10 @@ fn validate(result: &CatalogLoadResult, check_refs: bool) -> Result<()> {
     }
 
     if issues.is_empty() {
-        println!("  \x1b[32m✓\x1b[0m  {} entities — no issues found", result.entities.len());
+        println!(
+            "  \x1b[32m✓\x1b[0m  {} entities — no issues found",
+            result.entities.len()
+        );
     } else {
         println!(
             "  \x1b[31m✗\x1b[0m  {} entities — {} issue(s) found\n",
@@ -436,7 +447,10 @@ fn export(result: &CatalogLoadResult, project: Option<&str>, format: &str) -> Re
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn filter_entities<'a>(result: &'a CatalogLoadResult, project: Option<&str>) -> Vec<&'a CatalogEntity> {
+fn filter_entities<'a>(
+    result: &'a CatalogLoadResult,
+    project: Option<&str>,
+) -> Vec<&'a CatalogEntity> {
     if let Some(proj) = project {
         filter_by_project(&result.entities, proj)
     } else {
