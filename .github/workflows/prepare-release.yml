@@ -101,3 +101,16 @@ jobs:
           git commit -m "chore: release v${VERSION}"
           git tag "v${VERSION}"
           git push --atomic origin main "v${VERSION}"
+
+  # ── Job 4: build + publish the release ───────────────────────────────────────
+  # The tag pushed above uses GITHUB_TOKEN, which does not trigger release.yml's
+  # tag-push event. Call it directly as a reusable workflow instead.
+  build-release:
+    name: Build release v${{ inputs.version }}
+    needs: release
+    permissions:
+      contents: write
+    secrets: inherit
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: v${{ inputs.version }}
