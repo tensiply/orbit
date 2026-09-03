@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **Isolated dev binary** — `orbit-dev` runs against a separate `~/.orbit-dev` home (its own daemon, socket, and data), so the stable install and a development build coexist without sharing `orbitd`. Install the dev build as a `dev-orbit` symlink with `make dev-install`. Set `ORBIT_HOME` to override.
+
+### Fixed
+
+- **Self-update repository** — Point release downloads, self-update, and `orbit mode` at `tensiply/orbit` (was a stale `befraeloircorona/orbit` slug that broke self-update).
+- **`orbit desktop` launcher** — Resolve `orbit-desktop` (stable) / `dev-orbit-desktop` (dev) by name from `~/.local/bin` and PATH, instead of a repo-local path that no longer exists after the desktop repo split.
+
+### Build
+
+- **Canonical release artifacts** — `make package` emits `orbit-<os>-<arch>` plus `checksums.txt` (the names the self-updater expects) and no longer bundles the dev binary. `make install` installs only `orbit`.
+
 ## [0.21.0] - 2026-09-03
 
 ### Features
