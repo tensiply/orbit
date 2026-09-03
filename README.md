@@ -18,19 +18,19 @@ orbit resolves the right context for your AI session — tenant, project, reposi
 
 ```bash
 # Linux (x86_64)
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-x86_64 \
+curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-linux-x86_64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
 # Linux (aarch64)
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-linux-aarch64 \
+curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-linux-aarch64 \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
 # macOS (Apple Silicon)
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-aarch64 \
+curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-macos-aarch64 \
   -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 
 # macOS (Intel)
-curl -fsSL https://github.com/befraeloircorona/orbit/releases/latest/download/orbit-macos-x86_64 \
+curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-macos-x86_64 \
   -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
 ```
 
@@ -93,7 +93,7 @@ orbit config set engine.default claude
 ## Build from source
 
 ```bash
-git clone https://github.com/befraeloircorona/orbit.git
+git clone https://github.com/tensiply/orbit.git
 cd orbit
 cargo build --release
 cp target/release/orbit ~/.local/bin/
@@ -105,28 +105,28 @@ Requires Rust 1.75+.
 
 ## Docs
 
-Documentación completa en la [wiki](https://github.com/befraeloircorona/orbit/wiki).
+Documentación completa en la [wiki](https://github.com/tensiply/orbit/wiki).
 
 **Uso básico**
-- [Primeros pasos](https://github.com/befraeloircorona/orbit/wiki/Primeros-pasos) — instalación, `orbit setup`, primer lanzamiento
-- [Lanzar y sesiones](https://github.com/befraeloircorona/orbit/wiki/Lanzar-y-sesiones) — `orbit launch`, `orbit session`, TUI, tmux
-- [Comandos](https://github.com/befraeloircorona/orbit/wiki/Comandos) — referencia completa de todos los comandos
+- [Primeros pasos](https://github.com/tensiply/orbit/wiki/Primeros-pasos) — instalación, `orbit setup`, primer lanzamiento
+- [Lanzar y sesiones](https://github.com/tensiply/orbit/wiki/Lanzar-y-sesiones) — `orbit launch`, `orbit session`, TUI, tmux
+- [Comandos](https://github.com/tensiply/orbit/wiki/Comandos) — referencia completa de todos los comandos
 
 **Configuración**
-- [Modelo de workspace](https://github.com/befraeloircorona/orbit/wiki/Modelo-de-workspace) — jerarquía de scopes, capas de config, governance
-- [Configuración](https://github.com/befraeloircorona/orbit/wiki/Configuracion) — orbit.json, config.toml, `orbit config`
-- [Secretos y variables](https://github.com/befraeloircorona/orbit/wiki/Secretos-y-variables) — `orbit secret`, `orbit env`, resolvers
+- [Modelo de workspace](https://github.com/tensiply/orbit/wiki/Modelo-de-workspace) — jerarquía de scopes, capas de config, governance
+- [Configuración](https://github.com/tensiply/orbit/wiki/Configuracion) — orbit.json, config.toml, `orbit config`
+- [Secretos y variables](https://github.com/tensiply/orbit/wiki/Secretos-y-variables) — `orbit secret`, `orbit env`, resolvers
 
 **Herramientas**
-- [Engines](https://github.com/befraeloircorona/orbit/wiki/Engines) — engines soportados, instalación, autenticación
-- [Plugins](https://github.com/befraeloircorona/orbit/wiki/Plugins) — catálogo built-in, lifecycle, plugins custom
-- [Servidores MCP](https://github.com/befraeloircorona/orbit/wiki/Servidores-MCP) — `orbit mcp`, configuración por scope
+- [Engines](https://github.com/tensiply/orbit/wiki/Engines) — engines soportados, instalación, autenticación
+- [Plugins](https://github.com/tensiply/orbit/wiki/Plugins) — catálogo built-in, lifecycle, plugins custom
+- [Servidores MCP](https://github.com/tensiply/orbit/wiki/Servidores-MCP) — `orbit mcp`, configuración por scope
 
 **Funciones avanzadas**
-- [Sistema de planes](https://github.com/befraeloircorona/orbit/wiki/Sistema-de-planes) — `orbit plan`, ejecución autónoma, memoria
-- [Compartir y descubrir](https://github.com/befraeloircorona/orbit/wiki/Compartir-y-descubrir) — `orbit serve`, `orbit discover`, LAN/mDNS
+- [Sistema de planes](https://github.com/tensiply/orbit/wiki/Sistema-de-planes) — `orbit plan`, ejecución autónoma, memoria
+- [Compartir y descubrir](https://github.com/tensiply/orbit/wiki/Compartir-y-descubrir) — `orbit serve`, `orbit discover`, LAN/mDNS
 
 **Referencia**
-- [Arquitectura](https://github.com/befraeloircorona/orbit/wiki/Arquitectura) — crates, daemon IPC, internals
-- [Contribuir](https://github.com/befraeloircorona/orbit/wiki/Contribuir) — dev setup, CI gates, convenciones
-- [Releases](https://github.com/befraeloircorona/orbit/wiki/Releases) — historial completo de versiones
+- [Arquitectura](https://github.com/tensiply/orbit/wiki/Arquitectura) — crates, daemon IPC, internals
+- [Contribuir](https://github.com/tensiply/orbit/wiki/Contribuir) — dev setup, CI gates, convenciones
+- [Releases](https://github.com/tensiply/orbit/wiki/Releases) — historial completo de versiones

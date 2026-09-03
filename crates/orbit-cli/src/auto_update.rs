@@ -169,7 +169,7 @@ async fn download_and_install_silent(
         .rsplit_once('/')
         .map(|(base, _)| format!("{base}/checksums.txt"))
         .unwrap_or_else(|| {
-            "https://github.com/befraeloircorona/orbit/releases/latest/download/checksums.txt"
+            "https://github.com/tensiply/orbit/releases/latest/download/checksums.txt"
                 .to_string()
         });
 
