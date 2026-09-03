@@ -4,7 +4,7 @@ A CLI launcher for AI coding assistants (opencode, Gemini CLI, Claude Code) with
 
 Built in Rust. Runs on Linux and macOS.
 
-**Latest:** [v0.17.0](https://github.com/befraeloircorona/orbit/releases/tag/v0.17.0) · [Changelog](CHANGELOG.md) · [Wiki](https://github.com/befraeloircorona/orbit/wiki)
+**Latest:** [v0.21.0](https://github.com/tensiply/orbit/releases/tag/v0.21.0) · [Changelog](CHANGELOG.md) · [Wiki](https://github.com/tensiply/orbit/wiki)
 
 ---
 
