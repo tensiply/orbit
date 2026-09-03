@@ -210,8 +210,16 @@ fn cmd_enable(name: &str, custom_cmd: &[String], scope_override: Option<ScopeLev
         println!();
         println!("  {name}  —  {}", entry.description);
         println!();
-        let env = collect_vars(&entry)?;
-        build_server_entry(&entry.command, &env)
+        if let Some(url) = &entry.url {
+            // HTTP/SSE MCP — no variables needed
+            println!("  type:     http");
+            println!("  url:      {url}");
+            println!();
+            build_url_entry(url)
+        } else {
+            let env = collect_vars(&entry)?;
+            build_server_entry(&entry.command, &env)
+        }
     };
 
     write_mcp_entry(&path, name, server)?;
@@ -261,7 +269,12 @@ fn cmd_info(name: &str, scope_override: Option<ScopeLevel>) -> Result<()> {
     match &entry {
         Some(e) => {
             println!("  description   {}", e.description);
-            println!("  command       {}", e.command.join(" "));
+            if let Some(url) = &e.url {
+                println!("  type          http");
+                println!("  url           {url}");
+            } else {
+                println!("  command       {}", e.command.join(" "));
+            }
         }
         None => {
             println!("  \x1b[2m(custom MCP — not in catalog)\x1b[0m");
@@ -643,6 +656,10 @@ fn prompt_optional(name: &str) -> Result<Option<String>> {
 }
 
 // ── mcp.json read / write ─────────────────────────────────────────────────────
+
+fn build_url_entry(url: &str) -> Value {
+    serde_json::json!({ "type": "http", "url": url })
+}
 
 fn build_server_entry(
     command: &[String],

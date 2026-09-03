@@ -137,4 +137,21 @@ fn main() {
         &out_dir.join("builtin_image_templates.rs"),
         "html",
     );
+
+    println!("cargo:rerun-if-changed=../../svg-rules");
+    println!("cargo:rerun-if-changed=../../templates/svgs");
+
+    let svg_rules_dir = Path::new(&manifest_dir).join("../../svg-rules");
+    embed_dir(
+        &svg_rules_dir,
+        &out_dir.join("builtin_svg_rules.rs"),
+        "yaml",
+    );
+
+    let svg_tpl_dir = Path::new(&manifest_dir).join("../../templates/svgs");
+    embed_dir(
+        &svg_tpl_dir,
+        &out_dir.join("builtin_svg_templates.rs"),
+        "svg",
+    );
 }

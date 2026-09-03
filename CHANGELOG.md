@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-03
+
+### Features
+
+- **SVG generation pipeline** — `orbit svg` with `create` / `update` / `list` / `open` / `template` subcommands. Generates SVG from minijinja templates or raw content, with a scope-aware template cascade (repo → project → tenant → workspace → user → builtin) and ID-based tracking. Builtin `svg-rules` and templates are embedded at build time.
+- **`orbit scope create` / `orbit scope init`** — Scaffold tenant, project, and repository governance directories (optional git clone for repos), and bootstrap `orbit.json` + `source-of-truth/` for existing scopes.
+- **HTTP/SSE MCP servers in catalog** — Catalog MCP entries can declare a `url`; `orbit mcp enable/info` handle http-type servers without stdio command/vars and write a `{ type: "http", url }` entry. Adds `orbit-desktop-debug` as the first http MCP.
+- **Always-on engine hooks** — Hooks can be marked always-on to load into every session. New `orbit-session-status` builtin hook. `orbit setup` now includes an engine-hooks step.
+
+### Changed
+
+- Desktop app extracted into the standalone `orbit-desktop` repository. Removed the `desktop-notify` and `warp` builtin hooks.
+
+### Refactor
+
+- Unify all generated file output under `~/.orbit/files/`.
+
 ## [0.20.0] - 2026-08-14
 
 ### Features

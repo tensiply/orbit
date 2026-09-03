@@ -1,0 +1,50 @@
+<!-- ---
+name: logo-rectangle
+description: Horizontal logo with icon mark, name, and optional tagline
+variables: []
+--- -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" width="480" height="120">
+  <defs>
+    <style>
+      text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+      }
+    </style>
+    <clipPath id="icon-clip">
+      <rect x="16" y="16" width="88" height="88" rx="18"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="480" height="120" fill="{{ bg_color | default('transparent') }}"/>
+
+  <!-- Icon mark -->
+  <rect x="16" y="16" width="88" height="88" rx="18" fill="{{ primary_color | default('#4F46E5') }}"/>
+
+  <!-- Icon letter (first char of title by default) -->
+  <text
+    x="60" y="74"
+    text-anchor="middle"
+    font-size="46"
+    font-weight="700"
+    fill="#ffffff"
+    letter-spacing="-1">{{ icon_letter | default(title[:1] | upper) }}</text>
+
+  <!-- Company name -->
+  <text
+    x="124" y="58"
+    font-size="36"
+    font-weight="700"
+    fill="{{ text_color | default('#111827') }}"
+    letter-spacing="-0.5">{{ title }}</text>
+
+  {% if tagline or description %}
+  <!-- Tagline -->
+  <text
+    x="126" y="84"
+    font-size="15"
+    font-weight="400"
+    fill="{{ text_color | default('#6B7280') }}"
+    opacity="0.75">{{ tagline | default(description) }}</text>
+  {% endif %}
+</svg>

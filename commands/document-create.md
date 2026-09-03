@@ -46,7 +46,7 @@ Run `orbit document template list` to see available templates.
 
 ## Output location
 
-NEVER specify `--output`. Let orbit choose the path — it saves the file under `~/.orbit/documents/{workspace}/{tenant}/...` and registers it in the index so `orbit document list` and `orbit document update` work.
+NEVER specify `--output`. Let orbit choose the path — it saves the file under `~/.orbit/files/documents/{workspace}/{tenant}/...` and registers it in the index so `orbit document list` and `orbit document update` work.
 
 ## When to use
 

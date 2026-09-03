@@ -1,6 +1,7 @@
 name = "session-logging"
 description = "Log session stop events to ~/.claude/logs/sessions.log"
 category = "governance"
+always_on = true
 
 [[events]]
 event = "Stop"

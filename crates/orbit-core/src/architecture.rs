@@ -313,9 +313,8 @@ pub fn load_catalog(tenant_dir: &Path) -> CatalogLoadResult {
         for path in paths {
             match std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
-                .and_then(|s| {
-                    serde_yml::from_str::<CatalogEntity>(&s).map_err(|e| e.to_string())
-                }) {
+                .and_then(|s| serde_yml::from_str::<CatalogEntity>(&s).map_err(|e| e.to_string()))
+            {
                 Ok(mut entity) => {
                     // Infer kind from folder when not declared in the file
                     if entity.kind == EntityKind::Unknown && entity.id.is_empty() {
@@ -376,7 +375,10 @@ pub fn save_entity(tenant_dir: &Path, incoming: &CatalogEntity) -> anyhow::Resul
         let s = std::fs::read_to_string(&path)?;
         serde_yml::from_str(&s).unwrap_or_default()
     } else {
-        CatalogEntity { schema_version: "1".to_string(), ..Default::default() }
+        CatalogEntity {
+            schema_version: "1".to_string(),
+            ..Default::default()
+        }
     };
 
     let merged = CatalogEntity {

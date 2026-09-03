@@ -9,7 +9,7 @@ pub fn build_settings(state: &EngineHookState, catalog: &[EngineHookCatalog]) ->
     let mut by_key: BTreeMap<(String, Option<String>), Vec<Value>> = BTreeMap::new();
 
     for entry in catalog {
-        if !state.is_enabled(&entry.name) {
+        if !entry.always_on && !state.is_enabled(&entry.name) {
             continue;
         }
         for ev in &entry.events {
@@ -55,6 +55,7 @@ mod tests {
             name: "session-logging".into(),
             description: "test".into(),
             category: "governance".into(),
+            always_on: false,
             events: vec![EngineHookEventDef {
                 event: "Stop".into(),
                 command: "/tmp/on-stop.sh".into(),
@@ -91,11 +92,37 @@ mod tests {
     }
 
     #[test]
+    fn always_on_materializes_without_enable() {
+        let catalog = vec![EngineHookCatalog {
+            name: "compliance-guard".into(),
+            description: "test".into(),
+            category: "security".into(),
+            always_on: true,
+            events: vec![EngineHookEventDef {
+                event: "Stop".into(),
+                command: "/tmp/on-stop.sh".into(),
+                matcher: None,
+                is_async: false,
+            }],
+            requires_binary: None,
+            scripts: vec![],
+        }];
+        // Nothing enabled, yet the always-on hook must still be present.
+        let state = EngineHookState::default();
+        let val = build_settings(&state, &catalog).unwrap();
+        assert_eq!(
+            val["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "/tmp/on-stop.sh"
+        );
+    }
+
+    #[test]
     fn matcher_included_in_group_when_set() {
         let catalog = vec![EngineHookCatalog {
             name: "bash-guard".into(),
             description: "test".into(),
             category: "security".into(),
+            always_on: false,
             events: vec![EngineHookEventDef {
                 event: "PreToolUse".into(),
                 command: "/tmp/guard.sh".into(),

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use orbit_core::{
     data_paths::scope_catalog_path,
@@ -7,6 +7,7 @@ use orbit_core::{
     user_config::UserConfig,
     workspace_registry::{WorkspaceEntry, WorkspaceRegistry},
 };
+use std::path::PathBuf;
 
 #[derive(Debug, Args)]
 pub struct ScopeArgs {
@@ -33,6 +34,96 @@ pub enum ScopeCommand {
         #[arg(long, short)]
         workspace: Option<String>,
     },
+    /// Create a new scope directory (tenant, project, or repo)
+    Create {
+        #[command(subcommand)]
+        level: ScopeCreateLevel,
+    },
+    /// Initialize governance files for an existing scope (orbit.json, source-of-truth/)
+    Init {
+        #[command(subcommand)]
+        level: ScopeInitLevel,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ScopeCreateLevel {
+    /// Create a new tenant directory in the governance structure
+    Tenant {
+        /// Tenant name (e.g. MYTEAM)
+        name: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+    },
+    /// Create a new project directory under a tenant
+    Project {
+        /// Project name (e.g. BACKEND)
+        name: String,
+        /// Parent tenant name
+        #[arg(long, short)]
+        tenant: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+    },
+    /// Create a new repository directory under a project, optionally cloning a git repo
+    Repo {
+        /// Repository name
+        name: String,
+        /// Parent project name
+        #[arg(long, short)]
+        project: String,
+        /// Parent tenant name
+        #[arg(long, short)]
+        tenant: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+        /// Git URL to clone into the code directory (e.g. git@github.com:org/repo.git)
+        #[arg(long)]
+        url: Option<String>,
+        /// Override the default code clone destination path
+        #[arg(long)]
+        code_path: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ScopeInitLevel {
+    /// Initialize governance files for a tenant (orbit.json + source-of-truth/README.md)
+    Tenant {
+        /// Tenant name to initialize
+        name: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+    },
+    /// Initialize governance files for a project (orbit.json + source-of-truth/README.md)
+    Project {
+        /// Project name to initialize
+        name: String,
+        /// Parent tenant name
+        #[arg(long, short)]
+        tenant: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+    },
+    /// Initialize governance files for a repo (orbit.json + source-of-truth/README.md + conventions.md)
+    Repo {
+        /// Repository name to initialize
+        name: String,
+        /// Parent project name
+        #[arg(long, short)]
+        project: String,
+        /// Parent tenant name
+        #[arg(long, short)]
+        tenant: String,
+        /// Target workspace (defaults to current/default workspace)
+        #[arg(long, short)]
+        workspace: Option<String>,
+    },
 }
 
 pub fn run(args: ScopeArgs) -> Result<()> {
@@ -40,6 +131,8 @@ pub fn run(args: ScopeArgs) -> Result<()> {
         ScopeCommand::Scan => scan(),
         ScopeCommand::List { workspace, json } => list(workspace, json),
         ScopeCommand::Check { workspace } => check(workspace),
+        ScopeCommand::Create { level } => create(level),
+        ScopeCommand::Init { level } => init(level),
     }
 }
 
@@ -308,4 +401,445 @@ fn truncate(s: &str, max: usize) -> String {
             .unwrap_or(s.len());
         format!("{}...", &s[..end])
     }
+}
+
+// ── create ────────────────────────────────────────────────────────────────────
+
+fn create(level: ScopeCreateLevel) -> Result<()> {
+    match level {
+        ScopeCreateLevel::Tenant { name, workspace } => create_tenant(&name, workspace.as_deref()),
+        ScopeCreateLevel::Project {
+            name,
+            tenant,
+            workspace,
+        } => create_project(&name, &tenant, workspace.as_deref()),
+        ScopeCreateLevel::Repo {
+            name,
+            project,
+            tenant,
+            workspace,
+            url,
+            code_path,
+        } => create_repo(
+            &name,
+            &project,
+            &tenant,
+            workspace.as_deref(),
+            url,
+            code_path,
+        ),
+    }
+}
+
+fn create_tenant(name: &str, workspace: Option<&str>) -> Result<()> {
+    let (ai_root, _ws_root) = resolve_ai_root(workspace)?;
+    let tenant_dir = ai_root.join("tenants").join(name);
+
+    if tenant_dir.exists() {
+        bail!(
+            "tenant '{}' already exists at {}",
+            name,
+            tenant_dir.display()
+        );
+    }
+
+    std::fs::create_dir_all(&tenant_dir)?;
+
+    println!();
+    println!("  \x1b[32m✓\x1b[0m  Tenant created: {name}");
+    println!("  Path: {}", tenant_dir.display());
+    println!();
+    println!(
+        "  Next: \x1b[2morbit scope init tenant {name}{ws}\x1b[0m",
+        ws = workspace
+            .map(|w| format!(" --workspace {w}"))
+            .unwrap_or_default()
+    );
+    println!();
+    Ok(())
+}
+
+fn create_project(name: &str, tenant: &str, workspace: Option<&str>) -> Result<()> {
+    let (ai_root, _ws_root) = resolve_ai_root(workspace)?;
+    let project_dir = ai_root
+        .join("tenants")
+        .join(tenant)
+        .join("projects")
+        .join(name);
+
+    if project_dir.exists() {
+        bail!(
+            "project '{}' already exists at {}",
+            name,
+            project_dir.display()
+        );
+    }
+
+    // Ensure the tenant exists
+    let tenant_dir = ai_root.join("tenants").join(tenant);
+    if !tenant_dir.is_dir() {
+        bail!(
+            "tenant '{}' not found. Create it first with:\n  orbit scope create tenant {tenant}",
+            tenant
+        );
+    }
+
+    std::fs::create_dir_all(&project_dir)?;
+
+    println!();
+    println!("  \x1b[32m✓\x1b[0m  Project created: {name}  (tenant: {tenant})");
+    println!("  Path: {}", project_dir.display());
+    println!();
+    println!(
+        "  Next: \x1b[2morbit scope init project {name} --tenant {tenant}{ws}\x1b[0m",
+        ws = workspace
+            .map(|w| format!(" --workspace {w}"))
+            .unwrap_or_default()
+    );
+    println!();
+    Ok(())
+}
+
+fn create_repo(
+    name: &str,
+    project: &str,
+    tenant: &str,
+    workspace: Option<&str>,
+    url: Option<String>,
+    code_path_override: Option<PathBuf>,
+) -> Result<()> {
+    let (ai_root, ws_root) = resolve_ai_root(workspace)?;
+
+    // Validate parent scope exists
+    let project_dir = ai_root
+        .join("tenants")
+        .join(tenant)
+        .join("projects")
+        .join(project);
+    if !project_dir.is_dir() {
+        bail!(
+            "project '{}' not found under tenant '{}'. Create it first with:\n  orbit scope create project {project} --tenant {tenant}",
+            project,
+            tenant
+        );
+    }
+
+    let repo_gov_dir = project_dir.join("repositories").join(name);
+    if repo_gov_dir.exists() {
+        bail!(
+            "repo '{}' already exists at {}",
+            name,
+            repo_gov_dir.display()
+        );
+    }
+
+    std::fs::create_dir_all(&repo_gov_dir)?;
+
+    println!();
+    println!("  \x1b[32m✓\x1b[0m  Repo created: {name}  (tenant: {tenant} / project: {project})");
+    println!("  Governance: {}", repo_gov_dir.display());
+
+    if let Some(git_url) = &url {
+        let code_dir =
+            code_path_override.unwrap_or_else(|| ws_root.join(tenant).join(project).join(name));
+
+        println!("  Cloning {} → {}", git_url, code_dir.display());
+        println!();
+
+        let status = std::process::Command::new("git")
+            .args(["clone", git_url, &code_dir.to_string_lossy()])
+            .status()?;
+
+        if !status.success() {
+            bail!("git clone failed — check the URL and your network/SSH access");
+        }
+
+        println!("  \x1b[32m✓\x1b[0m  Code cloned to {}", code_dir.display());
+    }
+
+    let ws_flag = workspace
+        .map(|w| format!(" --workspace {w}"))
+        .unwrap_or_default();
+    println!();
+    println!(
+        "  Next: \x1b[2morbit scope init repo {name} --project {project} --tenant {tenant}{ws_flag}\x1b[0m"
+    );
+    println!();
+    Ok(())
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+
+fn init(level: ScopeInitLevel) -> Result<()> {
+    match level {
+        ScopeInitLevel::Tenant { name, workspace } => init_tenant(&name, workspace.as_deref()),
+        ScopeInitLevel::Project {
+            name,
+            tenant,
+            workspace,
+        } => init_project(&name, &tenant, workspace.as_deref()),
+        ScopeInitLevel::Repo {
+            name,
+            project,
+            tenant,
+            workspace,
+        } => init_repo(&name, &project, &tenant, workspace.as_deref()),
+    }
+}
+
+fn init_tenant(name: &str, workspace: Option<&str>) -> Result<()> {
+    let (ai_root, _ws_root) = resolve_ai_root(workspace)?;
+    let tenant_dir = ai_root.join("tenants").join(name);
+
+    if !tenant_dir.is_dir() {
+        bail!(
+            "tenant directory not found: {}\nCreate it first with: orbit scope create tenant {name}",
+            tenant_dir.display()
+        );
+    }
+
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+
+    let orbit_json = tenant_dir.join("orbit.json");
+    if !orbit_json.exists() {
+        std::fs::write(
+            &orbit_json,
+            "{\n  \"instructions\": [\n    \"./source-of-truth/README.md\"\n  ]\n}\n",
+        )?;
+        created.push("orbit.json");
+    } else {
+        skipped.push("orbit.json");
+    }
+
+    let sot_dir = tenant_dir.join("source-of-truth");
+    std::fs::create_dir_all(&sot_dir)?;
+
+    let readme = sot_dir.join("README.md");
+    if !readme.exists() {
+        std::fs::write(
+            &readme,
+            format!(
+                "# {name}\n\n\
+                 ## Misión\n\n\
+                 <!-- Una línea: qué problema resuelve este tenant -->\n\n\
+                 ## Principios\n\n\
+                 <!-- Decisiones de diseño que aplican a todos los proyectos del tenant -->\n\n\
+                 ## Proyectos\n\n\
+                 <!-- Lista de proyectos bajo este tenant -->\n\n\
+                 ## Owner\n\n\
+                 <!-- email o alias -->\n"
+            ),
+        )?;
+        created.push("source-of-truth/README.md");
+    } else {
+        skipped.push("source-of-truth/README.md");
+    }
+
+    print_init_result(name, &created, &skipped);
+    Ok(())
+}
+
+fn init_project(name: &str, tenant: &str, workspace: Option<&str>) -> Result<()> {
+    let (ai_root, _ws_root) = resolve_ai_root(workspace)?;
+    let project_dir = ai_root
+        .join("tenants")
+        .join(tenant)
+        .join("projects")
+        .join(name);
+
+    if !project_dir.is_dir() {
+        bail!(
+            "project directory not found: {}\nCreate it first with: orbit scope create project {name} --tenant {tenant}",
+            project_dir.display()
+        );
+    }
+
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+
+    let orbit_json = project_dir.join("orbit.json");
+    if !orbit_json.exists() {
+        std::fs::write(
+            &orbit_json,
+            "{\n  \"instructions\": [\n    \"./source-of-truth/README.md\"\n  ]\n}\n",
+        )?;
+        created.push("orbit.json");
+    } else {
+        skipped.push("orbit.json");
+    }
+
+    let sot_dir = project_dir.join("source-of-truth");
+    std::fs::create_dir_all(&sot_dir)?;
+
+    let readme = sot_dir.join("README.md");
+    if !readme.exists() {
+        std::fs::write(
+            &readme,
+            format!(
+                "# {name}\n\n\
+                 ## Visión\n\n\
+                 <!-- Qué resuelve este proyecto y para quién -->\n\n\
+                 ## Repositorios\n\n\
+                 | Repositorio | Estado | Descripción |\n\
+                 |---|---|---|\n\
+                 | `` | activo | <!-- descripción --> |\n\n\
+                 ## Arquitectura\n\n\
+                 <!-- Diagrama o descripción de componentes si aplica -->\n\n\
+                 ## Decisiones de diseño\n\n\
+                 <!-- Decisiones que aplican a todos los repos del proyecto -->\n"
+            ),
+        )?;
+        created.push("source-of-truth/README.md");
+    } else {
+        skipped.push("source-of-truth/README.md");
+    }
+
+    print_init_result(name, &created, &skipped);
+    Ok(())
+}
+
+fn init_repo(name: &str, project: &str, tenant: &str, workspace: Option<&str>) -> Result<()> {
+    let (ai_root, _ws_root) = resolve_ai_root(workspace)?;
+    let repo_dir = ai_root
+        .join("tenants")
+        .join(tenant)
+        .join("projects")
+        .join(project)
+        .join("repositories")
+        .join(name);
+
+    if !repo_dir.is_dir() {
+        bail!(
+            "repo directory not found: {}\nCreate it first with: orbit scope create repo {name} --project {project} --tenant {tenant}",
+            repo_dir.display()
+        );
+    }
+
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+
+    let orbit_json = repo_dir.join("orbit.json");
+    if !orbit_json.exists() {
+        std::fs::write(
+            &orbit_json,
+            "{\n  \"instructions\": [\n    \"./source-of-truth/README.md\",\n    \"./source-of-truth/conventions.md\"\n  ]\n}\n",
+        )?;
+        created.push("orbit.json");
+    } else {
+        skipped.push("orbit.json");
+    }
+
+    let sot_dir = repo_dir.join("source-of-truth");
+    std::fs::create_dir_all(&sot_dir)?;
+
+    let readme = sot_dir.join("README.md");
+    if !readme.exists() {
+        std::fs::write(
+            &readme,
+            format!(
+                "# {name}\n\n\
+                 ## Propósito\n\n\
+                 <!-- Qué hace este repositorio, qué problema resuelve -->\n\n\
+                 ## Estado\n\n\
+                 <!-- activo / en desarrollo / deprecado -->\n\n\
+                 ## Tech stack\n\n\
+                 <!-- Lenguaje, framework, runtime principal -->\n\n\
+                 ## Estructura\n\n\
+                 <!-- Directorios o módulos clave -->\n\n\
+                 ## Comandos\n\n\
+                 | Comando | Propósito |\n\
+                 |---|---|\n\
+                 | `` | build / run / test |\n\n\
+                 ## Dependencias externas\n\n\
+                 <!-- APIs, bases de datos, servicios que consume -->\n"
+            ),
+        )?;
+        created.push("source-of-truth/README.md");
+    } else {
+        skipped.push("source-of-truth/README.md");
+    }
+
+    let conventions = sot_dir.join("conventions.md");
+    if !conventions.exists() {
+        std::fs::write(
+            &conventions,
+            format!(
+                "# {name} — Conventions\n\n\
+                 ## Stack y versiones\n\n\
+                 <!-- lenguaje, runtime, framework principales -->\n\n\
+                 ## Patrones de código\n\n\
+                 <!-- naming, estructura de módulos, patrones preferidos -->\n\n\
+                 ## Error handling\n\n\
+                 <!-- cómo se manejan errores en este codebase -->\n\n\
+                 ## Testing\n\n\
+                 <!-- approach: unit / integration / e2e, herramientas, patrones -->\n\n\
+                 ## Commits\n\n\
+                 <!-- scope convencional para este repo (ver git-commit.md) -->\n\n\
+                 ## CI gates\n\n\
+                 <!-- qué debe pasar antes de merge -->\n"
+            ),
+        )?;
+        created.push("source-of-truth/conventions.md");
+    } else {
+        skipped.push("source-of-truth/conventions.md");
+    }
+
+    print_init_result(name, &created, &skipped);
+    Ok(())
+}
+
+fn print_init_result(name: &str, created: &[&str], skipped: &[&str]) {
+    println!();
+    if created.is_empty() {
+        println!("  \x1b[33m⚠\x1b[0m  {name}: all files already exist");
+    } else {
+        println!("  \x1b[32m✓\x1b[0m  {name}: governance initialized");
+        for f in created {
+            println!("      \x1b[32m+\x1b[0m {f}");
+        }
+        for f in skipped {
+            println!("      \x1b[2m~ {f} (already exists)\x1b[0m");
+        }
+    }
+    println!();
+    println!("  Run `orbit scope scan` to update the catalog.");
+    println!();
+}
+
+// ── workspace resolution ──────────────────────────────────────────────────────
+
+/// Resolves (ai_root, workspace_root) for the given workspace name.
+/// Uses the default workspace when name is None.
+fn resolve_ai_root(workspace: Option<&str>) -> Result<(PathBuf, PathBuf)> {
+    let workspaces = all_workspaces();
+
+    let entry = if let Some(ws) = workspace {
+        workspaces
+            .iter()
+            .find(|e| e.name.eq_ignore_ascii_case(ws) || e.slug.eq_ignore_ascii_case(ws))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "workspace '{}' not found. Run `orbit workspace list` to see registered workspaces.",
+                    ws
+                )
+            })?
+    } else {
+        workspaces
+            .iter()
+            .find(|e| e.is_default)
+            .or_else(|| workspaces.first())
+            .ok_or_else(|| anyhow::anyhow!("no workspace configured. Run `orbit setup`."))?
+    };
+
+    let ai_root = entry.ai_root.clone();
+    // The workspace root is the parent of the AI governance dir.
+    // e.g. ai_root = ~/Tensiply/AI → workspace_root = ~/Tensiply
+    // e.g. ai_root = ~/AI → workspace_root = ~/ (home)
+    let ws_root = ai_root
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| ai_root.clone());
+
+    Ok((ai_root, ws_root))
 }

@@ -1,0 +1,44 @@
+name = "orbit-session-status"
+description = "Report Claude session lifecycle (working/done) to the orbit-desktop app so the session badge reflects real engine activity instead of PTY heuristics"
+category = "productivity"
+always_on = true
+
+[[events]]
+event = "UserPromptSubmit"
+command = "$HOME/.claude/hooks/orbit-session-status.sh working"
+is_async = true
+
+[[events]]
+event = "Stop"
+command = "$HOME/.claude/hooks/orbit-session-status.sh done"
+is_async = true
+
+[[scripts]]
+path = "$HOME/.claude/hooks/orbit-session-status.sh"
+executable = true
+content = """
+#!/bin/bash
+# Reports Claude session status to the orbit-desktop app so the session badge and
+# notifications reflect the real engine lifecycle instead of PTY output heuristics.
+# Arg $1: "working" (fired on UserPromptSubmit) or "done" (fired on Stop).
+# Correlation is by tmux session name, which the desktop maps back to its sessionId.
+# Best-effort: silently no-ops when the desktop app isn't running.
+STATUS="${1:-working}"
+DISCOVERY="$HOME/.orbit/data/orbit-desktop-debug.json"
+[ -f "$DISCOVERY" ] || exit 0
+TMUX_NAME=$(tmux display-message -p '#S' 2>/dev/null)
+[ -n "$TMUX_NAME" ] || exit 0
+python3 - "$STATUS" "$TMUX_NAME" "$DISCOVERY" >/dev/null 2>&1 <<'PY' &
+import json, sys, urllib.request
+status, tmux, discovery = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    port = json.load(open(discovery))["port"]
+    body = json.dumps({"tmux": tmux, "status": status}).encode()
+    req = urllib.request.Request(
+        "http://127.0.0.1:%s/engine-status" % port,
+        data=body, headers={"Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=1)
+except Exception:
+    pass
+PY
+"""

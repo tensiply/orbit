@@ -1,0 +1,49 @@
+<!-- ---
+name: logo-square
+description: Stacked square logo with icon mark on top, name and optional tagline below
+variables: []
+--- -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <style>
+      text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+      }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="240" height="240" fill="{{ bg_color | default('transparent') }}"/>
+
+  <!-- Icon mark -->
+  <rect x="70" y="20" width="100" height="100" rx="22" fill="{{ primary_color | default('#4F46E5') }}"/>
+
+  <!-- Icon letter -->
+  <text
+    x="120" y="92"
+    text-anchor="middle"
+    font-size="56"
+    font-weight="700"
+    fill="#ffffff"
+    letter-spacing="-1">{{ icon_letter | default(title[:1] | upper) }}</text>
+
+  <!-- Company name -->
+  <text
+    x="120" y="158"
+    text-anchor="middle"
+    font-size="26"
+    font-weight="700"
+    fill="{{ text_color | default('#111827') }}"
+    letter-spacing="-0.5">{{ title }}</text>
+
+  {% if tagline or description %}
+  <!-- Tagline -->
+  <text
+    x="120" y="184"
+    text-anchor="middle"
+    font-size="13"
+    font-weight="400"
+    fill="{{ text_color | default('#6B7280') }}"
+    opacity="0.72">{{ tagline | default(description) }}</text>
+  {% endif %}
+</svg>

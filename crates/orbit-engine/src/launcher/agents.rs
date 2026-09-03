@@ -789,18 +789,17 @@ fn collect_scope_commands(
         if !dir.is_dir() {
             continue;
         }
-        let mut entries: Vec<_> = fs::read_dir(dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect();
+        let mut entries: Vec<_> = fs::read_dir(dir).into_iter().flatten().flatten().collect();
         entries.sort_by_key(|e| e.path());
         for entry in entries {
             let path = entry.path();
             if path.extension().and_then(|ex| ex.to_str()) != Some("md") {
                 continue;
             }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str().map(str::to_string)) else {
+            let Some(stem) = path
+                .file_stem()
+                .and_then(|s| s.to_str().map(str::to_string))
+            else {
                 continue;
             };
             if seen.contains(&stem) {
@@ -810,7 +809,8 @@ fn collect_scope_commands(
                 continue;
             }
             // Use empty fallback: scope overlays provide the actual content.
-            let text = apply_scope_overlays_or_fallback(scope, "commands", &stem, "", shared, local);
+            let text =
+                apply_scope_overlays_or_fallback(scope, "commands", &stem, "", shared, local);
             if !text.trim().is_empty() {
                 seen.insert(stem.clone());
                 result.push((stem, text));

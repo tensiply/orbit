@@ -392,7 +392,10 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data2").to_str().unwrap());
+            std::env::set_var(
+                "ORBIT_DATA_HOME",
+                tmp.path().join("data2").to_str().unwrap(),
+            );
         }
 
         append_plan_run(&make_record("implement feature X with tests")).unwrap();
@@ -408,7 +411,10 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data3").to_str().unwrap());
+            std::env::set_var(
+                "ORBIT_DATA_HOME",
+                tmp.path().join("data3").to_str().unwrap(),
+            );
         }
 
         append_plan_run(&make_record("implement authentication login flow")).unwrap();
@@ -431,7 +437,10 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data4").to_str().unwrap());
+            std::env::set_var(
+                "ORBIT_DATA_HOME",
+                tmp.path().join("data4").to_str().unwrap(),
+            );
         }
         let results = find_similar("anything", 5);
         assert!(results.is_empty());
@@ -442,7 +451,10 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data6").to_str().unwrap());
+            std::env::set_var(
+                "ORBIT_DATA_HOME",
+                tmp.path().join("data6").to_str().unwrap(),
+            );
         }
 
         let mut r = make_record("build and test the service");
@@ -488,7 +500,10 @@ mod tests {
         let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         unsafe {
-            std::env::set_var("ORBIT_DATA_HOME", tmp.path().join("data5").to_str().unwrap());
+            std::env::set_var(
+                "ORBIT_DATA_HOME",
+                tmp.path().join("data5").to_str().unwrap(),
+            );
         }
 
         let mut r = make_record("test intent");

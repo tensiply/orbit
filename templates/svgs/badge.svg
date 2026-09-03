@@ -1,0 +1,31 @@
+<!-- ---
+name: badge
+description: Horizontal badge with label and value (e.g. status, version, coverage)
+variables:
+  - label
+  - value
+  - label_color
+  - value_color
+--- -->
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="28">
+  <defs>
+    <linearGradient id="s" x2="0" y2="100%">
+      <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+      <stop offset="1" stop-opacity=".1"/>
+    </linearGradient>
+    <clipPath id="r">
+      <rect width="160" height="28" rx="4" fill="#fff"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="80" height="28" fill="{{ label_color | default('#555') }}"/>
+    <rect x="80" width="80" height="28" fill="{{ value_color | default('#4c9be8') }}"/>
+    <rect width="160" height="28" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12">
+    <text x="40" y="18" fill="#010101" fill-opacity=".3">{{ label | default(title) }}</text>
+    <text x="40" y="17">{{ label | default(title) }}</text>
+    <text x="120" y="18" fill="#010101" fill-opacity=".3">{{ value | default(description) }}</text>
+    <text x="120" y="17">{{ value | default(description) }}</text>
+  </g>
+</svg>

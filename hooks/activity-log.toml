@@ -1,6 +1,7 @@
 name = "activity-log"
 description = "Log session activity to the orbit activity index on session close"
 category = "governance"
+always_on = true
 
 [[events]]
 event = "Stop"
