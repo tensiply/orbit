@@ -45,7 +45,12 @@ struct McpCatalogFile {
 pub struct McpEntry {
     pub name: String,
     pub description: String,
+    /// For stdio MCPs. Empty when `url` is set.
+    #[serde(default)]
     pub command: Vec<String>,
+    /// For HTTP/SSE MCPs. When set, `command` is ignored.
+    #[serde(default)]
+    pub url: Option<String>,
     #[serde(default)]
     pub required_vars: Vec<CatalogVar>,
     #[serde(default)]
