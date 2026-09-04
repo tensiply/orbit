@@ -73,14 +73,13 @@ A CLI launcher for AI coding assistants with multi-tenant workspace management, 
 
 ## Install
 
-```bash
-# Linux (x86_64)
-curl -fsSL https://github.com/{repo}/releases/latest/download/orbit-linux-x86_64 \\
-  -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
+Assets are named `orbit-stable-<version>-<os>-<arch>`; resolve the latest from the API:
 
-# macOS (Apple Silicon)
-curl -fsSL https://github.com/{repo}/releases/latest/download/orbit-macos-aarch64 \\
-  -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
+```bash
+# Linux (x86_64) — swap the suffix for -linux-aarch64 / -macos-aarch64 / -macos-x86_64
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/{repo}/releases/latest \\
+  | grep -o '"browser_download_url": *"[^"]*orbit-stable-[^"]*-linux-x86_64"' | cut -d'"' -f4)" \\
+  -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 ```
 
 Then run once:

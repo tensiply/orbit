@@ -117,8 +117,8 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             return Ok(());
         }
 
-        // Download from the exact tag so canary pre-releases resolve correctly.
-        let Some(binary_url) = ws_cfg.binary_url_for_tag(&latest_tag) else {
+        // Download from the exact tag + channel so pre-releases resolve correctly.
+        let Some(binary_url) = ws_cfg.binary_url_for_tag(&latest_tag, &channel) else {
             println!();
             println!("  \x1b[33m!\x1b[0m  binary update skipped — no download URL configured");
             println!(
@@ -322,29 +322,30 @@ mod tests {
 
     #[test]
     fn parse_checksum_finds_artifact() {
-        let txt = "abc123  orbit-linux-x86_64\ndef456  orbit-linux-aarch64\n";
+        let txt =
+            "abc123  orbit-stable-0.22.0-linux-x86_64\ndef456  orbit-stable-0.22.0-linux-aarch64\n";
         assert_eq!(
-            parse_checksum(txt, "orbit-linux-x86_64"),
+            parse_checksum(txt, "orbit-stable-0.22.0-linux-x86_64"),
             Some("abc123".to_string())
         );
         assert_eq!(
-            parse_checksum(txt, "orbit-linux-aarch64"),
+            parse_checksum(txt, "orbit-stable-0.22.0-linux-aarch64"),
             Some("def456".to_string())
         );
     }
 
     #[test]
     fn parse_checksum_missing_artifact() {
-        let txt = "abc123  orbit-linux-x86_64\n";
-        assert!(parse_checksum(txt, "orbit-linux-aarch64").is_none());
+        let txt = "abc123  orbit-stable-0.22.0-linux-x86_64\n";
+        assert!(parse_checksum(txt, "orbit-canary-0.22.1-linux-aarch64").is_none());
     }
 
     #[test]
     fn parse_checksum_trims_trailing_whitespace() {
         // sha256sum adds no leading spaces; trailing whitespace or \r\n should be ignored
-        let txt = "abc123  orbit-linux-x86_64\r\n";
+        let txt = "abc123  orbit-canary-0.22.1-linux-x86_64\r\n";
         assert_eq!(
-            parse_checksum(txt, "orbit-linux-x86_64"),
+            parse_checksum(txt, "orbit-canary-0.22.1-linux-x86_64"),
             Some("abc123".to_string())
         );
     }

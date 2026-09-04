@@ -147,7 +147,7 @@ async fn update_binary_if_due(ws_cfg: &WorkspaceConfig, user_cfg: &UserConfig) {
         return;
     }
 
-    let result = download_and_install_silent(ws_cfg, &client, &tag, user_cfg).await;
+    let result = download_and_install_silent(ws_cfg, &client, &tag, &channel, user_cfg).await;
     let _ = std::fs::remove_file(&lock);
 
     match result {
@@ -179,12 +179,13 @@ async fn download_and_install_silent(
     ws_cfg: &WorkspaceConfig,
     client: &reqwest::Client,
     version: &str,
+    channel: &str,
     user_cfg: &UserConfig,
 ) -> anyhow::Result<()> {
     use crate::commands::update::{download_with_progress, parse_checksum, sha256_hex};
 
-    // Download from the exact tag so canary pre-releases resolve correctly.
-    let Some(binary_url) = ws_cfg.binary_url_for_tag(version) else {
+    // Download from the exact tag + channel so pre-releases resolve correctly.
+    let Some(binary_url) = ws_cfg.binary_url_for_tag(version, channel) else {
         anyhow::bail!("no binary URL");
     };
     let artifact_name = binary_url.rsplit('/').next().unwrap_or("orbit").to_string();

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Homologated release artifact names** — Assets are now `orbit-{stable,canary}-{version}-{os}-{arch}` (was `orbit-<os>-<arch>`), produced by CI and resolved by the self-updater via `orbit_asset_name` / `binary_url_for_tag(tag, channel)`. Because the name embeds the version, the fixed `releases/latest/download/…` URL no longer applies; `binary_url_for_platform` was removed and the README/wiki quick-install resolves the asset via the GitHub API. The self-updater is unaffected (it resolves the tag first).
+
 ## [0.22.0] - 2026-09-04
 
 ### Features

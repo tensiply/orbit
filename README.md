@@ -16,23 +16,21 @@ orbit resolves the right context for your AI session — tenant, project, reposi
 
 ## Install
 
+Release assets are named `orbit-stable-<version>-<os>-<arch>`, so resolve the
+latest one from the GitHub API (pick the line for your platform):
+
 ```bash
 # Linux (x86_64)
-curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-linux-x86_64 \
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/tensiply/orbit/releases/latest \
+  | grep -o '"browser_download_url": *"[^"]*orbit-stable-[^"]*-linux-x86_64"' | cut -d'"' -f4)" \
   -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
 
-# Linux (aarch64)
-curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-linux-aarch64 \
-  -o ~/.local/bin/orbit && chmod +x ~/.local/bin/orbit
-
-# macOS (Apple Silicon)
-curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-macos-aarch64 \
-  -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
-
-# macOS (Intel)
-curl -fsSL https://github.com/tensiply/orbit/releases/latest/download/orbit-macos-x86_64 \
-  -o /usr/local/bin/orbit && chmod +x /usr/local/bin/orbit
+# Linux (aarch64) — replace the suffix above with: -linux-aarch64
+# macOS (Apple Silicon) — -macos-aarch64, install to /usr/local/bin/orbit
+# macOS (Intel) — -macos-x86_64, install to /usr/local/bin/orbit
 ```
+
+Or switch channels after install with `orbit mode stable|canary`.
 
 Requires [tmux](https://github.com/tmux/tmux) and at least one AI engine: [opencode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Claude Code](https://claude.ai/code).
 
