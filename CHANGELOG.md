@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-04
+
 ### Features
 
 - **Isolated dev binary** — `orbit-dev` runs against a separate `~/.orbit-dev` home (its own daemon, socket, and data), so the stable install and a development build coexist without sharing `orbitd`. Install the dev build as a `dev-orbit` symlink with `make dev-install`. Set `ORBIT_HOME` to override.
