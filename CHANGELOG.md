@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
+- **Three release channels** — `stable` / `canary` / `dev`, each a distinct branded binary (`orbit`, `orbit-canary`, `orbit-dev`) isolated to its own home (`~/.orbit`, `~/.orbit-canary`, `~/.orbit-dev`) with its own daemon, socket, keychain service, and files. Non-stable builds carry their identifier in the banner (`AI Ecosystem CLI · CANARY · v…`). Driven by a `Channel` axiom in `orbit-core` (resolved from `ORBIT_CHANNEL`, set by each binary). Install the canary build as an `orbit-canary` symlink with `make canary-install`.
+- **Canary auto pre-releases** — `canary.yml` publishes a GitHub pre-release on every merge to `main`. Versioning policy: **stable ships only as `vX.Y.0`**; every patch `vX.Y.Z` (Z ≥ 1) is a canary pre-release. `orbit mode canary` and per-channel auto-update track the newest pre-release.
 - **Isolated dev binary** — `orbit-dev` runs against a separate `~/.orbit-dev` home (its own daemon, socket, and data), so the stable install and a development build coexist without sharing `orbitd`. Install the dev build as a `dev-orbit` symlink with `make dev-install`. Set `ORBIT_HOME` to override.
+
+### Changed
+
+- **`orbit mode` beta → canary** — The middle channel is now `canary` (was `beta`); a legacy `beta` state migrates automatically. Update downloads resolve from the exact release tag so pre-releases work.
 
 ### Fixed
 

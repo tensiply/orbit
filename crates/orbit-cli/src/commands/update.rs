@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
+use orbit_core::{channel::Channel, user_config::UserConfig, workspace_config::WorkspaceConfig};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Write, os::unix::fs::PermissionsExt, process::Command};
 
@@ -35,10 +35,16 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     let do_governance = !args.binary_only;
     let mut do_binary = !args.governance_only;
 
-    let mode = crate::commands::mode::current_mode();
-    if do_binary && mode == "dev" {
+    // A non-stable binary tracks its own channel; the stable binary can opt into
+    // another channel at runtime via `orbit mode`.
+    let channel = if Channel::current() == Channel::Stable {
+        crate::commands::mode::current_mode()
+    } else {
+        Channel::current().as_str().to_string()
+    };
+    if do_binary && channel == "dev" {
         println!("  Binary update skipped (dev mode — using local build).");
-        println!("  Run `orbit mode stable` or `orbit mode beta` to switch.");
+        println!("  Run `orbit mode stable` or `orbit mode canary` to switch.");
         do_binary = false;
     }
 
@@ -82,15 +88,6 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             return Ok(());
         }
 
-        let Some(binary_url) = ws_cfg.binary_url_for_platform() else {
-            println!();
-            println!("  \x1b[33m!\x1b[0m  binary update skipped — no download URL configured");
-            println!(
-                "     set \x1b[2mupdate.binary_url\x1b[0m in <ai_root>/orbit.toml to enable auto-updates"
-            );
-            return Ok(());
-        };
-
         let client = reqwest::Client::builder()
             .user_agent(concat!("orbit-cli/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(10))
@@ -100,7 +97,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         // Check latest version
         print!("  Checking latest version... ");
         let _ = std::io::stdout().flush();
-        let latest_tag = match if mode == "beta" {
+        let latest_tag = match if channel == "canary" {
             update_check::fetch_latest_prerelease_tag(&client).await
         } else {
             update_check::fetch_latest_tag(&client).await
@@ -119,6 +116,16 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             println!();
             return Ok(());
         }
+
+        // Download from the exact tag so canary pre-releases resolve correctly.
+        let Some(binary_url) = ws_cfg.binary_url_for_tag(&latest_tag) else {
+            println!();
+            println!("  \x1b[33m!\x1b[0m  binary update skipped — no download URL configured");
+            println!(
+                "     set \x1b[2mupdate.binary_url\x1b[0m in <ai_root>/orbit.toml to enable auto-updates"
+            );
+            return Ok(());
+        };
 
         // Derive checksums URL from the same release
         let artifact_name = binary_url.rsplit('/').next().unwrap_or("orbit").to_string();
@@ -169,13 +176,15 @@ pub(crate) async fn update_binary(
     version: &str,
 ) -> Result<()> {
     let install_dir = UserConfig::load().install_dir_expanded();
+    // Update the binary matching the running channel: orbit / orbit-canary.
+    let binary_name = format!("orbit{}", Channel::current().home_suffix());
     update_binary_to(
         client,
         binary_url,
         checksums_url,
         artifact_name,
         version,
-        &install_dir.join("orbit"),
+        &install_dir.join(binary_name),
     )
     .await
 }

@@ -1,13 +1,13 @@
 [package]
-name = "orbit-dev"
-description = "AI ecosystem CLI — development build with experimental features and dev utilities"
+name = "orbit-canary"
+description = "AI ecosystem CLI — canary pre-release build"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "orbit-dev"
+name = "orbit-canary"
 path = "src/main.rs"
 
 [dependencies]

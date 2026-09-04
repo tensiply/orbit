@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
+use orbit_core::{channel::Channel, user_config::UserConfig, workspace_config::WorkspaceConfig};
 
 pub mod auto_update;
 pub mod banner;
@@ -29,7 +29,7 @@ pub enum Commands {
     Setup(commands::setup::SetupArgs),
     /// Get, set, or list config values
     Config(commands::config::ConfigArgs),
-    /// Manage the active orbit binary mode (stable / dev / beta)
+    /// Manage the active orbit binary mode (stable / dev / canary)
     Mode(commands::mode::ModeArgs),
     /// Clone the governance repository into the AI root
     Init(commands::init::InitArgs),
@@ -101,10 +101,35 @@ pub enum Commands {
     Architecture(commands::architecture::ArchitectureArgs),
 }
 
-impl Cli {
-    pub fn parse_dev() -> Self {
-        Self::parse()
+/// Shared entrypoint for every channel binary (`orbit`, `orbit-canary`,
+/// `orbit-dev`). Publishes the channel to the rest of the process via
+/// `ORBIT_CHANNEL` (so `orbit-core` resolves the right home, keychain, and
+/// branding), initializes logging at the channel's default verbosity, and runs
+/// the CLI. Each bin's `main()` is a one-liner delegating here.
+pub async fn run_channel(channel: Channel) -> Result<()> {
+    // Set before any orbit code reads ORBIT_CHANNEL and before worker threads
+    // run user code — no concurrent env access at this point. Respect an
+    // explicit override (tests / nested launches) if one is already set.
+    if std::env::var_os("ORBIT_CHANNEL").is_none() {
+        // Safety: single-threaded startup, no other thread touches the env yet.
+        unsafe { std::env::set_var("ORBIT_CHANNEL", channel.as_str()) };
     }
+
+    let default_filter = match channel {
+        Channel::Dev => "orbit=debug,orbit_engine=debug,orbit_daemon=debug",
+        Channel::Stable | Channel::Canary => "orbit=info",
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| default_filter.into()),
+        )
+        .init();
+
+    if std::env::args().any(|a| a == "-h" || a == "--help") {
+        banner::print();
+    }
+    run(Cli::parse()).await
 }
 
 fn needs_setup(cmd: &Option<Commands>) -> bool {

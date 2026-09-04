@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # Stable ships only as vX.Y.0. Patch tags (vX.Y.Z, Z>=1) are canary
+      # pre-releases handled by canary.yml and must not trigger a full release.
+      - "v*.*.0"
   workflow_dispatch:
     inputs:
       tag:
@@ -31,6 +33,11 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
+          # Enforce the policy: stable releases must be vX.Y.0.
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.0$ ]]; then
+            echo "::error::Stable releases must be vX.Y.0 — got ${TAG}. Patch versions belong to the canary channel."
+            exit 1
+          fi
           echo "tag=${TAG}"     >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 

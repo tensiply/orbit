@@ -44,6 +44,11 @@ jobs:
             echo "::error::Invalid version '$VERSION' — must be X.Y.Z (e.g. 0.3.0)"
             exit 1
           fi
+          # Policy: stable ships only as vX.Y.0. Patch versions belong to canary.
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.0$'; then
+            echo "::error::Stable version must be X.Y.0 (patch = 0) — got '$VERSION'. Bump the minor; patch releases are canary pre-releases."
+            exit 1
+          fi
           if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
             echo "::error::Tag v$VERSION already exists"
             exit 1
