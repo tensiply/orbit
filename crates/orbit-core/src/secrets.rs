@@ -1,6 +1,12 @@
 use anyhow::{Result, bail};
 
-const KEYRING_SERVICE: &str = "orbit";
+use crate::channel::Channel;
+
+/// Keychain service name for the active channel: `orbit`, `orbit-canary`,
+/// `orbit-dev`. Keeps each channel's stored secrets from colliding.
+fn keyring_service() -> String {
+    format!("orbit{}", Channel::current().home_suffix())
+}
 
 // ── public API ────────────────────────────────────────────────────────────────
 
@@ -94,21 +100,21 @@ fn interpolate_scoped(template: &str, slug: Option<&str>) -> String {
 
 /// Store a secret in the OS keychain under `KEY`.
 pub fn keychain_set(key: &str, secret: &str) -> Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, key)?;
+    let entry = keyring::Entry::new(&keyring_service(), key)?;
     entry.set_password(secret)?;
     Ok(())
 }
 
 /// Retrieve a secret from the OS keychain.
 pub fn keychain_get(key: &str) -> Result<String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, key)?;
+    let entry = keyring::Entry::new(&keyring_service(), key)?;
     let secret = entry.get_password()?;
     Ok(secret)
 }
 
 /// Delete a secret from the OS keychain.
 pub fn keychain_delete(key: &str) -> Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, key)?;
+    let entry = keyring::Entry::new(&keyring_service(), key)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => bail!("no secret found for key '{key}'"),

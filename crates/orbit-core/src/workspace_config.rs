@@ -81,6 +81,23 @@ impl WorkspaceConfig {
             ))
         }
     }
+
+    /// Resolve the binary download URL for a specific release tag.
+    ///
+    /// Unlike `binary_url_for_platform` (which uses the `latest` alias and thus
+    /// never resolves to a pre-release), this targets the exact tag — required
+    /// for canary pre-releases. A custom `binary_url` base is honored as-is.
+    pub fn binary_url_for_tag(&self, tag: &str) -> Option<String> {
+        let platform = current_platform();
+        if !self.update.binary_url.is_empty() {
+            let base = self.update.binary_url.trim_end_matches('/');
+            Some(format!("{base}/{platform}"))
+        } else {
+            Some(format!(
+                "https://github.com/tensiply/orbit/releases/download/{tag}/orbit-{platform}"
+            ))
+        }
+    }
 }
 
 /// Scan `home` for direct subdirectories that look like orbit workspaces.

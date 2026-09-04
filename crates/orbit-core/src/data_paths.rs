@@ -2,14 +2,17 @@ use std::path::PathBuf;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Root orbit directory: `~/.orbit/`
-/// Override with `ORBIT_HOME` for testing or CI.
+/// Root orbit directory: `~/.orbit/` (stable), `~/.orbit-canary/`, `~/.orbit-dev/`.
+/// The suffix comes from the active release channel so the three binaries stay
+/// fully isolated. Override with `ORBIT_HOME` for testing or CI (wins over the
+/// channel default).
 pub fn orbit_home() -> PathBuf {
     if let Ok(p) = std::env::var("ORBIT_HOME") {
         return PathBuf::from(p);
     }
+    let dir = format!(".orbit{}", crate::channel::Channel::current().home_suffix());
     directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit"))
+        .map(|b| b.home_dir().join(&dir))
         .unwrap_or_else(|| PathBuf::from("/tmp/orbit"))
 }
 
@@ -157,10 +160,9 @@ pub fn document_rules_dir() -> PathBuf {
 
 /// Root for user-visible generated documents: `~/.orbit/files/documents/`
 /// (NOT XDG data home — this is an intentionally accessible location).
+/// Channel-scoped via `orbit_home()` so non-stable builds stay isolated.
 pub fn documents_output_base() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit/files/documents"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/documents"))
+    orbit_home().join("files/documents")
 }
 
 /// Scope-based output directory: `~/.orbit/files/documents/{workspace}/{tenant}/{project}/{repo}/`
@@ -280,10 +282,9 @@ pub fn image_rules_dir() -> PathBuf {
 }
 
 /// Root for user-visible generated images: `~/.orbit/files/images/`
+/// Channel-scoped via `orbit_home()` so non-stable builds stay isolated.
 pub fn images_output_base() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit/files/images"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/images"))
+    orbit_home().join("files/images")
 }
 
 /// Scope-based output directory: `~/.orbit/files/images/{workspace}/{tenant}/{project}/{repo}/`
@@ -409,10 +410,9 @@ pub fn workspace_svg_rules_dir() -> Option<PathBuf> {
 }
 
 /// Root for user-visible generated SVGs: `~/.orbit/files/svgs/`
+/// Channel-scoped via `orbit_home()` so non-stable builds stay isolated.
 pub fn svgs_output_base() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|b| b.home_dir().join(".orbit/files/svgs"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/orbit/files/svgs"))
+    orbit_home().join("files/svgs")
 }
 
 /// Scope-based output directory: `~/.orbit/files/svgs/{workspace}/{tenant}/{project}/{repo}/`

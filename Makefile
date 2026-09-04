@@ -3,8 +3,9 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 TARGET_DIR  := target/release
 DEBUG_DIR   := target/debug
 DEV_LINK    := dev-orbit
+CANARY_LINK := orbit-canary
 
-.PHONY: build build-release install uninstall dev-install dev-uninstall package test clean help
+.PHONY: build build-release install uninstall dev-install dev-uninstall canary-install canary-uninstall package test clean help
 
 ## Build debug binary (fast, for development)
 build:
@@ -38,6 +39,19 @@ dev-install: build
 dev-uninstall:
 	rm -f $(INSTALL_DIR)/$(DEV_LINK)
 	@echo "Removed $(INSTALL_DIR)/$(DEV_LINK)"
+
+## Symlink orbit-canary -> local debug build (isolated home ~/.orbit-canary).
+## Tracks canary pre-releases; runs its own daemon beside stable and dev.
+canary-install: build
+	@mkdir -p $(INSTALL_DIR)
+	ln -sf $(CURDIR)/$(DEBUG_DIR)/orbit-canary $(INSTALL_DIR)/$(CANARY_LINK)
+	@echo "Linked $(INSTALL_DIR)/$(CANARY_LINK) -> $(CURDIR)/$(DEBUG_DIR)/orbit-canary"
+	@echo "Runs against ~/.orbit-canary with its own daemon. Start it with: $(CANARY_LINK) daemon start"
+
+## Remove the canary symlink
+canary-uninstall:
+	rm -f $(INSTALL_DIR)/$(CANARY_LINK)
+	@echo "Removed $(INSTALL_DIR)/$(CANARY_LINK)"
 
 ## Stage the release binary as a canonical release artifact for this host:
 ##   orbit-<os>-<arch>  (bare binary, os: linux|macos, arch: x86_64|aarch64)

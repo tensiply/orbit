@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use orbit_core::user_config::UserConfig;
+use orbit_core::{channel::Channel, user_config::UserConfig};
 use std::{fs, io::Write, path::PathBuf};
 
 use crate::{commands::update, update_check};
@@ -22,8 +22,8 @@ pub enum ModeCommand {
         /// Path to the local orbit binary (e.g. ./target/release/orbit)
         path: Option<PathBuf>,
     },
-    /// Switch to beta (download latest pre-release from GitHub)
-    Beta,
+    /// Switch to canary (download latest pre-release from GitHub)
+    Canary,
 }
 
 // ── persistence ───────────────────────────────────────────────────────────────
@@ -43,10 +43,11 @@ fn dev_path_file() -> PathBuf {
 pub fn current_mode() -> String {
     let s = fs::read_to_string(mode_file()).unwrap_or_default();
     let s = s.trim();
-    if s.is_empty() {
-        "stable".to_string()
-    } else {
-        s.to_string()
+    match s {
+        "" => "stable".to_string(),
+        // Legacy: "beta" was renamed to "canary".
+        "beta" => "canary".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -103,16 +104,23 @@ pub async fn run(args: ModeArgs) -> Result<()> {
         ModeCommand::Status => status(),
         ModeCommand::Stable => switch_to_stable().await,
         ModeCommand::Dev { path } => switch_to_dev(path),
-        ModeCommand::Beta => switch_to_beta().await,
+        ModeCommand::Canary => switch_to_canary().await,
     }
 }
 
 // ── status ────────────────────────────────────────────────────────────────────
 
 fn status() -> Result<()> {
-    let mode = current_mode();
+    // A non-stable binary tracks its own channel; the stable binary follows the
+    // runtime `orbit mode` switch. Display the effective one so it matches how
+    // updates actually resolve.
+    let mode = if Channel::current() == Channel::Stable {
+        current_mode()
+    } else {
+        Channel::current().as_str().to_string()
+    };
     let install_dir = UserConfig::load().install_dir_expanded();
-    let orbit_bin = install_dir.join("orbit");
+    let orbit_bin = install_dir.join(format!("orbit{}", Channel::current().home_suffix()));
 
     match mode.as_str() {
         "dev" => {
@@ -128,8 +136,8 @@ fn status() -> Result<()> {
                 }
             }
         }
-        "beta" => {
-            println!("  mode:   beta (pre-release)");
+        "canary" => {
+            println!("  mode:   canary (pre-release)");
             println!("  binary: {}", orbit_bin.display());
         }
         _ => {
@@ -230,13 +238,13 @@ fn switch_to_dev(path_arg: Option<PathBuf>) -> Result<()> {
     println!("  {} → {}", orbit_bin.display(), build_path.display());
     println!();
     println!("  The symlink updates automatically when you rebuild.");
-    println!("  Run `orbit mode stable` or `orbit mode beta` to switch back.");
+    println!("  Run `orbit mode stable` or `orbit mode canary` to switch back.");
     Ok(())
 }
 
-// ── beta ──────────────────────────────────────────────────────────────────────
+// ── canary ────────────────────────────────────────────────────────────────────
 
-async fn switch_to_beta() -> Result<()> {
+async fn switch_to_canary() -> Result<()> {
     let client = build_client()?;
 
     print!("  Fetching latest pre-release... ");
@@ -245,8 +253,8 @@ async fn switch_to_beta() -> Result<()> {
         Ok(t) => t,
         Err(e) if e.to_string().contains("404") || e.to_string().contains("Not Found") => {
             println!("no pre-releases found");
-            write_mode("beta")?;
-            println!("  No GitHub pre-releases available — marking current build as beta.");
+            write_mode("canary")?;
+            println!("  No GitHub pre-releases available — marking current build as canary.");
             println!("  Run `make install` to rebuild from source.");
             return Ok(());
         }
@@ -277,8 +285,8 @@ async fn switch_to_beta() -> Result<()> {
     match result {
         Ok(()) => {
             cleanup_backup(backup);
-            write_mode("beta")?;
-            println!("  Switched to beta mode ({tag}).");
+            write_mode("canary")?;
+            println!("  Switched to canary mode ({tag}).");
             Ok(())
         }
         Err(e) => {

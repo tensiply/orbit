@@ -3,6 +3,7 @@ pub mod architecture;
 pub mod audit;
 pub mod builtin_command;
 pub mod catalog;
+pub mod channel;
 pub mod config;
 pub mod context;
 pub mod data_paths;

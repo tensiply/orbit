@@ -1,0 +1,163 @@
+name: Canary
+
+# Every merge to main publishes a canary pre-release. Versioning rule:
+# stable ships only as vX.Y.0; every patch vX.Y.Z (Z >= 1) is a canary
+# pre-release, accumulating on top of the last stable minor. Promotion to
+# stable is a minor bump to .0 (handled by prepare-release.yml).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer merge supersedes an in-flight canary build.
+concurrency:
+  group: canary
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Gate: full CI must pass before we cut a canary ──────────────────────────
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # ── Compute the next canary version: vX.Y.(highest+1), min .1 ───────────────
+  prepare:
+    name: Compute canary version
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need all tags to find the highest patch
+
+      - name: Next canary patch version
+        id: ver
+        run: |
+          MINOR=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\([0-9]*\.[0-9]*\)\..*/\1/')
+          # Highest existing patch for this minor across all vX.Y.* tags.
+          HIGHEST=$(git tag -l "v${MINOR}.*" \
+            | sed "s/^v${MINOR}\.//" \
+            | grep -E '^[0-9]+$' \
+            | sort -n | tail -1)
+          NEXT=$(( ${HIGHEST:-0} + 1 ))
+          VERSION="${MINOR}.${NEXT}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}"    >> "$GITHUB_OUTPUT"
+          echo "Next canary: v${VERSION}"
+
+  # ── Build static binaries for all target platforms ──────────────────────────
+  build:
+    name: Build — ${{ matrix.artifact }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: orbit-linux-x86_64
+            use_cross: true
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact: orbit-linux-aarch64
+            use_cross: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: orbit-macos-x86_64
+            use_cross: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: orbit-macos-aarch64
+            use_cross: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Stamp canary version into Cargo.toml
+        run: |
+          sed -i.bak 's/^version = ".*"/version = "${{ needs.prepare.outputs.version }}"/' Cargo.toml
+          rm -f Cargo.toml.bak
+          grep '^version' Cargo.toml | head -1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: canary-${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (cross)
+        if: matrix.use_cross
+        run: cross build --release --target ${{ matrix.target }} --bin orbit
+
+      - name: Build (native)
+        if: "!matrix.use_cross"
+        run: cargo build --release --target ${{ matrix.target }} --bin orbit
+
+      - name: Rename binary
+        run: |
+          cp target/${{ matrix.target }}/release/orbit ${{ matrix.artifact }}
+          chmod +x ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  # ── Publish the canary pre-release ──────────────────────────────────────────
+  publish:
+    name: Publish canary pre-release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd artifacts
+          sha256sum orbit-* > checksums.txt
+          cat checksums.txt
+
+      - name: Build release notes
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "Canary pre-release \`${TAG}\` built from main @ \`${SHA:0:7}\`."
+            echo
+            echo "Install via \`orbit mode canary\` or download the asset for your platform."
+          } > release_notes.md
+
+      - name: Publish GitHub pre-release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          prerelease: true
+          body_path: release_notes.md
+          files: |
+            artifacts/orbit-linux-x86_64
+            artifacts/orbit-linux-aarch64
+            artifacts/orbit-macos-x86_64
+            artifacts/orbit-macos-aarch64
+            artifacts/checksums.txt

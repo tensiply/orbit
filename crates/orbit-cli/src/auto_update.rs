@@ -2,7 +2,7 @@
 ///
 /// Fire-and-forget — spawned as a tokio task. All failures are silent;
 /// errors are appended to `~/.orbit/cache/orbit.log`.
-use orbit_core::{user_config::UserConfig, workspace_config::WorkspaceConfig};
+use orbit_core::{channel::Channel, user_config::UserConfig, workspace_config::WorkspaceConfig};
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
@@ -100,8 +100,14 @@ async fn update_binary_if_due(ws_cfg: &WorkspaceConfig, user_cfg: &UserConfig) {
         return;
     }
 
-    let mode = crate::commands::mode::current_mode();
-    if mode == "dev" {
+    // A non-stable binary tracks its own channel; the stable binary can opt into
+    // another channel at runtime via `orbit mode`.
+    let channel = if Channel::current() == Channel::Stable {
+        crate::commands::mode::current_mode()
+    } else {
+        Channel::current().as_str().to_string()
+    };
+    if channel == "dev" {
         return;
     }
 
@@ -124,7 +130,7 @@ async fn update_binary_if_due(ws_cfg: &WorkspaceConfig, user_cfg: &UserConfig) {
         Err(_) => return,
     };
 
-    let tag = match update_check::fetch_latest_tag(&client).await {
+    let tag = match fetch_tag_for_channel(&channel, &client).await {
         Ok(t) => t,
         Err(_) => return,
     };
@@ -153,6 +159,22 @@ async fn update_binary_if_due(ws_cfg: &WorkspaceConfig, user_cfg: &UserConfig) {
     }
 }
 
+/// Resolve the update tag for a channel: canary tracks the newest pre-release,
+/// stable tracks the newest full release.
+async fn fetch_tag_for_channel(channel: &str, client: &reqwest::Client) -> anyhow::Result<String> {
+    if channel == "canary" {
+        update_check::fetch_latest_prerelease_tag(client).await
+    } else {
+        update_check::fetch_latest_tag(client).await
+    }
+}
+
+/// Install destination basename for the running channel: `orbit`,
+/// `orbit-canary`, or `orbit-dev` (dev never auto-updates, but kept exhaustive).
+fn install_binary_name() -> String {
+    format!("orbit{}", Channel::current().home_suffix())
+}
+
 async fn download_and_install_silent(
     ws_cfg: &WorkspaceConfig,
     client: &reqwest::Client,
@@ -161,7 +183,8 @@ async fn download_and_install_silent(
 ) -> anyhow::Result<()> {
     use crate::commands::update::{download_with_progress, parse_checksum, sha256_hex};
 
-    let Some(binary_url) = ws_cfg.binary_url_for_platform() else {
+    // Download from the exact tag so canary pre-releases resolve correctly.
+    let Some(binary_url) = ws_cfg.binary_url_for_tag(version) else {
         anyhow::bail!("no binary URL");
     };
     let artifact_name = binary_url.rsplit('/').next().unwrap_or("orbit").to_string();
@@ -191,7 +214,7 @@ async fn download_and_install_silent(
         anyhow::bail!("checksum mismatch");
     }
 
-    let install_path = user_cfg.install_dir_expanded().join("orbit");
+    let install_path = user_cfg.install_dir_expanded().join(install_binary_name());
     let tmp = install_path.with_extension("tmp");
     std::fs::write(&tmp, &bytes)?;
     #[cfg(unix)]
@@ -202,7 +225,6 @@ async fn download_and_install_silent(
     std::fs::rename(&tmp, &install_path)?;
 
     let _ = client; // suppress unused warning
-    let _ = version;
     Ok(())
 }
 

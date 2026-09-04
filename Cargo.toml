@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "bins/orbit",
+    "bins/orbit-canary",
     "bins/orbit-dev",
     "crates/orbit-core",
     "crates/orbit-cli",
