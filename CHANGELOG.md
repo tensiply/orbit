@@ -385,7 +385,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow: format check, clippy `-D warnings`, tests on every push/PR to `main`
 - Release workflow: cross-compiled static binaries for linux-x86_64 and linux-aarch64 + SHA-256 checksums
 
-[Unreleased]: https://github.com/tensiply/orbit/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/tensiply/orbit/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/tensiply/orbit/releases/tag/v0.22.0
 [0.21.0]: https://github.com/tensiply/orbit/releases/tag/v0.21.0
 [0.17.0]: https://github.com/befraeloircorona/orbit/releases/tag/v0.17.0
 [0.17.0]: https://github.com/befraeloircorona/orbit/compare/v0.16.0...v0.17.0
