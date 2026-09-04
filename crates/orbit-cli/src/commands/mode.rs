@@ -76,20 +76,15 @@ fn ensure_data_dir() -> Result<()> {
 
 // ── platform ──────────────────────────────────────────────────────────────────
 
-fn platform_artifact() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "orbit-linux-x86_64",
-        ("linux", "aarch64") => "orbit-linux-aarch64",
-        ("macos", "x86_64") => "orbit-macos-x86_64",
-        ("macos", "aarch64") => "orbit-macos-aarch64",
-        _ => "orbit-linux-x86_64",
-    }
+/// Canonical asset name for a tag + channel, e.g. `orbit-canary-0.22.1-linux-x86_64`.
+fn platform_artifact(tag: &str, channel: &str) -> String {
+    orbit_core::workspace_config::orbit_asset_name(channel, tag.trim_start_matches('v'))
 }
 
-fn make_binary_url(tag: &str) -> String {
+fn make_binary_url(tag: &str, channel: &str) -> String {
     format!(
         "https://github.com/tensiply/orbit/releases/download/{tag}/{}",
-        platform_artifact()
+        platform_artifact(tag, channel)
     )
 }
 
@@ -171,8 +166,8 @@ async fn switch_to_stable() -> Result<()> {
     };
     println!("{tag}");
 
-    let artifact = platform_artifact().to_string();
-    let binary_url = make_binary_url(&tag);
+    let artifact = platform_artifact(&tag, "stable");
+    let binary_url = make_binary_url(&tag, "stable");
     let checksums_url = make_checksums_url(&tag);
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");
@@ -265,8 +260,8 @@ async fn switch_to_canary() -> Result<()> {
     };
     println!("{tag}");
 
-    let artifact = platform_artifact().to_string();
-    let binary_url = make_binary_url(&tag);
+    let artifact = platform_artifact(&tag, "canary");
+    let binary_url = make_binary_url(&tag, "canary");
     let checksums_url = make_checksums_url(&tag);
 
     let install_path = UserConfig::load().install_dir_expanded().join("orbit");

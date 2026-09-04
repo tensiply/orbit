@@ -54,13 +54,14 @@ canary-uninstall:
 	@echo "Removed $(INSTALL_DIR)/$(CANARY_LINK)"
 
 ## Stage the release binary as a canonical release artifact for this host:
-##   orbit-<os>-<arch>  (bare binary, os: linux|macos, arch: x86_64|aarch64)
+##   orbit-stable-<version>-<os>-<arch>  (os: linux|macos, arch: x86_64|aarch64)
 ## plus its line in checksums.txt — the exact names the self-updater expects.
 ## CI builds all platforms and merges each host's checksums.txt.
 package: build-release
 	$(eval OS := $(shell uname -s | sed 's/Linux/linux/;s/Darwin/macos/'))
-	$(eval ARCH := $(shell uname -m | sed 's/arm64/aarch64/'))
-	$(eval ARTIFACT := orbit-$(OS)-$(ARCH))
+	$(eval ARCH := $(shell uname -m | sed 's/arm64/aarch64/;s/x86_64/x86_64/'))
+	$(eval VERSION := $(shell grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/'))
+	$(eval ARTIFACT := orbit-stable-$(VERSION)-$(OS)-$(ARCH))
 	cp $(TARGET_DIR)/$(BINARY) $(ARTIFACT)
 	sha256sum $(ARTIFACT) > checksums.txt
 	@echo "Artifact: $(ARTIFACT)"

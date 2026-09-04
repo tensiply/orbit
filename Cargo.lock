@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-canary"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "orbit-cli",
@@ -2004,7 +2004,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-eval"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "orbit-core",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-integration-tests"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "orbit-client",
@@ -2029,7 +2029,7 @@ dependencies = [
 
 [[package]]
 name = "orbit-planner"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "directories",
