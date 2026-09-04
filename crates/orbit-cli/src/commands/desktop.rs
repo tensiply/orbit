@@ -54,9 +54,7 @@ fn resolve(name: &str) -> Option<PathBuf> {
     }
 
     let on_path = std::env::var_os("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| dir.join(name).exists())
-        })
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).exists()))
         .unwrap_or(false);
 
     on_path.then(|| PathBuf::from(name))
