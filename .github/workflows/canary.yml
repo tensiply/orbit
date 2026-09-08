@@ -60,14 +60,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # ubuntu-22.04 (glibc 2.35) for portability — see release.yml.
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             slug: linux-x86_64
-            use_cross: true
-          - os: ubuntu-latest
+            use_cross: false
+          - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             slug: linux-aarch64
-            use_cross: true
+            use_cross: false
           - os: macos-latest
             target: x86_64-apple-darwin
             slug: macos-x86_64
