@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Linux release binaries now target glibc (gnu) instead of static musl** — the musl build segfaulted at startup (a C dependency misbehaving under musl), which surfaced when the desktop app ran the bundled `orbit` sidecar to start its daemon. `release.yml` / `canary.yml` build `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (asset names unchanged: `orbit-{channel}-{version}-linux-{arch}`).
+- **Linux release binaries now target glibc (gnu) instead of static musl** — the musl build segfaulted at startup (a C dependency misbehaving under musl), which surfaced when the desktop app ran the bundled `orbit` sidecar to start its daemon. `release.yml` / `canary.yml` build `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (asset names unchanged: `orbit-{channel}-{version}-linux-{arch}`). Built on **ubuntu-22.04 (glibc 2.35)** for portability, since a glibc binary requires the runtime system's glibc to be at least the build's.
 
 ## [0.23.0] - 2026-09-04
 
