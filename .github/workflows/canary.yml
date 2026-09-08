@@ -92,7 +92,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: canary-${{ matrix.target }}
+          key: canary-${{ matrix.os }}-${{ matrix.target }}
 
       - name: Install cross
         if: matrix.use_cross
