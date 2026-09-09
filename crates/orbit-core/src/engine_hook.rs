@@ -137,8 +137,13 @@ pub fn find(name: &str) -> Option<EngineHookCatalog> {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Expand a leading `$HOME` in a command path to the actual home directory.
+/// Expand `$ORBIT_HOME` or `$HOME` in a path to their actual directories.
+/// `$ORBIT_HOME` resolves to the channel-specific orbit home (e.g. `~/.orbit-dev`),
+/// so hook scripts are isolated per orbit channel rather than shared in `~/.claude/`.
 pub fn expand_home(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix("$ORBIT_HOME") {
+        return format!("{}{rest}", crate::data_paths::orbit_home().display());
+    }
     if let (Some(rest), Some(base)) = (s.strip_prefix("$HOME"), directories::BaseDirs::new()) {
         return format!("{}{rest}", base.home_dir().display());
     }
@@ -186,6 +191,14 @@ mod tests {
         let result = expand_home("$HOME/.claude/hooks/on-stop.sh");
         assert!(result.starts_with(&home), "should start with home dir");
         assert!(result.ends_with("/.claude/hooks/on-stop.sh"));
+    }
+
+    #[test]
+    fn expand_home_orbit_home_prefix() {
+        let orbit = crate::data_paths::orbit_home().to_string_lossy().to_string();
+        let result = expand_home("$ORBIT_HOME/hooks/script.sh");
+        assert!(result.starts_with(&orbit), "should start with orbit home");
+        assert!(result.ends_with("/hooks/script.sh"));
     }
 
     #[test]

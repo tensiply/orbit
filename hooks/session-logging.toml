@@ -5,11 +5,11 @@ always_on = true
 
 [[events]]
 event = "Stop"
-command = "$HOME/.claude/hooks/on-stop.sh"
+command = "$ORBIT_HOME/hooks/on-stop.sh"
 is_async = false
 
 [[scripts]]
-path = "$HOME/.claude/hooks/on-stop.sh"
+path = "$ORBIT_HOME/hooks/on-stop.sh"
 executable = true
 content = """
 #!/bin/bash

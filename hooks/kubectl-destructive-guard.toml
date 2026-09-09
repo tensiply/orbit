@@ -7,11 +7,11 @@ always_on = true
 [[events]]
 event = "PreToolUse"
 matcher = "Bash"
-command = "$HOME/.claude/hooks/kubectl-destructive-guard.sh"
+command = "$ORBIT_HOME/hooks/kubectl-destructive-guard.sh"
 is_async = false
 
 [[scripts]]
-path = "$HOME/.claude/hooks/kubectl-destructive-guard.sh"
+path = "$ORBIT_HOME/hooks/kubectl-destructive-guard.sh"
 executable = true
 content = '''
 #!/bin/bash

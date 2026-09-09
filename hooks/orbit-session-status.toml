@@ -5,16 +5,16 @@ always_on = true
 
 [[events]]
 event = "UserPromptSubmit"
-command = "$HOME/.claude/hooks/orbit-session-status.sh working"
+command = "$ORBIT_HOME/hooks/orbit-session-status.sh working"
 is_async = true
 
 [[events]]
 event = "Stop"
-command = "$HOME/.claude/hooks/orbit-session-status.sh done"
+command = "$ORBIT_HOME/hooks/orbit-session-status.sh done"
 is_async = true
 
 [[scripts]]
-path = "$HOME/.claude/hooks/orbit-session-status.sh"
+path = "$ORBIT_HOME/hooks/orbit-session-status.sh"
 executable = true
 content = """
 #!/bin/bash
