@@ -223,7 +223,9 @@ async fn cancel_nonexistent_schedule_returns_error() {
 #[tokio::test]
 #[serial]
 async fn retry_failed_plan_resets_failed_nodes_to_pending() {
-    let h = TestHarness::new().await;
+    // Supervisor disabled: without it the just-retried Running plan won't be
+    // picked up and re-executed before GetPlan asserts Running/Pending state.
+    let h = TestHarness::new_no_supervisor().await;
 
     let mut plan = make_plan("plan_retry_failed", "run tests", PlanStatus::Failed);
     plan.nodes[0].status = NodeStatus::Failed;

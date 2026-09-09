@@ -27,6 +27,29 @@ pub struct TestHarness {
 
 impl TestHarness {
     pub async fn new() -> Self {
+        Self::new_with_opts(DaemonOptions {
+            supervisor_interval: Duration::from_millis(100),
+            cleanup_interval: Duration::from_secs(3600),
+            scheduler_interval: Duration::from_secs(3600),
+            archival_interval: Duration::from_secs(3600),
+        })
+        .await
+    }
+
+    /// Harness with the supervisor loop disabled (1h interval) so background
+    /// plan execution cannot interfere with IPC-level state assertions.
+    #[allow(dead_code)]
+    pub async fn new_no_supervisor() -> Self {
+        Self::new_with_opts(DaemonOptions {
+            supervisor_interval: Duration::from_secs(3600),
+            cleanup_interval: Duration::from_secs(3600),
+            scheduler_interval: Duration::from_secs(3600),
+            archival_interval: Duration::from_secs(3600),
+        })
+        .await
+    }
+
+    async fn new_with_opts(opts: DaemonOptions) -> Self {
         let dir = TempDir::new().expect("tempdir");
         let data_home = dir.path().join("data");
         std::fs::create_dir_all(&data_home).unwrap();
@@ -42,15 +65,6 @@ impl TestHarness {
         let sock_clone = sock.clone();
 
         let server = tokio::spawn(async move {
-            let opts = DaemonOptions {
-                // Long intervals so background loops don't interfere with test
-                // assertions — e.g. the supervisor picking up a just-retried
-                // Running plan and failing it before GetPlan is called.
-                supervisor_interval: Duration::from_secs(3600),
-                cleanup_interval: Duration::from_secs(3600),
-                scheduler_interval: Duration::from_secs(3600),
-                archival_interval: Duration::from_secs(3600),
-            };
             let _ = orbit_daemon::server::run_on(sock_clone, pid_file, opts).await;
         });
 
