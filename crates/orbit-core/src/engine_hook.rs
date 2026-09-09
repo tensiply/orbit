@@ -195,7 +195,9 @@ mod tests {
 
     #[test]
     fn expand_home_orbit_home_prefix() {
-        let orbit = crate::data_paths::orbit_home().to_string_lossy().to_string();
+        let orbit = crate::data_paths::orbit_home()
+            .to_string_lossy()
+            .to_string();
         let result = expand_home("$ORBIT_HOME/hooks/script.sh");
         assert!(result.starts_with(&orbit), "should start with orbit home");
         assert!(result.ends_with("/hooks/script.sh"));
