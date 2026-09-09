@@ -43,7 +43,10 @@ impl TestHarness {
 
         let server = tokio::spawn(async move {
             let opts = DaemonOptions {
-                supervisor_interval: Duration::from_millis(100),
+                // Long intervals so background loops don't interfere with test
+                // assertions — e.g. the supervisor picking up a just-retried
+                // Running plan and failing it before GetPlan is called.
+                supervisor_interval: Duration::from_secs(3600),
                 cleanup_interval: Duration::from_secs(3600),
                 scheduler_interval: Duration::from_secs(3600),
                 archival_interval: Duration::from_secs(3600),
