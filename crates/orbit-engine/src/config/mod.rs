@@ -453,7 +453,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
         let catalog = orbit_core::engine_hook::load_all();
         let mut hooks: Vec<(String, String)> = catalog
             .iter()
-            .filter(|e| state.is_enabled(&e.name))
+            .filter(|e| e.always_on || state.is_enabled(&e.name))
             .map(|e| {
                 let events = e
                     .events
