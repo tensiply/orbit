@@ -151,10 +151,7 @@ pub fn parse_rfc3339(s: &str) -> Option<u64> {
     let min: i64 = tp.next()?.parse().ok()?;
     // seconds field may have a fractional part
     let sec_str = tp.next()?;
-    let sec: i64 = sec_str
-        .split('.')
-        .next()
-        .and_then(|s| s.parse().ok())?;
+    let sec: i64 = sec_str.split('.').next().and_then(|s| s.parse().ok())?;
 
     let days = days_since_epoch(year, month, day);
     let secs = days * 86400 + hour * 3600 + min * 60 + sec;

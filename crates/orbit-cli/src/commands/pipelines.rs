@@ -55,7 +55,9 @@ pub async fn run(args: PipelinesArgs) -> Result<()> {
 fn collect_configs(args: &PipelinesArgs) -> Result<(Vec<PipelineConfig>, Option<String>)> {
     let user_cfg = UserConfig::load();
     let ai_root = user_cfg.ai_root_expanded();
-    let slug = ai_root.file_name().map(|n| n.to_string_lossy().into_owned());
+    let slug = ai_root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned());
 
     let tenant = args
         .tenant
@@ -65,12 +67,18 @@ fn collect_configs(args: &PipelinesArgs) -> Result<(Vec<PipelineConfig>, Option<
         .project
         .clone()
         .or_else(|| std::env::var("AI_PROJECT").ok().filter(|s| !s.is_empty()));
-    let repository = args
-        .repository
-        .clone()
-        .or_else(|| std::env::var("AI_REPOSITORY").ok().filter(|s| !s.is_empty()));
+    let repository = args.repository.clone().or_else(|| {
+        std::env::var("AI_REPOSITORY")
+            .ok()
+            .filter(|s| !s.is_empty())
+    });
 
-    let paths = orbit_json_paths(&ai_root, tenant.as_deref(), project.as_deref(), repository.as_deref());
+    let paths = orbit_json_paths(
+        &ai_root,
+        tenant.as_deref(),
+        project.as_deref(),
+        repository.as_deref(),
+    );
     let configs: Vec<PipelineConfig> = paths
         .iter()
         .flat_map(|p| read_pipelines_from_file(p))
@@ -115,9 +123,15 @@ fn orbit_json_paths(
 }
 
 fn read_pipelines_from_file(path: &std::path::Path) -> Vec<PipelineConfig> {
-    let Ok(text) = fs::read_to_string(path) else { return vec![] };
-    let Ok(val) = serde_json::from_str::<Value>(&text) else { return vec![] };
-    let Some(arr) = val.get("pipelines").and_then(|v| v.as_array()) else { return vec![] };
+    let Ok(text) = fs::read_to_string(path) else {
+        return vec![];
+    };
+    let Ok(val) = serde_json::from_str::<Value>(&text) else {
+        return vec![];
+    };
+    let Some(arr) = val.get("pipelines").and_then(|v| v.as_array()) else {
+        return vec![];
+    };
     arr.iter()
         .filter_map(|v| serde_json::from_value::<PipelineConfig>(v.clone()).ok())
         .collect()
@@ -131,11 +145,16 @@ fn cmd_list(configs: &[PipelineConfig]) -> Result<()> {
         println!("  No pipelines configured for this scope.");
         println!();
         println!("  \x1b[2mAdd a pipeline to orbit.json at any scope level:\x1b[0m");
-        println!("  \x1b[2m  \"pipelines\": [{{ \"name\": \"CI\", \"provider\": \"github_actions\", \"repo\": \"owner/repo\" }}]\x1b[0m");
+        println!(
+            "  \x1b[2m  \"pipelines\": [{{ \"name\": \"CI\", \"provider\": \"github_actions\", \"repo\": \"owner/repo\" }}]\x1b[0m"
+        );
         return Ok(());
     }
     for cfg in configs {
-        println!("  \x1b[1m{}\x1b[0m  \x1b[2m({})\x1b[0m", cfg.name, cfg.provider);
+        println!(
+            "  \x1b[1m{}\x1b[0m  \x1b[2m({})\x1b[0m",
+            cfg.name, cfg.provider
+        );
         match cfg.provider {
             PipelineProvider::GithubActions => {
                 if let Some(repo) = &cfg.repo {
@@ -155,7 +174,11 @@ fn cmd_list(configs: &[PipelineConfig]) -> Result<()> {
                 }
             }
         }
-        let auth = if cfg.token_secret.is_some() { "configured" } else { "\x1b[33mnot set\x1b[0m" };
+        let auth = if cfg.token_secret.is_some() {
+            "configured"
+        } else {
+            "\x1b[33mnot set\x1b[0m"
+        };
         println!("    auth: {auth}");
         println!();
     }
@@ -194,8 +217,7 @@ fn print_status(cfg: &PipelineConfig, result: &Result<PipelineStatus, String>) {
         Err(e) => {
             println!(
                 "  \x1b[31m✗\x1b[0m  \x1b[1m{}\x1b[0m  \x1b[2m{}\x1b[0m",
-                cfg.name,
-                cfg.provider
+                cfg.name, cfg.provider
             );
             println!("       error: {e}");
         }
@@ -203,8 +225,7 @@ fn print_status(cfg: &PipelineConfig, result: &Result<PipelineStatus, String>) {
             let Some(run) = &ps.latest_run else {
                 println!(
                     "  \x1b[2m?\x1b[0m  \x1b[1m{}\x1b[0m  \x1b[2m{}\x1b[0m  no runs found",
-                    cfg.name,
-                    cfg.provider
+                    cfg.name, cfg.provider
                 );
                 println!();
                 return;
@@ -305,7 +326,10 @@ async fn fetch_github(
     token: Option<&str>,
     now: u64,
 ) -> Result<PipelineStatus> {
-    let repo = cfg.repo.as_deref().ok_or_else(|| anyhow::anyhow!("missing 'repo' field"))?;
+    let repo = cfg
+        .repo
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("missing 'repo' field"))?;
     let branch = cfg.branch.as_deref().unwrap_or("main");
 
     let mut url = format!(
@@ -316,7 +340,9 @@ async fn fetch_github(
         url.push_str(&format!("&event=push&workflow_name={}", wf));
     }
 
-    let mut req = client.get(&url).header("Accept", "application/vnd.github+json");
+    let mut req = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json");
     if let Some(t) = token {
         req = req.header("Authorization", format!("Bearer {t}"));
     }
@@ -338,7 +364,9 @@ async fn fetch_github(
             run_name: r["name"].as_str().unwrap_or(&cfg.name).to_string(),
             status: run_status,
             branch: r["head_branch"].as_str().map(str::to_owned),
-            commit_sha: r["head_sha"].as_str().map(|s| s[..8.min(s.len())].to_owned()),
+            commit_sha: r["head_sha"]
+                .as_str()
+                .map(|s| s[..8.min(s.len())].to_owned()),
             commit_message: r["head_commit"]["message"].as_str().map(str::to_owned),
             triggered_by: r["triggering_actor"]["login"].as_str().map(str::to_owned),
             started_at: r["created_at"].as_str().and_then(parse_rfc3339),
@@ -382,13 +410,17 @@ async fn fetch_github_jobs(
         "https://api.github.com/repos/{}/actions/runs/{}/jobs",
         repo, run_id
     );
-    let mut req = client.get(&url).header("Accept", "application/vnd.github+json");
+    let mut req = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json");
     if let Some(t) = token {
         req = req.header("Authorization", format!("Bearer {t}"));
     }
 
     let resp: Value = req.send().await?.error_for_status()?.json().await?;
-    let Some(jobs) = resp["jobs"].as_array() else { return Ok(vec![]) };
+    let Some(jobs) = resp["jobs"].as_array() else {
+        return Ok(vec![]);
+    };
 
     let mut steps = Vec::new();
     for job in jobs {
@@ -420,11 +452,21 @@ async fn fetch_jenkins(
     token: Option<&str>,
     now: u64,
 ) -> Result<PipelineStatus> {
-    let base_url = cfg.url.as_deref().ok_or_else(|| anyhow::anyhow!("missing 'url' field"))?;
-    let job = cfg.job.as_deref().ok_or_else(|| anyhow::anyhow!("missing 'job' field"))?;
+    let base_url = cfg
+        .url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("missing 'url' field"))?;
+    let job = cfg
+        .job
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("missing 'job' field"))?;
 
     // Build job URL — replace slashes in job path with /job/ segments
-    let job_segments: String = job.split('/').map(|s| format!("job/{}", s)).collect::<Vec<_>>().join("/");
+    let job_segments: String = job
+        .split('/')
+        .map(|s| format!("job/{}", s))
+        .collect::<Vec<_>>()
+        .join("/");
     let api_url = format!(
         "{}/{}/lastBuild/api/json?tree=result,building,displayName,number,url,timestamp,duration",
         base_url.trim_end_matches('/'),
@@ -445,7 +487,11 @@ async fn fetch_jenkins(
 
     let timestamp_ms = resp["timestamp"].as_u64().unwrap_or(0);
     let duration_ms = resp["duration"].as_u64().unwrap_or(0);
-    let started_at = if timestamp_ms > 0 { Some(timestamp_ms / 1000) } else { None };
+    let started_at = if timestamp_ms > 0 {
+        Some(timestamp_ms / 1000)
+    } else {
+        None
+    };
     let completed_at = if timestamp_ms > 0 && duration_ms > 0 {
         Some((timestamp_ms + duration_ms) / 1000)
     } else {
@@ -453,7 +499,8 @@ async fn fetch_jenkins(
     };
 
     let build_number = resp["number"].as_u64().unwrap_or(0);
-    let display_name = resp["displayName"].as_str()
+    let display_name = resp["displayName"]
+        .as_str()
         .unwrap_or(&format!("#{build_number}"))
         .to_owned();
 
