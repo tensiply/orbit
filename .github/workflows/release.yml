@@ -1,11 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      # Stable ships only as vX.Y.0. Patch tags (vX.Y.Z, Z>=1) are canary
-      # pre-releases handled by canary.yml and must not trigger a full release.
-      - "v*.*.0"
+  # Stable releases are triggered manually only — never on tag push.
+  # Stable = vX.Y.0; canary = vX.Y.Z (Z>=1), published by canary.yml on every push to main.
   workflow_dispatch:
     inputs:
       tag:
