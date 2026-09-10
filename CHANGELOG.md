@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-09
+
+### Added
+
+- **Pipeline tracking per scope** — `orbit pipelines [status|list]` queries CI/CD pipelines configured in `orbit.json` at any scope level. Supports GitHub Actions and Jenkins. Auth via orbit keychain (`token_secret: "keychain://KEY"`). Pipelines cascade through the scope hierarchy (workspace → tenant → project → repo).
+- **Engine commands** — `/orbit-pipeline-status` to query and summarize pipeline status; `/orbit-pipeline-add` interactive wizard to configure a pipeline in `orbit.json`.
+
+### Fixed
+
+- **hooks**: install scripts now write to `$ORBIT_HOME/hooks` instead of `~/.claude/hooks` — fixes hook deployment on non-default channels.
+
 ## [0.24.0] - 2026-09-08
 
 ### Fixed
