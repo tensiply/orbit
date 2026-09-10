@@ -149,7 +149,7 @@ jobs:
           {
             echo "Canary pre-release \`${TAG}\` built from main @ \`${SHA:0:7}\`."
             echo
-            echo "Install via \`orbit mode canary\` or download the asset for your platform."
+            echo "Install with \`make canary-install\` from the repo, or download the asset for your platform below."
           } > release_notes.md
 
       - name: Publish GitHub pre-release

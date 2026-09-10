@@ -325,16 +325,17 @@ orbit ls WORKSPACE TENANT PROJECT # list repositories
 
 ---
 
-## orbit mode
+## Channels
 
-Switch between binary modes.
+Each channel is a separate binary with an isolated home (`~/.orbit`, `~/.orbit-canary`, `~/.orbit-dev`) — its own daemon, keychain, and sessions. Run the channel's binary; there is no runtime mode switch.
 
 ```bash
-orbit mode stable        # install latest release
-orbit mode dev [path]    # symlink to a local build
-orbit mode beta          # install latest pre-release
-orbit mode status        # show active mode and binary details
+orbit                    # stable      -> ~/.orbit
+orbit-canary             # canary      -> ~/.orbit-canary
+dev-orbit                # dev (local) -> ~/.orbit-dev
 ```
+
+Install from the repo with `make install` (stable), `make canary-install`, or `make dev-install`.
 
 ---
 
