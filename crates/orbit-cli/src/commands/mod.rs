@@ -25,6 +25,7 @@ pub mod mode;
 pub mod notify;
 pub mod oauth;
 pub mod plan;
+pub mod pipelines;
 pub mod plugins;
 pub mod scope;
 pub mod secret;

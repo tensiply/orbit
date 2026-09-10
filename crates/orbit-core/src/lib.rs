@@ -20,6 +20,7 @@ pub mod mcp_client;
 pub mod memory;
 pub mod net;
 pub mod notify;
+pub mod pipeline;
 pub mod plan;
 pub mod plugin;
 pub mod resolver;

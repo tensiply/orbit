@@ -80,6 +80,8 @@ pub enum Commands {
     Context(commands::context::ContextArgs),
     /// Generate or install man pages for orbit commands
     Man(commands::man::ManArgs),
+    /// Track and query CI/CD pipeline status across providers (GitHub Actions, Jenkins)
+    Pipelines(commands::pipelines::PipelinesArgs),
     /// Manage registered workspaces (multi-workspace support)
     Workspace(commands::workspace::WorkspaceArgs),
     /// Create, list, update and delete internal tasks
@@ -211,6 +213,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Notify(args)) => commands::notify::run(args),
         Some(Commands::Context(args)) => commands::context::run(args),
         Some(Commands::Man(args)) => commands::man::run(args),
+        Some(Commands::Pipelines(args)) => commands::pipelines::run(args).await,
         Some(Commands::Workspace(args)) => commands::workspace::run(args),
         Some(Commands::Task(args)) => commands::task::run(args),
         Some(Commands::Serve(args)) => commands::serve::run(args).await,
