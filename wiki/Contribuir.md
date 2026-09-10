@@ -14,11 +14,14 @@ Requiere Rust 1.75+.
 
 ### Usar el binario de desarrollo
 
+El canal dev es un binario aparte (`dev-orbit`) con home aislado en `~/.orbit-dev`.
+
 ```bash
-cargo build
-orbit mode dev ./target/debug/orbit     # symlink al build local
-orbit mode status                       # verifica que está en modo dev
+make dev-install     # cargo build + symlink dev-orbit → target/debug/orbit-dev
+dev-orbit daemon start
 ```
+
+El symlink apunta al build local: recompilás con `cargo build` y `dev-orbit` sirve el binario nuevo.
 
 ---
 

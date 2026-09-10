@@ -2,13 +2,13 @@ use anyhow::Result;
 use clap::Args;
 use orbit_client::ipc as client_ipc;
 use orbit_core::{
-    catalog, ipc::socket_path, user_config::UserConfig, workspace_config::WorkspaceConfig,
+    catalog, channel::Channel, ipc::socket_path, user_config::UserConfig,
+    workspace_config::WorkspaceConfig,
 };
 use orbit_engine::resolver;
 use std::time::Duration;
 
 use super::auth::{AuthStatus, detect_auth};
-use super::mode::current_mode;
 
 // ── CLI types ─────────────────────────────────────────────────────────────────
 
@@ -108,8 +108,8 @@ async fn collect() -> StatusData {
     // Version
     let version = env!("CARGO_PKG_VERSION").to_string();
 
-    // Mode
-    let mode = current_mode();
+    // Channel of the running binary
+    let mode = Channel::current().as_str().to_string();
 
     // Suppress unused warning on ws_cfg
     let _ = WorkspaceConfig::load(&ai_root);

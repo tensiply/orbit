@@ -179,7 +179,10 @@ async fn health(json: bool) -> Result<()> {
 // ── serve (hidden, runs the actual daemon) ────────────────────────────────────
 
 async fn serve() -> Result<()> {
-    tracing::info!("orbitd starting");
+    let name = orbit_core::channel::Channel::current().daemon_process_name();
+    #[cfg(target_os = "linux")]
+    let _ = std::fs::write("/proc/self/comm", &name);
+    tracing::info!("{} starting", name);
     orbit_daemon::server::run().await
 }
 

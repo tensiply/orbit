@@ -100,13 +100,9 @@ async fn update_binary_if_due(ws_cfg: &WorkspaceConfig, user_cfg: &UserConfig) {
         return;
     }
 
-    // A non-stable binary tracks its own channel; the stable binary can opt into
-    // another channel at runtime via `orbit mode`.
-    let channel = if Channel::current() == Channel::Stable {
-        crate::commands::mode::current_mode()
-    } else {
-        Channel::current().as_str().to_string()
-    };
+    // Each binary tracks its own channel: stable → releases, canary → pre-releases,
+    // dev → never auto-updates (local build).
+    let channel = Channel::current().as_str().to_string();
     if channel == "dev" {
         return;
     }

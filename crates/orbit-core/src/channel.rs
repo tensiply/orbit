@@ -44,6 +44,21 @@ impl Channel {
         }
     }
 
+    /// Process name (`/proc/self/comm`) for the CLI of this channel:
+    /// `orbit`, `orbit-canary`, `orbit-dev`. Derived from the home suffix so it
+    /// stays in step with the data home, independent of the installed binary or
+    /// symlink filename. Fits the 15-char `comm` limit on Linux.
+    pub fn process_name(self) -> String {
+        format!("orbit{}", self.home_suffix())
+    }
+
+    /// Process name (`/proc/self/comm`) for the daemon of this channel:
+    /// `orbitd`, `orbitd-canary`, `orbitd-dev`. The short `orbitd` prefix keeps
+    /// every channel within the 15-char `comm` limit on Linux.
+    pub fn daemon_process_name(self) -> String {
+        format!("orbitd{}", self.home_suffix())
+    }
+
     /// Uppercase branding tag shown in the banner for non-stable builds.
     /// `None` for stable (no tag).
     pub fn label(self) -> Option<&'static str> {
@@ -67,6 +82,24 @@ mod tests {
         assert_eq!(Channel::Canary.label(), Some("CANARY"));
         assert_eq!(Channel::Dev.home_suffix(), "-dev");
         assert_eq!(Channel::Dev.label(), Some("DEV"));
+    }
+
+    #[test]
+    fn process_names_fit_comm_limit() {
+        for ch in [Channel::Stable, Channel::Canary, Channel::Dev] {
+            assert!(ch.process_name().len() <= 15, "{}", ch.process_name());
+            assert!(
+                ch.daemon_process_name().len() <= 15,
+                "{}",
+                ch.daemon_process_name()
+            );
+        }
+        assert_eq!(Channel::Stable.process_name(), "orbit");
+        assert_eq!(Channel::Canary.process_name(), "orbit-canary");
+        assert_eq!(Channel::Dev.process_name(), "orbit-dev");
+        assert_eq!(Channel::Stable.daemon_process_name(), "orbitd");
+        assert_eq!(Channel::Canary.daemon_process_name(), "orbitd-canary");
+        assert_eq!(Channel::Dev.daemon_process_name(), "orbitd-dev");
     }
 
     #[test]

@@ -230,14 +230,14 @@ orbit daemon stop
 orbit daemon status
 ```
 
-### `orbit mode`
-Cambia entre versiones del binario.
+### Canales
+Cada canal es un binario separado con su propio home aislado (`~/.orbit`, `~/.orbit-canary`, `~/.orbit-dev`) — daemon, keychain y sesiones independientes. No se cambia de canal en runtime: se corre el binario del canal.
 ```bash
-orbit mode stable                 # instala la última release estable
-orbit mode dev [path]             # symlink a un build local
-orbit mode beta                   # instala la última pre-release
-orbit mode status                 # modo activo y detalles del binario
+orbit                             # stable      → ~/.orbit
+orbit-canary                      # canary      → ~/.orbit-canary
+dev-orbit                         # dev (local) → ~/.orbit-dev
 ```
+Instalá cada uno desde el repo con `make install` (stable), `make canary-install` o `make dev-install`.
 
 ### `orbit update`
 Sincroniza governance y actualiza el binario.

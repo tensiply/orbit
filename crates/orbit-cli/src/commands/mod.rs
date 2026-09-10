@@ -21,7 +21,6 @@ pub mod ls;
 pub mod man;
 pub mod mcp;
 pub mod memory;
-pub mod mode;
 pub mod notify;
 pub mod oauth;
 pub mod pipelines;

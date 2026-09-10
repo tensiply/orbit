@@ -1,4 +1,4 @@
-use crate::notify::NotificationsConfig;
+use crate::{channel::Channel, notify::NotificationsConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -270,7 +270,7 @@ fn orbit_config_dir() -> PathBuf {
     if let Ok(h) = std::env::var("ORBIT_CONFIG_HOME") {
         return PathBuf::from(h);
     }
-    home_dir().join(".orbit")
+    home_dir().join(format!(".orbit{}", Channel::current().home_suffix()))
 }
 
 /// Replace a leading `~` with the real home directory path.

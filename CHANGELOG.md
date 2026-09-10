@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`orbit mode` command** — Channel switching via a single mutable `orbit` binary is gone. Each channel is now a separate binary with a fully isolated home (`orbit` → `~/.orbit`, `orbit-canary` → `~/.orbit-canary`, `dev-orbit` → `~/.orbit-dev`), so you run the channel binary directly instead of flipping a mode. The stable binary now always tracks stable releases; `orbit update` and auto-update resolve each binary's own channel.
+
+### Changed
+
+- **Channel-scoped process & session names** — The CLI names its process `orbit{,-canary,-dev}` and the daemon `orbitd{,-canary,-dev}` via `/proc/self/comm`, and tmux session names/titles carry the channel (`eloir-orbit-canary-claude-…`, `[claude·CANARY]`) so channels never collide or reattach across each other.
+- **`orbit desktop`** — Launches the desktop app for the running channel (`orbit-desktop` / `canary-orbit-desktop` / `dev-orbit-desktop`) instead of only dev-vs-stable.
+
 ## [0.25.0] - 2026-09-09
 
 ### Added

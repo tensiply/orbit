@@ -29,8 +29,6 @@ pub enum Commands {
     Setup(commands::setup::SetupArgs),
     /// Get, set, or list config values
     Config(commands::config::ConfigArgs),
-    /// Manage the active orbit binary mode (stable / dev / canary)
-    Mode(commands::mode::ModeArgs),
     /// Clone the governance repository into the AI root
     Init(commands::init::InitArgs),
     /// Sync governance configs and/or update the binary
@@ -117,6 +115,13 @@ pub async fn run_channel(channel: Channel) -> Result<()> {
         unsafe { std::env::set_var("ORBIT_CHANNEL", channel.as_str()) };
     }
 
+    // Name the process after its channel (`orbit`, `orbit-canary`, `orbit-dev`)
+    // so `ps`/`top`/`pgrep` identify it regardless of the installed binary or
+    // symlink filename. The daemon overrides this to `orbitd{-channel}` in
+    // `daemon serve`, which runs after this.
+    #[cfg(target_os = "linux")]
+    let _ = std::fs::write("/proc/self/comm", channel.process_name());
+
     let default_filter = match channel {
         Channel::Dev => "orbit=debug,orbit_engine=debug,orbit_daemon=debug",
         Channel::Stable | Channel::Canary => "orbit=info",
@@ -188,7 +193,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Engines(args)) => commands::engines::run(args),
         Some(Commands::Setup(args)) => commands::setup::run(args).await,
         Some(Commands::Config(args)) => commands::config::run(args),
-        Some(Commands::Mode(args)) => commands::mode::run(args).await,
         Some(Commands::Init(args)) => commands::init::run(args).await,
         Some(Commands::Update(args)) => commands::update::run(args).await,
         Some(Commands::Launch(args)) => commands::launch::run(args).await,

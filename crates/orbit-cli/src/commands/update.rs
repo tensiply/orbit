@@ -35,16 +35,11 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     let do_governance = !args.binary_only;
     let mut do_binary = !args.governance_only;
 
-    // A non-stable binary tracks its own channel; the stable binary can opt into
-    // another channel at runtime via `orbit mode`.
-    let channel = if Channel::current() == Channel::Stable {
-        crate::commands::mode::current_mode()
-    } else {
-        Channel::current().as_str().to_string()
-    };
+    // Each binary tracks its own channel: stable → releases, canary → pre-releases,
+    // dev → never updates (local build).
+    let channel = Channel::current().as_str().to_string();
     if do_binary && channel == "dev" {
-        println!("  Binary update skipped (dev mode — using local build).");
-        println!("  Run `orbit mode stable` or `orbit mode canary` to switch.");
+        println!("  Binary update skipped (dev channel — using local build).");
         do_binary = false;
     }
 

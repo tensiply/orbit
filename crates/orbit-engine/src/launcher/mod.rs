@@ -6,7 +6,9 @@ pub mod runtime;
 pub mod tmux;
 
 use anyhow::{Result, bail};
-use orbit_core::{context::OrbitScope, engine::Engine, jira::TaskContext, session::Session};
+use orbit_core::{
+    channel::Channel, context::OrbitScope, engine::Engine, jira::TaskContext, session::Session,
+};
 use std::{fs, io::Write, os::unix::process::CommandExt, path::Path, process::Command};
 
 use crate::config::MergedConfig;
@@ -161,7 +163,7 @@ pub fn launch(
 
     // 4. Decide tmux strategy before registering the session
     let username = orbit_core::user_config::UserConfig::load().user.name;
-    let tmux_name = tmux_session_name(scope, engine, &username);
+    let tmux_name = tmux_session_name(scope, engine, &username, Channel::current());
     let use_tmux = !opts.no_tmux && !tmux::already_inside() && tmux::ensure_available(); // prompts to install if missing + TTY
 
     // 5. Register session — BEFORE set_env() overwrites XDG_DATA_HOME
@@ -192,7 +194,7 @@ pub fn launch(
     // 7. cd into work_dir, then exec
     std::env::set_current_dir(&scope.work_dir)?;
 
-    let title = window_title(scope, engine);
+    let title = window_title(scope, engine, Channel::current());
     set_terminal_title(&title);
 
     if use_tmux {
@@ -218,14 +220,25 @@ pub fn launch(
 
 // ── tmux helpers ──────────────────────────────────────────────────────────────
 
-/// Derive a stable tmux session name from scope + engine.
+/// Derive a stable tmux session name from channel + scope + engine.
 /// Uses only tmux-safe characters (alphanumerics, `-`).
-/// Example: "eloir-orbit-claude-befra-jafraus-ecommerce"
+/// Example: "eloir-orbit-claude-befra-jafraus-ecommerce" (stable),
+/// "eloir-orbit-canary-claude-…" (canary), "eloir-orbit-dev-claude-…" (dev).
+///
+/// The channel segment (`orbit`/`orbit-canary`/`orbit-dev`) keeps each channel's
+/// sessions in a separate namespace, so `session_exists` never reattaches a
+/// canary or dev launch to a stable session (or vice versa). Stable keeps the
+/// bare `orbit` segment, so its existing session names are unchanged.
 ///
 /// The workspace name is always included in non-global mode so that sessions
 /// across different workspaces with the same tenant name never collide
 /// (e.g. ~/BeFra and ~/Tensiply both having an "AI" tenant).
-pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> String {
+pub fn tmux_session_name(
+    scope: &OrbitScope,
+    engine: Engine,
+    username: &str,
+    channel: Channel,
+) -> String {
     let safe = |s: &str| {
         s.to_lowercase()
             .replace(|c: char| !c.is_alphanumeric(), "-")
@@ -234,7 +247,7 @@ pub fn tmux_session_name(scope: &OrbitScope, engine: Engine, username: &str) -> 
     if !username.is_empty() {
         parts.push(safe(username));
     }
-    parts.push("orbit".into());
+    parts.push(channel.process_name());
     parts.push(engine.as_str().to_string());
     if !scope.global_mode {
         let ws = scope
@@ -788,6 +801,9 @@ pub fn spawn_background(
     let hooks_settings_path = if engine == Engine::Claude {
         let hook_state = orbit_core::engine_hook::EngineHookState::load();
         let catalog = orbit_core::engine_hook::load_all();
+        for hook in catalog.iter().filter(|h| h.always_on) {
+            let _ = orbit_core::engine_hook::install_scripts(hook);
+        }
         if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
             let path = paths.runtime_dir.join("claude-hooks-settings.json");
             fs::write(&path, serde_json::to_string_pretty(&val)?)?;
@@ -834,7 +850,7 @@ pub fn spawn_background(
     let username = orbit_core::user_config::UserConfig::load().user.name;
     let base_name = session_name
         .map(|s| s.to_string())
-        .unwrap_or_else(|| tmux_session_name(scope, engine, &username));
+        .unwrap_or_else(|| tmux_session_name(scope, engine, &username, Channel::current()));
     let tmux_name = if force_new {
         tmux::unique_session_name(&base_name)
     } else {
@@ -871,7 +887,7 @@ pub fn spawn_background(
         hooks_settings_path.as_deref(),
     );
     let session_env = collect_session_env(scope, engine, &paths, &config.env);
-    let title = window_title(scope, engine);
+    let title = window_title(scope, engine, Channel::current());
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")
         .arg("-d")
@@ -994,7 +1010,7 @@ pub fn spawn_plan_node(
 
     // 5. Launch in a dedicated detached tmux session
     let node_title = {
-        let base = window_title(scope, engine);
+        let base = window_title(scope, engine, Channel::current());
         // Strip the engine tag and re-insert with :node marker so the status bar
         // makes it obvious this is a headless plan node, not an interactive session.
         base.replacen(
@@ -1224,9 +1240,16 @@ fn configure_tmux_session(session_name: &str) {
 /// Build a human-readable window title.
 /// Format: `[<engine>] <last_scope>` (scoped) or `[<engine>]` (global)
 /// Example: `[claude] orbit`
-fn window_title(scope: &OrbitScope, engine: Engine) -> String {
+fn window_title(scope: &OrbitScope, engine: Engine, channel: Channel) -> String {
+    // Non-stable channels tag the engine so the window/terminal title shows which
+    // channel the session belongs to, e.g. `[claude·CANARY]`. Stable is untagged.
+    let tag = match channel.label() {
+        Some(label) => format!("{}·{}", engine.as_str(), label),
+        None => engine.as_str().to_string(),
+    };
+
     if scope.global_mode {
-        return format!("[{}]", engine.as_str());
+        return format!("[{tag}]");
     }
 
     // Build ordered scope segments: tenant [project [repository]]
@@ -1240,7 +1263,7 @@ fn window_title(scope: &OrbitScope, engine: Engine) -> String {
 
     let last = all.last().copied().unwrap_or("");
 
-    format!("[{}] {}", engine.as_str(), last)
+    format!("[{tag}] {last}")
 }
 
 /// Public alias used by the CLI to set the terminal title before attaching to tmux.
@@ -1250,7 +1273,7 @@ pub fn set_terminal_title_pub(title: &str) {
 
 /// Public alias used by the CLI to compute the window title for a scope+engine.
 pub fn tmux_session_window_title(scope: &OrbitScope, engine: Engine) -> String {
-    window_title(scope, engine)
+    window_title(scope, engine, Channel::current())
 }
 
 /// Emit an xterm OSC escape to set the terminal window/tab title.
@@ -1370,13 +1393,35 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            tmux_session_name(&scope, Engine::Opencode, ""),
+            tmux_session_name(&scope, Engine::Opencode, "", Channel::Stable),
             "orbit-opencode-ai-aidev-ai-ecosystem-orbit"
         );
         assert_eq!(
-            tmux_session_name(&scope, Engine::Opencode, "eloir"),
+            tmux_session_name(&scope, Engine::Opencode, "eloir", Channel::Stable),
             "eloir-orbit-opencode-ai-aidev-ai-ecosystem-orbit"
         );
+    }
+
+    #[test]
+    fn tmux_session_name_separates_channels() {
+        // The same scope on different channels must never share a session name,
+        // so a canary/dev launch cannot reattach to a stable session.
+        let scope = OrbitScope {
+            workspace_root: "/home/user/Tensiply".into(),
+            tenant: "ORBIT".into(),
+            project: "ORBIT".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+        let stable = tmux_session_name(&scope, Engine::Claude, "eloir", Channel::Stable);
+        let canary = tmux_session_name(&scope, Engine::Claude, "eloir", Channel::Canary);
+        let dev = tmux_session_name(&scope, Engine::Claude, "eloir", Channel::Dev);
+        assert_eq!(stable, "eloir-orbit-claude-tensiply-orbit-orbit");
+        assert_eq!(canary, "eloir-orbit-canary-claude-tensiply-orbit-orbit");
+        assert_eq!(dev, "eloir-orbit-dev-claude-tensiply-orbit-orbit");
+        assert_ne!(stable, canary);
+        assert_ne!(stable, dev);
+        assert_ne!(canary, dev);
     }
 
     #[test]
@@ -1394,8 +1439,8 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        let name_befra = tmux_session_name(&befra, Engine::Claude, "eloir");
-        let name_tensiply = tmux_session_name(&tensiply, Engine::Claude, "eloir");
+        let name_befra = tmux_session_name(&befra, Engine::Claude, "eloir", Channel::Stable);
+        let name_tensiply = tmux_session_name(&tensiply, Engine::Claude, "eloir", Channel::Stable);
         assert_ne!(name_befra, name_tensiply);
         assert_eq!(name_befra, "eloir-orbit-claude-befra-ai");
         assert_eq!(name_tensiply, "eloir-orbit-claude-tensiply-ai");
@@ -1408,11 +1453,11 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            tmux_session_name(&scope, Engine::Claude, ""),
+            tmux_session_name(&scope, Engine::Claude, "", Channel::Stable),
             "orbit-claude"
         );
         assert_eq!(
-            tmux_session_name(&scope, Engine::Claude, "eloir"),
+            tmux_session_name(&scope, Engine::Claude, "eloir", Channel::Stable),
             "eloir-orbit-claude"
         );
     }
@@ -1423,7 +1468,14 @@ mod tests {
             global_mode: true,
             ..Default::default()
         };
-        assert_eq!(window_title(&scope, Engine::Claude), "[claude]");
+        assert_eq!(
+            window_title(&scope, Engine::Claude, Channel::Stable),
+            "[claude]"
+        );
+        assert_eq!(
+            window_title(&scope, Engine::Claude, Channel::Canary),
+            "[claude·CANARY]"
+        );
     }
 
     #[test]
@@ -1436,7 +1488,14 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(window_title(&scope, Engine::Claude), "[claude] orbit");
+        assert_eq!(
+            window_title(&scope, Engine::Claude, Channel::Stable),
+            "[claude] orbit"
+        );
+        assert_eq!(
+            window_title(&scope, Engine::Claude, Channel::Dev),
+            "[claude·DEV] orbit"
+        );
     }
 
     #[test]
@@ -1449,7 +1508,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            window_title(&scope, Engine::Opencode),
+            window_title(&scope, Engine::Opencode, Channel::Stable),
             "[opencode] AI-ECOSYSTEM"
         );
     }
@@ -1462,6 +1521,9 @@ mod tests {
             global_mode: false,
             ..Default::default()
         };
-        assert_eq!(window_title(&scope, Engine::Gemini), "[gemini] AIDEV");
+        assert_eq!(
+            window_title(&scope, Engine::Gemini, Channel::Stable),
+            "[gemini] AIDEV"
+        );
     }
 }

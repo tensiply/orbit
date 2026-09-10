@@ -30,7 +30,7 @@ curl -fsSL "$(curl -fsSL https://api.github.com/repos/tensiply/orbit/releases/la
 # macOS (Intel) — -macos-x86_64, install to /usr/local/bin/orbit
 ```
 
-Or switch channels after install with `orbit mode stable|canary`.
+Each channel is a separate binary with an isolated home: `orbit` (stable, `~/.orbit`), `orbit-canary` (`~/.orbit-canary`), `dev-orbit` (`~/.orbit-dev`). Install the one you want and run it directly.
 
 Requires [tmux](https://github.com/tmux/tmux) and at least one AI engine: [opencode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Claude Code](https://claude.ai/code).
 
