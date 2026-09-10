@@ -82,7 +82,10 @@ async fn collect_terminal(
 #[tokio::test]
 #[serial]
 async fn approve_node_transitions_awaiting_to_pending() {
-    let h = TestHarness::new().await;
+    // No supervisor: approval flips the node to Pending, and a running supervisor
+    // would immediately execute it (Pending → Running → Failed with no engine),
+    // racing the state assertion below. This test only checks the IPC transition.
+    let h = TestHarness::new_no_supervisor().await;
 
     let mut plan = make_plan("plan_approve_basic", "review PR", PlanStatus::Running);
     plan.nodes[0].status = NodeStatus::AwaitingApproval;
