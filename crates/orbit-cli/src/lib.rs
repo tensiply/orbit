@@ -140,6 +140,9 @@ pub async fn run_channel(channel: Channel) -> Result<()> {
 }
 
 fn needs_setup(cmd: &Option<Commands>) -> bool {
+    // `daemon` is infrastructure, not a user command — the desktop app and other
+    // channels start it before `orbit setup` has ever run for that channel. It
+    // must not abort on a missing config, or the daemon never comes up.
     !matches!(
         cmd,
         Some(Commands::Setup(_))
@@ -147,6 +150,7 @@ fn needs_setup(cmd: &Option<Commands>) -> bool {
             | Some(Commands::Man(_))
             | Some(Commands::Update(_))
             | Some(Commands::ShellInit(_))
+            | Some(Commands::Daemon(_))
             | None
     )
 }
