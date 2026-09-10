@@ -250,6 +250,13 @@ pub enum Response {
         uptime_secs: u64,
         session_count: usize,
         pid: u32,
+        /// Channel the daemon is serving (`stable`/`canary`/`dev`) — lets a
+        /// caller confirm it reached the daemon for the channel it expected.
+        #[serde(default)]
+        channel: String,
+        /// Resolved orbit home the daemon is bound to (e.g. `~/.orbit-canary`).
+        #[serde(default)]
+        home: String,
     },
     Launched {
         tmux_name: String,

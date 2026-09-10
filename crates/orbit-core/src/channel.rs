@@ -59,6 +59,19 @@ impl Channel {
         format!("orbitd{}", self.home_suffix())
     }
 
+    /// Base TCP port for this channel's local debug/MCP server:
+    /// stable 17777, canary 17787, dev 17797. Each channel owns a 10-port block
+    /// (`base..base+10`) so its server has a fixed, predictable address and can
+    /// fall back within its own block without ever colliding with another
+    /// channel. The single source of truth for the port contract.
+    pub fn debug_port_base(self) -> u16 {
+        match self {
+            Channel::Stable => 17777,
+            Channel::Canary => 17787,
+            Channel::Dev => 17797,
+        }
+    }
+
     /// Uppercase branding tag shown in the banner for non-stable builds.
     /// `None` for stable (no tag).
     pub fn label(self) -> Option<&'static str> {
@@ -100,6 +113,20 @@ mod tests {
         assert_eq!(Channel::Stable.daemon_process_name(), "orbitd");
         assert_eq!(Channel::Canary.daemon_process_name(), "orbitd-canary");
         assert_eq!(Channel::Dev.daemon_process_name(), "orbitd-dev");
+    }
+
+    #[test]
+    fn debug_ports_are_fixed_and_blocked_per_channel() {
+        assert_eq!(Channel::Stable.debug_port_base(), 17777);
+        assert_eq!(Channel::Canary.debug_port_base(), 17787);
+        assert_eq!(Channel::Dev.debug_port_base(), 17797);
+        // 10-port blocks never overlap.
+        for (a, b) in [
+            (Channel::Stable, Channel::Canary),
+            (Channel::Canary, Channel::Dev),
+        ] {
+            assert!(b.debug_port_base() - a.debug_port_base() >= 10);
+        }
     }
 
     #[test]

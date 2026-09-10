@@ -261,6 +261,10 @@ impl ServerState {
                     uptime_secs: self.started_at.elapsed().as_secs(),
                     session_count: alive,
                     pid: std::process::id(),
+                    channel: orbit_core::channel::Channel::current().as_str().to_string(),
+                    home: orbit_core::data_paths::orbit_home()
+                        .to_string_lossy()
+                        .into_owned(),
                 }
             }
 

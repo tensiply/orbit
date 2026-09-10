@@ -95,6 +95,16 @@ async fn stop() -> Result<()> {
 // ── status ────────────────────────────────────────────────────────────────────
 
 async fn status() -> Result<()> {
+    use orbit_core::channel::Channel;
+    let ch = Channel::current();
+    println!("Channel:  {}", ch.as_str());
+    println!(
+        "  Home:   {}",
+        orbit_core::data_paths::orbit_home().display()
+    );
+    println!("  Socket: {}", orbit_core::ipc::socket_path().display());
+    println!("  Debug:  127.0.0.1:{} (desktop MCP)", ch.debug_port_base());
+
     if !ipc::is_available() {
         println!("Daemon: not running");
         return Ok(());
@@ -107,6 +117,16 @@ async fn status() -> Result<()> {
             println!("  PID:      {}", info.pid);
             println!("  Uptime:   {uptime}");
             println!("  Sessions: {} active", info.session_count);
+            // The daemon reports the channel it is bound to — flag a mismatch so
+            // a cross-channel confusion surfaces instead of passing silently.
+            if !info.channel.is_empty() && info.channel != ch.as_str() {
+                println!(
+                    "  ⚠ channel mismatch: daemon serves '{}' ({}) but this binary is '{}'",
+                    info.channel,
+                    info.home,
+                    ch.as_str()
+                );
+            }
         }
         Err(e) => {
             println!("Daemon: socket exists but not responding ({e})");

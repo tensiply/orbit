@@ -254,8 +254,20 @@ fn print_human(d: &StatusData) {
     };
     row("daemon", label_w, &daemon_detail);
 
-    // mode
-    row("mode", label_w, &d.mode);
+    // channel + its config (home, debug MCP port) — so it is always clear which
+    // channel this binary is and where it points.
+    let ch = Channel::current();
+    row("channel", label_w, &d.mode);
+    row(
+        "home",
+        label_w,
+        &orbit_core::data_paths::orbit_home().display().to_string(),
+    );
+    row(
+        "debug",
+        label_w,
+        &format!("127.0.0.1:{} (desktop MCP)", ch.debug_port_base()),
+    );
 
     // version
     row("version", label_w, &format!("v{}", d.version));

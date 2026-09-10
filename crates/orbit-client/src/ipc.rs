@@ -86,6 +86,8 @@ pub struct StatusInfo {
     pub uptime_secs: u64,
     pub session_count: usize,
     pub pid: u32,
+    pub channel: String,
+    pub home: String,
 }
 
 pub async fn status() -> Result<StatusInfo> {
@@ -94,10 +96,14 @@ pub async fn status() -> Result<StatusInfo> {
             uptime_secs,
             session_count,
             pid,
+            channel,
+            home,
         } => Ok(StatusInfo {
             uptime_secs,
             session_count,
             pid,
+            channel,
+            home,
         }),
         Response::Error { message } => bail!("{message}"),
         _ => bail!("unexpected response"),
