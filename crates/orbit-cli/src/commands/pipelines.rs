@@ -5,7 +5,7 @@ use orbit_core::{
         PipelineConfig, PipelineProvider, PipelineRun, PipelineStatus, PipelineStep, RunStatus,
         github_run_status, github_step_status, jenkins_run_status, parse_rfc3339,
     },
-    secrets,
+    resolver, secrets,
     user_config::UserConfig,
 };
 use serde_json::Value;
@@ -53,8 +53,12 @@ pub async fn run(args: PipelinesArgs) -> Result<()> {
 // ── config collection ─────────────────────────────────────────────────────────
 
 fn collect_configs(args: &PipelinesArgs) -> Result<(Vec<PipelineConfig>, Option<String>)> {
-    let user_cfg = UserConfig::load();
-    let ai_root = user_cfg.ai_root_expanded();
+    // Prefer the workspace detected from CWD (same logic as `orbit context show`)
+    // so the correct ai_context_root is used regardless of what ai_root is set
+    // in the static user config (which may point to a different workspace).
+    let ai_root = resolver::resolve_from_cwd()
+        .map(|s| s.ai_context_root)
+        .unwrap_or_else(|_| UserConfig::load().ai_root_expanded());
     let slug = ai_root
         .file_name()
         .map(|n| n.to_string_lossy().into_owned());
