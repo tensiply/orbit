@@ -150,7 +150,7 @@ async fn cancel_nonexistent_plan_returns_error() {
 #[tokio::test]
 #[serial]
 async fn pause_then_resume_plan() {
-    let h = TestHarness::new().await;
+    let h = TestHarness::new_no_supervisor().await;
 
     let plan = make_plan("plan_test_pause", "add logging", PlanStatus::Running);
     h.write_plan(&plan).unwrap();
