@@ -60,7 +60,7 @@ base64 = "0.22"
 keyring = "4"
 jsonwebtoken = "9"
 mdns-sd = "0.20"
-rand = "0.8"
+rand = "0.9"
 hostname = "0.4"
 
 # Document generation
