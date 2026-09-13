@@ -170,8 +170,12 @@ mod tests {
         let raw = json!({ "command": ["node", "./dist/index.js"], "environment": { "X": "1" } });
         let server = normalize(Path::new("/base"), &raw).unwrap();
         assert_eq!(server.command[0], "node");
-        // relative path in command resolved against base
-        assert_eq!(server.command[1], "/base/dist/index.js");
+        // relative path in command resolved against base (Path compares
+        // separator-agnostically so this holds on Windows too)
+        assert_eq!(
+            Path::new(&server.command[1]),
+            Path::new("/base/dist/index.js")
+        );
     }
 
     #[test]
@@ -191,8 +195,11 @@ mod tests {
         assert_eq!(server.command[0], "npx");
         assert_eq!(server.command[1], "-y");
         assert_eq!(server.command[3], "--config");
-        // relative arg must be resolved to absolute path
-        assert_eq!(server.command[4], "/base/config/settings.yaml");
+        // relative arg must be resolved to absolute path (separator-agnostic)
+        assert_eq!(
+            Path::new(&server.command[4]),
+            Path::new("/base/config/settings.yaml")
+        );
     }
 
     #[test]
