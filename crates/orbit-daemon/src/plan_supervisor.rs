@@ -843,7 +843,7 @@ fn dispatch_node(
     let intent_path = write_node_intent(&session_name, node_label, node_intent)?;
     merged.instructions.push(intent_path);
 
-    launcher::backend::session_backend().spawn_plan_node(
+    crate::pty::select_backend().spawn_plan_node(
         &session_name,
         node_intent,
         &orbit_scope,

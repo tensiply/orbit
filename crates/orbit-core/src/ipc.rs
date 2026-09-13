@@ -189,6 +189,25 @@ pub enum Request {
         #[serde(default)]
         max_nodes: Option<u32>,
     },
+    /// Attach to a session's daemon-owned PTY (streaming, bidirectional). After
+    /// this request the connection carries `AttachFrame`s instead of `Response`s:
+    /// the daemon streams backlog + live `Output`, the client sends `Input` /
+    /// `Resize` / `Detach`. Only meaningful for `SessionBackendKind::DaemonPty`.
+    SessionAttach {
+        id: String,
+        cols: u16,
+        rows: u16,
+    },
+    /// Resize a daemon-owned PTY (standalone, outside an attach stream).
+    SessionResize {
+        id: String,
+        cols: u16,
+        rows: u16,
+    },
+    /// Detach without terminating the session (the daemon keeps the PTY alive).
+    SessionDetach {
+        id: String,
+    },
     GetPlan {
         id: String,
     },
@@ -386,4 +405,23 @@ pub enum Response {
     NetworkPeers {
         peers: Vec<crate::net::NetworkPeerInfo>,
     },
+}
+
+// ── AttachFrame ─────────────────────────────────────────────────────────────────
+
+/// Frames exchanged over a connection after a `SessionAttach`, replacing the
+/// request/response protocol for the life of the attachment. One JSON object per
+/// line (same newline framing as the rest of the protocol); raw PTY bytes ride
+/// inside as a `Vec<u8>`, so embedded newlines are escaped by the JSON encoding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "frame", rename_all = "snake_case")]
+pub enum AttachFrame {
+    /// daemon → client: PTY output (scrollback backlog first, then live).
+    Output { bytes: Vec<u8> },
+    /// client → daemon: keystrokes / stdin to write into the PTY.
+    Input { bytes: Vec<u8> },
+    /// client → daemon: terminal was resized.
+    Resize { cols: u16, rows: u16 },
+    /// client → daemon: detach and close the stream (PTY stays alive).
+    Detach,
 }
