@@ -69,6 +69,30 @@ jobs:
       - name: Build
         run: cargo build --release --bin orbit
 
+  # ── Windows port check ─────────────────────────────────────────────────────────
+  # The daemon Windows port (native session backend, detach, Claude bootstrap) is
+  # in progress. Advisory until it compiles clean — flip continue-on-error to
+  # false to make Windows a required gate once the port lands.
+  windows:
+    name: Windows build & test
+    runs-on: windows-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+      - name: Build
+        run: cargo build --bin orbit
+      - name: Test
+        run: cargo test --all
+
   # ── Security audit ────────────────────────────────────────────────────────────
   # Advisory — does not block green CI, but surfaces known CVEs in dependencies.
   audit:
