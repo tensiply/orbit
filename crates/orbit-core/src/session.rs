@@ -255,7 +255,7 @@ pub fn is_pid_alive(pid: u32) -> bool {
     {
         Path::new(&format!("/proc/{pid}")).exists()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         std::process::Command::new("kill")
             .args(["-0", &pid.to_string()])
@@ -263,6 +263,16 @@ pub fn is_pid_alive(pid: u32) -> bool {
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        // No `/proc` or `kill` on Windows — query the task list. With CSV + no
+        // header a live PID appears quoted (e.g. `"orbit.exe","1234",...`).
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\"")))
             .unwrap_or(false)
     }
 }
