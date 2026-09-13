@@ -12,6 +12,26 @@ fn is_false(b: &bool) -> bool {
     !b
 }
 
+/// Which backend owns a session's persistence and reattach.
+///
+/// On unix, sessions run inside a `tmux` server that survives client and daemon
+/// restarts. On Windows there is no tmux, so the daemon owns a PTY directly
+/// (`DaemonPty`) and keeps it alive across client disconnects. The value is
+/// recorded on the session so `attach`/output-capture can dispatch correctly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionBackendKind {
+    /// Session lives in a tmux server (unix). Handle is `Session::tmux_session`.
+    #[default]
+    Tmux,
+    /// Session's PTY is owned by the daemon, addressed by `Session::id`.
+    DaemonPty,
+}
+
+fn is_default_backend(b: &SessionBackendKind) -> bool {
+    matches!(b, SessionBackendKind::Tmux)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     /// `{pid}-{started_at}` — unique per launch
@@ -32,6 +52,10 @@ pub struct Session {
     /// tmux session name, if the engine was launched inside tmux
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tmux_session: Option<String>,
+    /// Persistence backend for this session. Absent in pre-A2 session files →
+    /// deserializes as `Tmux`, preserving existing sessions.
+    #[serde(default, skip_serializing_if = "is_default_backend")]
+    pub backend: SessionBackendKind,
 }
 
 impl Session {
@@ -60,12 +84,18 @@ impl Session {
             global_mode,
             is_history: false,
             tmux_session,
+            backend: SessionBackendKind::Tmux,
         }
     }
 
     /// `true` if this session was launched inside a tmux session.
     pub fn has_tmux(&self) -> bool {
         self.tmux_session.is_some()
+    }
+
+    /// `true` if this session's PTY is owned by the daemon (no tmux).
+    pub fn is_daemon_pty(&self) -> bool {
+        matches!(self.backend, SessionBackendKind::DaemonPty)
     }
 
     /// `~/.orbit/data/sessions/`
@@ -362,6 +392,39 @@ mod tests {
         assert_eq!(Session::load_from(&dir).len(), 1);
         s.delete_from(&dir).unwrap();
         assert_eq!(Session::load_from(&dir).len(), 0);
+    }
+
+    #[test]
+    fn legacy_session_json_defaults_to_tmux_backend() {
+        // Pre-A2 session files have no `backend` field — they must load as Tmux.
+        let legacy = r#"{
+            "id": "1-2",
+            "pid": 1,
+            "engine": "claude",
+            "tenant": "T",
+            "project": "P",
+            "repository": "R",
+            "work_dir": "/work",
+            "started_at": 2,
+            "global_mode": false,
+            "tmux_session": "orbit-x"
+        }"#;
+        let s: Session = serde_json::from_str(legacy).unwrap();
+        assert_eq!(s.backend, SessionBackendKind::Tmux);
+        assert!(s.has_tmux());
+        assert!(!s.is_daemon_pty());
+    }
+
+    #[test]
+    fn daemon_pty_backend_round_trips() {
+        let mut s = make_session(7);
+        s.backend = SessionBackendKind::DaemonPty;
+        s.tmux_session = None;
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.backend, SessionBackendKind::DaemonPty);
+        assert!(back.is_daemon_pty());
+        assert!(!back.has_tmux());
     }
 
     #[test]
