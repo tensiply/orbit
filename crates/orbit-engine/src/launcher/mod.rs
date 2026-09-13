@@ -766,7 +766,9 @@ fn collect_session_env(
 pub enum LaunchKind<'a> {
     /// Interactive session (engine attaches to a terminal). Optional task
     /// context (Jira/Linear issue) is injected as an instruction file.
-    Interactive { task_context: Option<&'a TaskContext> },
+    Interactive {
+        task_context: Option<&'a TaskContext>,
+    },
     /// Headless plan node driven by an explicit intent (engine runs in
     /// print/headless mode and exits when done).
     PlanNode { intent: &'a str },
@@ -835,24 +837,23 @@ pub fn prepare_launch(
     }
 
     // 2d. Engine hooks settings (interactive Claude only) — write --settings file.
-    let hooks_settings_path = if matches!(kind, LaunchKind::Interactive { .. })
-        && engine == Engine::Claude
-    {
-        let hook_state = orbit_core::engine_hook::EngineHookState::load();
-        let catalog = orbit_core::engine_hook::load_all();
-        for hook in catalog.iter().filter(|h| h.always_on) {
-            let _ = orbit_core::engine_hook::install_scripts(hook);
-        }
-        if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
-            let path = paths.runtime_dir.join("claude-hooks-settings.json");
-            fs::write(&path, serde_json::to_string_pretty(&val)?)?;
-            Some(path)
+    let hooks_settings_path =
+        if matches!(kind, LaunchKind::Interactive { .. }) && engine == Engine::Claude {
+            let hook_state = orbit_core::engine_hook::EngineHookState::load();
+            let catalog = orbit_core::engine_hook::load_all();
+            for hook in catalog.iter().filter(|h| h.always_on) {
+                let _ = orbit_core::engine_hook::install_scripts(hook);
+            }
+            if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
+                let path = paths.runtime_dir.join("claude-hooks-settings.json");
+                fs::write(&path, serde_json::to_string_pretty(&val)?)?;
+                Some(path)
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
 
     // 3a. For Gemini: inject commands as context, then write merged GEMINI.md
     if engine == Engine::Gemini {
@@ -970,7 +971,12 @@ pub fn spawn_background(
         return Ok(session);
     }
 
-    let prepared = prepare_launch(scope, config, engine, LaunchKind::Interactive { task_context })?;
+    let prepared = prepare_launch(
+        scope,
+        config,
+        engine,
+        LaunchKind::Interactive { task_context },
+    )?;
 
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")

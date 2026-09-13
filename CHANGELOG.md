@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Daemon-owned PTY sessions** — A cross-platform session backend where the daemon owns the engine's PTY (`portable-pty`/ConPTY) with a bounded scrollback ring, instead of tmux. New IPC ops (`SessionAttach`/`SessionResize`/`SessionDetach`) and an `AttachFrame` stream let `orbit session attach` / `orbit launch` reattach over IPC with scrollback intact; the PTY survives client disconnects (but not a daemon restart). Default on Windows; opt-in on unix via `ORBIT_DAEMON_PTY=1` (tmux stays the unix default). See ADR-013.
+
 ### Changed
 
-- **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the upcoming Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
+- **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
 
 ## [0.25.0] - 2026-09-11
 

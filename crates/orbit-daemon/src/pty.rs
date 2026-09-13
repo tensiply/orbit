@@ -151,36 +151,14 @@ fn pty_command(prepared: &PreparedLaunch) -> CommandBuilder {
 }
 
 fn spawn_prepared(scope: &OrbitScope, engine: Engine, prepared: PreparedLaunch) -> Result<Session> {
-    let pty_system = NativePtySystem::default();
-    let pair = pty_system.openpty(PtySize {
-        rows: 24,
-        cols: 80,
-        pixel_width: 0,
-        pixel_height: 0,
-    })?;
-
     let mut builder = pty_command(&prepared);
     for (k, v) in &prepared.env {
         builder.env(k, v);
     }
     builder.cwd(&prepared.work_dir);
 
-    let mut child = pair.slave.spawn_command(builder)?;
-    let pid = child.process_id().unwrap_or(0);
-    // Drop the slave in the daemon so the reader sees EOF when the child exits.
-    drop(pair.slave);
-
-    let reader = pair.master.try_clone_reader()?;
-    let writer = pair.master.take_writer()?;
-    let (output_tx, _) = broadcast::channel::<Vec<u8>>(BROADCAST_CAP);
-    let scrollback = Arc::new(Mutex::new(VecDeque::with_capacity(SCROLLBACK_CAP)));
-
-    let handle = Arc::new(PtyHandle {
-        master: Mutex::new(pair.master),
-        writer: Mutex::new(writer),
-        scrollback: scrollback.clone(),
-        output_tx: output_tx.clone(),
-    });
+    // Spawn first so the session id embeds the real child pid (used for liveness).
+    let (pid, pieces) = open_pty(builder)?;
 
     let mut session = Session::new(
         pid,
@@ -193,8 +171,73 @@ fn spawn_prepared(scope: &OrbitScope, engine: Engine, prepared: PreparedLaunch) 
         None,
     );
     session.backend = SessionBackendKind::DaemonPty;
-    let id = session.id.clone();
-    registry().lock().unwrap().insert(id.clone(), handle);
+
+    finish_register(session.id.clone(), pieces);
+
+    if let Err(e) = session.save() {
+        tracing::warn!("could not save daemon-pty session: {e}");
+    }
+    Ok(session)
+}
+
+/// The moving parts of a freshly-opened PTY, handed from [`open_pty`] to
+/// [`finish_register`] so session-id derivation can sit between them.
+struct PtyPieces {
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+/// Open a PTY and spawn `builder` inside it. Returns the child pid and the PTY
+/// pieces (the child is not yet reaped; the reader thread owns it).
+fn open_pty(builder: CommandBuilder) -> Result<(u32, PtyPieces)> {
+    let pty_system = NativePtySystem::default();
+    let pair = pty_system.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+    let child = pair.slave.spawn_command(builder)?;
+    let pid = child.process_id().unwrap_or(0);
+    // Drop the slave in the daemon so the reader sees EOF when the child exits.
+    drop(pair.slave);
+    let reader = pair.master.try_clone_reader()?;
+    let writer = pair.master.take_writer()?;
+    Ok((
+        pid,
+        PtyPieces {
+            master: pair.master,
+            reader,
+            writer,
+            child,
+        },
+    ))
+}
+
+/// Register a PTY in the global registry under `session_id` and start the reader
+/// thread that drains it into the scrollback ring + live broadcast.
+fn finish_register(session_id: String, pieces: PtyPieces) {
+    let PtyPieces {
+        master,
+        reader,
+        writer,
+        mut child,
+    } = pieces;
+    let (output_tx, _) = broadcast::channel::<Vec<u8>>(BROADCAST_CAP);
+    let scrollback = Arc::new(Mutex::new(VecDeque::with_capacity(SCROLLBACK_CAP)));
+
+    let handle = Arc::new(PtyHandle {
+        master: Mutex::new(master),
+        writer: Mutex::new(writer),
+        scrollback: scrollback.clone(),
+        output_tx: output_tx.clone(),
+    });
+    registry()
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), handle);
 
     // Reader thread: drain the PTY → append to the ring + broadcast, holding the
     // scrollback lock across both so `attach` gets a clean handoff. On EOF, reap
@@ -220,13 +263,8 @@ fn spawn_prepared(scope: &OrbitScope, engine: Engine, prepared: PreparedLaunch) 
             }
         }
         let _ = child.wait();
-        registry().lock().unwrap().remove(&id);
+        registry().lock().unwrap().remove(&session_id);
     });
-
-    if let Err(e) = session.save() {
-        tracing::warn!("could not save daemon-pty session: {e}");
-    }
-    Ok(session)
 }
 
 /// Select the session backend for this daemon: the daemon-owned PTY on Windows
@@ -237,5 +275,58 @@ pub fn select_backend() -> Box<dyn SessionBackend> {
         Box::new(DaemonPtyBackend)
     } else {
         orbit_engine::launcher::backend::session_backend()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// Spawn `cat` in a daemon-owned PTY, register it, attach, write input, and
+    /// confirm the echoed output arrives over the broadcast — exercising the
+    /// scrollback/attach/broadcast handoff end-to-end without a real engine.
+    #[test]
+    fn pty_roundtrip_over_broadcast() {
+        let (pid, pieces) = open_pty(CommandBuilder::new("cat")).unwrap();
+        assert!(pid > 0, "cat should have a pid");
+        let id = "test-pty-roundtrip".to_string();
+        finish_register(id.clone(), pieces);
+
+        let handle = get(&id).expect("PTY should be registered");
+        // Subscribe before writing so the echoed bytes cannot be missed.
+        let (_backlog, mut rx) = handle.attach();
+        handle.write_input(b"orbit-pty-hello\n").unwrap();
+
+        let mut seen = Vec::new();
+        for _ in 0..100 {
+            match rx.try_recv() {
+                Ok(bytes) => {
+                    seen.extend_from_slice(&bytes);
+                    if String::from_utf8_lossy(&seen).contains("orbit-pty-hello") {
+                        break;
+                    }
+                }
+                Err(broadcast::error::TryRecvError::Empty) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Err(_) => break,
+            }
+        }
+        assert!(
+            String::from_utf8_lossy(&seen).contains("orbit-pty-hello"),
+            "expected echoed input in PTY output, got: {:?}",
+            String::from_utf8_lossy(&seen)
+        );
+
+        // Ctrl-D at line start makes cat read EOF and exit → the reader thread
+        // reaps the child and drops the registry entry.
+        handle.write_input(b"\x04").ok();
+        for _ in 0..100 {
+            if get(&id).is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(get(&id).is_none(), "registry entry should clear after EOF");
     }
 }
