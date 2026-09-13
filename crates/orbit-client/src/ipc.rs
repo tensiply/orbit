@@ -1,50 +1,66 @@
 use anyhow::{Result, bail};
+use interprocess::local_socket::{GenericFilePath, ToFsName, tokio::Stream, tokio::prelude::*};
 use orbit_core::{
-    ipc::{PlanStreamEvent, Request, Response, socket_path},
+    ipc::{PlanStreamEvent, Request, Response, endpoint_for_path, socket_endpoint},
     session::Session,
 };
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
+
+// ── transport ───────────────────────────────────────────────────────────────
+//
+// The wire protocol (newline-delimited JSON) is platform-independent; only the
+// local-socket transport differs. `interprocess` gives us a Unix domain socket
+// on unix and a named pipe on Windows behind one `Stream` type.
+
+async fn connect(endpoint: &str) -> std::io::Result<Stream> {
+    let name = endpoint.to_fs_name::<GenericFilePath>()?;
+    Stream::connect(name).await
+}
 
 // ── client ────────────────────────────────────────────────────────────────────
 
-/// Returns `true` if the daemon socket exists (daemon may be running).
+/// Returns `true` if the daemon appears to be running.
+#[cfg(unix)]
 pub fn is_available() -> bool {
-    socket_path().exists()
+    orbit_core::ipc::socket_path().exists()
+}
+
+/// Returns `true` if the daemon appears to be running (named-pipe connect probe).
+#[cfg(windows)]
+pub fn is_available() -> bool {
+    use interprocess::local_socket::{GenericFilePath, Stream as SyncStream, ToFsName, prelude::*};
+    socket_endpoint()
+        .to_fs_name::<GenericFilePath>()
+        .and_then(SyncStream::connect)
+        .is_ok()
 }
 
 pub async fn send_raw(req: &Request) -> Result<Response> {
-    send_on(&socket_path(), req).await
+    send_on(&socket_endpoint(), req).await
 }
 
 /// Send a request to a daemon socket at an explicit path (used by integration tests).
 pub async fn send_raw_to(sock: &std::path::Path, req: &Request) -> Result<Response> {
-    send_on(sock, req).await
+    send_on(&endpoint_for_path(sock), req).await
 }
 
 async fn send(req: &Request) -> Result<Response> {
-    send_on(&socket_path(), req).await
+    send_on(&socket_endpoint(), req).await
 }
 
-async fn send_on(sock: &std::path::Path, req: &Request) -> Result<Response> {
-    if !sock.exists() {
-        bail!(
-            "Daemon is not running (socket not found at {}).",
-            sock.display()
-        );
-    }
-
-    let stream = match UnixStream::connect(sock).await {
+async fn send_on(endpoint: &str, req: &Request) -> Result<Response> {
+    let stream = match connect(endpoint).await {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
-            // Stale socket — remove it so the daemon can rebind after restart
-            let _ = std::fs::remove_file(sock);
+            // Stale unix socket — remove it so the daemon can rebind after restart.
+            #[cfg(unix)]
+            let _ = std::fs::remove_file(endpoint);
             bail!("Daemon is not running (stale socket removed).");
         }
-        Err(e) => return Err(e.into()),
+        Err(_) => bail!("Daemon is not running."),
     };
-    let (reader, mut writer) = stream.into_split();
+    let (reader, mut writer) = tokio::io::split(stream);
 
     let mut line = serde_json::to_string(req)?;
     line.push('\n');
@@ -195,7 +211,7 @@ pub struct LaunchedInfo {
 /// Subscribe to live events for a running plan.
 /// Returns a channel receiver — events arrive until the plan reaches a terminal state.
 pub async fn stream_plan(id: &str) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
-    stream_plan_on(id, socket_path()).await
+    stream_plan_ep(id, socket_endpoint()).await
 }
 
 /// Like `stream_plan` but connects to a specific socket path (e.g. a project socket).
@@ -203,12 +219,17 @@ pub async fn stream_plan_on(
     id: &str,
     sock: PathBuf,
 ) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
-    if !sock.exists() {
-        bail!("Daemon is not running. Start it with `orbit daemon start`.");
-    }
+    stream_plan_ep(id, endpoint_for_path(&sock)).await
+}
 
-    let stream = UnixStream::connect(&sock).await?;
-    let (reader, mut writer) = stream.into_split();
+async fn stream_plan_ep(
+    id: &str,
+    endpoint: String,
+) -> Result<tokio::sync::mpsc::Receiver<PlanStreamEvent>> {
+    let stream = connect(&endpoint).await.map_err(|_| {
+        anyhow::anyhow!("Daemon is not running. Start it with `orbit daemon start`.")
+    })?;
+    let (reader, mut writer) = tokio::io::split(stream);
 
     let req = Request::StreamPlan { id: id.to_string() };
     let mut line = serde_json::to_string(&req)?;

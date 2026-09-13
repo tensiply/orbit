@@ -1,7 +1,14 @@
 use anyhow::Result;
+use interprocess::local_socket::{
+    GenericFilePath, ListenerOptions, ToFsName,
+    tokio::{Listener, Stream, prelude::*},
+};
 use orbit_core::{
     audit::audit_stats,
-    ipc::{PlanStreamEvent, Request, Response, pid_path, socket_path},
+    ipc::{
+        PlanStreamEvent, Request, Response, endpoint_for_path, pid_path, socket_endpoint,
+        socket_path,
+    },
     plan::{NodeStatus, Plan, PlanStatus},
     session::Session,
 };
@@ -12,10 +19,16 @@ use std::{
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{UnixListener, UnixStream},
     sync::broadcast,
 };
 use tracing::{debug, info, warn};
+
+/// Bind a local-socket listener at the given endpoint name (Unix domain socket
+/// on unix, named pipe on Windows).
+fn bind_listener(endpoint: &str) -> std::io::Result<Listener> {
+    let name = endpoint.to_fs_name::<GenericFilePath>()?;
+    ListenerOptions::new().name(name).create_tokio()
+}
 
 // ── connection role ───────────────────────────────────────────────────────────
 
@@ -822,13 +835,17 @@ impl ServerState {
                     ProjectRole::Observer => ConnectionRole::Observer,
                 };
                 let path_buf = std::path::PathBuf::from(&path);
-                if let Some(parent) = path_buf.parent() {
-                    let _ = fs::create_dir_all(parent);
+                let endpoint = endpoint_for_path(&path_buf);
+                #[cfg(unix)]
+                {
+                    if let Some(parent) = path_buf.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    if path_buf.exists() {
+                        let _ = fs::remove_file(&path_buf);
+                    }
                 }
-                if path_buf.exists() {
-                    let _ = fs::remove_file(&path_buf);
-                }
-                match UnixListener::bind(&path_buf) {
+                match bind_listener(&endpoint) {
                     Err(e) => Response::Error {
                         message: format!("bind error: {e}"),
                     },
@@ -848,7 +865,7 @@ impl ServerState {
                                 tokio::select! {
                                     accept = listener.accept() => {
                                         match accept {
-                                            Ok((stream, _)) => {
+                                            Ok(stream) => {
                                                 let s = state.clone();
                                                 tokio::spawn(handle_connection(stream, s, conn_role));
                                             }
@@ -856,6 +873,7 @@ impl ServerState {
                                         }
                                     }
                                     _ = shutdown_rx.recv() => {
+                                        #[cfg(unix)]
                                         let _ = fs::remove_file(&path_buf);
                                         break;
                                     }
@@ -1126,8 +1144,8 @@ impl ServerState {
 
 // ── connection handler ────────────────────────────────────────────────────────
 
-async fn handle_connection(stream: UnixStream, state: Arc<ServerState>, role: ConnectionRole) {
-    let (reader, mut writer) = stream.into_split();
+async fn handle_connection(stream: Stream, state: Arc<ServerState>, role: ConnectionRole) {
+    let (reader, mut writer) = tokio::io::split(stream);
     let mut lines = BufReader::new(reader).lines();
 
     while let Ok(Some(line)) = lines.next_line().await {
@@ -1342,7 +1360,16 @@ pub async fn run_on(
 ) -> Result<()> {
     fs::create_dir_all(sock.parent().unwrap())?;
 
-    // Remove stale socket file
+    // The canonical daemon binds the well-known channel endpoint; tests pass a
+    // custom path and address it through `endpoint_for_path`.
+    let endpoint = if sock == socket_path() {
+        socket_endpoint()
+    } else {
+        endpoint_for_path(&sock)
+    };
+
+    // Remove stale unix socket file so bind can succeed after an unclean exit.
+    #[cfg(unix)]
     if sock.exists() {
         fs::remove_file(&sock)?;
     }
@@ -1350,8 +1377,8 @@ pub async fn run_on(
     // Write PID file
     fs::write(&pid_file, std::process::id().to_string())?;
 
-    let listener = UnixListener::bind(&sock)?;
-    info!("orbitd listening on {}", sock.display());
+    let listener = bind_listener(&endpoint)?;
+    info!("orbitd listening on {endpoint}");
 
     resume_running_plans();
     Session::seed_history_from_existing();
@@ -1404,7 +1431,7 @@ pub async fn run_on(
         tokio::select! {
             accept = listener.accept() => {
                 match accept {
-                    Ok((stream, _)) => {
+                    Ok(stream) => {
                         let state = state.clone();
                         tokio::spawn(handle_connection(stream, state, ConnectionRole::Owner));
                     }
@@ -1418,7 +1445,8 @@ pub async fn run_on(
         }
     }
 
-    // Cleanup
+    // Cleanup — the unix socket file lingers after bind; the named pipe does not.
+    #[cfg(unix)]
     let _ = fs::remove_file(&sock);
     let _ = fs::remove_file(&pid_file);
 

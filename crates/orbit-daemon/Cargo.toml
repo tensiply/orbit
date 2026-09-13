@@ -15,6 +15,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tokio = { workspace = true }
+interprocess.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 jsonwebtoken = { workspace = true }
 rand = { workspace = true }

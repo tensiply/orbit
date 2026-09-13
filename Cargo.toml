@@ -34,6 +34,9 @@ crossterm = "0.29"
 # Async
 tokio = { version = "1", features = ["full"] }
 
+# Cross-platform local-socket IPC (Unix domain socket / Windows named pipe)
+interprocess = { version = "2", features = ["tokio"] }
+
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
