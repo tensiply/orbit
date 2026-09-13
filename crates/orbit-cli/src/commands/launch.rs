@@ -170,6 +170,11 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
             .await
             {
                 Ok(info) => {
+                    // An empty tmux name means the daemon launched into its own
+                    // PTY (Windows / ORBIT_DAEMON_PTY) — reattach over IPC instead.
+                    if info.tmux_name.is_empty() {
+                        return crate::commands::session::attach_daemon_pty(&info.session_id).await;
+                    }
                     // Set Warp/terminal title before exec-ing into tmux so the
                     // title appears immediately rather than waiting for the first
                     // tmux status-interval tick (default: 15 s).

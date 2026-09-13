@@ -40,7 +40,7 @@ pub async fn run(args: SessionArgs) -> Result<()> {
         SessionCommand::List => list(),
         SessionCommand::Kill { id, force } => kill(id.as_deref(), force),
         SessionCommand::Clean => clean(),
-        SessionCommand::Attach { id } => attach(id.as_deref()),
+        SessionCommand::Attach { id } => attach(id.as_deref()).await,
     }
 }
 
@@ -201,7 +201,7 @@ fn send_signal(session: &Session, force: bool) -> Result<()> {
 
 // ── attach ────────────────────────────────────────────────────────────────────
 
-fn attach(id: Option<&str>) -> Result<()> {
+async fn attach(id: Option<&str>) -> Result<()> {
     let sessions = Session::load_all();
 
     let session = match id {
@@ -216,14 +216,14 @@ fn attach(id: Option<&str>) -> Result<()> {
         None => {
             let attachable: Vec<&Session> = sessions
                 .iter()
-                .filter(|s| s.is_running() && s.has_tmux())
+                .filter(|s| s.is_running() && (s.has_tmux() || s.is_daemon_pty()))
                 .collect();
 
             match attachable.len() {
                 0 => {
                     if sessions.iter().any(|s| s.is_running()) {
                         bail!(
-                            "Running sessions found but none were launched with tmux.\n\
+                            "Running sessions found but none are reattachable.\n\
                              Use `orbit launch` (without --no-tmux) to enable session resuming."
                         );
                     } else {
@@ -241,6 +241,10 @@ fn attach(id: Option<&str>) -> Result<()> {
             "Session {} is no longer running. Run `orbit session clean` to remove it.",
             session.id
         );
+    }
+
+    if session.is_daemon_pty() {
+        return attach_daemon_pty(&session.id).await;
     }
 
     let Some(ref tmux_name) = session.tmux_session else {
@@ -270,6 +274,74 @@ fn attach(id: Option<&str>) -> Result<()> {
     let mut cmd = Command::new("tmux");
     cmd.args(&tmux_cmd);
     orbit_core::process::exec_replacing(cmd)
+}
+
+/// Reattach to a daemon-owned PTY session: stream the scrollback + live output
+/// to the local terminal in raw mode and forward keystrokes/resizes back. The
+/// daemon keeps the PTY alive after we detach.
+pub(crate) async fn attach_daemon_pty(session_id: &str) -> Result<()> {
+    use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
+
+    let (cols, rows) = size().unwrap_or((80, 24));
+    let mut channel = orbit_client::ipc::open_attach(session_id, cols, rows).await?;
+
+    enable_raw_mode().ok();
+    let result = pty_attach_loop(&mut channel).await;
+    disable_raw_mode().ok();
+    // Leave the cursor on a fresh line so the shell prompt is not glued to output.
+    println!();
+    result
+}
+
+async fn pty_attach_loop(channel: &mut orbit_client::ipc::AttachChannel) -> Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+    let mut inbuf = [0u8; 4096];
+
+    #[cfg(unix)]
+    let mut winch = {
+        use tokio::signal::unix::{SignalKind, signal};
+        signal(SignalKind::window_change()).ok()
+    };
+
+    loop {
+        #[cfg(unix)]
+        {
+            tokio::select! {
+                out = channel.recv_output() => match out? {
+                    Some(bytes) => { stdout.write_all(&bytes).await?; stdout.flush().await?; }
+                    None => break, // session ended
+                },
+                n = stdin.read(&mut inbuf) => {
+                    let n = n?;
+                    if n == 0 { channel.detach().await.ok(); break; }
+                    channel.send_input(&inbuf[..n]).await?;
+                }
+                _ = async { winch.as_mut().unwrap().recv().await }, if winch.is_some() => {
+                    if let Ok((cols, rows)) = crossterm::terminal::size() {
+                        channel.resize(cols, rows).await.ok();
+                    }
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                out = channel.recv_output() => match out? {
+                    Some(bytes) => { stdout.write_all(&bytes).await?; stdout.flush().await?; }
+                    None => break,
+                },
+                n = stdin.read(&mut inbuf) => {
+                    let n = n?;
+                    if n == 0 { channel.detach().await.ok(); break; }
+                    channel.send_input(&inbuf[..n]).await?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── clean ─────────────────────────────────────────────────────────────────────
