@@ -53,9 +53,15 @@ jobs:
 
   # ── Build static binaries for all target platforms ──────────────────────────
   build:
-    name: Build — ${{ matrix.artifact }}
+    name: Build — ${{ matrix.slug }}
     needs: prepare
     runs-on: ${{ matrix.os }}
+    # Windows is experimental until the daemon Windows port lands — keep it
+    # non-blocking so the other platforms still publish.
+    continue-on-error: ${{ matrix.experimental || false }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +83,11 @@ jobs:
             target: aarch64-apple-darwin
             slug: macos-aarch64
             use_cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            slug: windows-x86_64
+            use_cross: false
+            experimental: true
     steps:
       - uses: actions/checkout@v7
 
@@ -108,9 +119,11 @@ jobs:
 
       - name: Name artifact
         run: |
-          NAME=orbit-canary-${{ needs.prepare.outputs.version }}-${{ matrix.slug }}
-          cp target/${{ matrix.target }}/release/orbit "$NAME"
-          chmod +x "$NAME"
+          BIN=orbit; EXT=""
+          if [ "${{ runner.os }}" = "Windows" ]; then BIN=orbit.exe; EXT=".exe"; fi
+          NAME=orbit-canary-${{ needs.prepare.outputs.version }}-${{ matrix.slug }}${EXT}
+          cp "target/${{ matrix.target }}/release/${BIN}" "$NAME"
+          chmod +x "$NAME" || true
           echo "ARTIFACT=$NAME" >> "$GITHUB_ENV"
 
       - name: Upload artifact

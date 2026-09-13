@@ -17,6 +17,46 @@ pub fn pid_path() -> std::path::PathBuf {
     crate::data_paths::orbit_run_dir().join("orbitd.pid")
 }
 
+// ── endpoint names ──────────────────────────────────────────────────────────────
+//
+// The daemon IPC runs over a local socket. On unix that is a Unix domain socket
+// living at a filesystem path; on Windows it is a named pipe under `\\.\pipe\`.
+// These helpers hand the transport layer (orbit-client / orbit-daemon) a
+// platform-appropriate endpoint name — the wire protocol on top is identical.
+
+/// Endpoint name for the main daemon socket.
+#[cfg(unix)]
+pub fn socket_endpoint() -> String {
+    socket_path().to_string_lossy().into_owned()
+}
+
+/// Endpoint name for the main daemon socket.
+#[cfg(windows)]
+pub fn socket_endpoint() -> String {
+    // Channel-scoped so stable/canary/dev daemons never collide on one pipe.
+    format!(
+        r"\\.\pipe\orbit{}",
+        crate::channel::Channel::current().home_suffix()
+    )
+}
+
+/// Map a project-socket filesystem path to a platform endpoint name. Project
+/// sockets are addressed by path across the codebase; on Windows a named pipe
+/// cannot live at an arbitrary path, so derive a stable pipe name from it.
+#[cfg(unix)]
+pub fn endpoint_for_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// Map a project-socket filesystem path to a platform endpoint name.
+#[cfg(windows)]
+pub fn endpoint_for_path(path: &std::path::Path) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    format!(r"\\.\pipe\orbit-proj-{:016x}", h.finish())
+}
+
 // ── PlanStreamEvent ───────────────────────────────────────────────────────────
 
 /// Events pushed by the daemon while a plan is executing.

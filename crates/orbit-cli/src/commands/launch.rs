@@ -214,16 +214,14 @@ async fn ensure_daemon_running() {
 }
 
 fn attach_tmux(session_name: &str) -> Result<()> {
-    use std::os::unix::process::CommandExt;
-    let cmd = if std::env::var("TMUX").is_ok() {
+    let sub = if std::env::var("TMUX").is_ok() {
         "switch-client"
     } else {
         "attach-session"
     };
-    let err = std::process::Command::new("tmux")
-        .args([cmd, "-t", session_name])
-        .exec();
-    anyhow::bail!("failed to exec tmux {cmd}: {err}");
+    let mut cmd = std::process::Command::new("tmux");
+    cmd.args([sub, "-t", session_name]);
+    orbit_core::process::exec_replacing(cmd)
 }
 
 // ── dry-run report ────────────────────────────────────────────────────────────

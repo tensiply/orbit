@@ -9,9 +9,28 @@ use anyhow::{Result, bail};
 use orbit_core::{
     channel::Channel, context::OrbitScope, engine::Engine, jira::TaskContext, session::Session,
 };
-use std::{fs, io::Write, os::unix::process::CommandExt, path::Path, process::Command};
+use std::{fs, io::Write, path::Path, process::Command};
 
 use crate::config::MergedConfig;
+
+// ── cross-platform process helpers ──────────────────────────────────────────────
+
+/// Build a `Command` for an engine binary. On Windows engines are usually npm
+/// shims (`claude.cmd`), which `CreateProcess` cannot run directly — route them
+/// through `cmd /c` so the shim resolves. On unix the binary runs directly.
+#[cfg(unix)]
+fn build_command(bin: &str) -> Command {
+    Command::new(bin)
+}
+
+#[cfg(windows)]
+fn build_command(bin: &str) -> Command {
+    let mut cmd = Command::new("cmd");
+    cmd.arg("/c").arg(bin);
+    cmd
+}
+
+use orbit_core::process::exec_replacing;
 
 // ── public API ────────────────────────────────────────────────────────────────
 
@@ -289,10 +308,9 @@ fn exec_with_tmux(
     if !force_new && tmux::session_exists(session_name) {
         // Session already exists — reattach
         tracing::debug!("reattaching to tmux session {session_name}");
-        let err = Command::new("tmux")
-            .args(["attach-session", "-t", session_name])
-            .exec();
-        bail!("failed to attach to tmux session {session_name}: {err}");
+        let mut cmd = Command::new("tmux");
+        cmd.args(["attach-session", "-t", session_name]);
+        return exec_replacing(cmd);
     }
 
     // Build the engine command args for tmux
@@ -348,10 +366,9 @@ fn exec_with_tmux(
 
     configure_tmux_session(session_name);
 
-    let err = Command::new("tmux")
-        .args(["attach-session", "-t", session_name])
-        .exec();
-    bail!("failed to attach to tmux session {session_name}: {err}");
+    let mut cmd = Command::new("tmux");
+    cmd.args(["attach-session", "-t", session_name]);
+    exec_replacing(cmd)
 }
 
 // ── direct exec ───────────────────────────────────────────────────────────────
@@ -363,12 +380,11 @@ fn exec_engine(
     hooks_settings: Option<&Path>,
 ) -> Result<()> {
     let (bin, extra_args) = engine_cmd(engine, config_file, context_file, hooks_settings);
-    let mut cmd = Command::new(&bin);
+    let mut cmd = build_command(&bin);
     for arg in &extra_args {
         cmd.arg(arg);
     }
-    let err = cmd.exec();
-    bail!("failed to exec {}: {}", bin, err);
+    exec_replacing(cmd)
 }
 
 fn engine_cmd(

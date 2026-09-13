@@ -69,6 +69,29 @@ jobs:
       - name: Build
         run: cargo build --release --bin orbit
 
+  # ── Windows build & test ───────────────────────────────────────────────────────
+  # Required gate: the daemon/CLI compiles and its unit + daemon IPC (named pipe)
+  # integration tests pass on Windows. Native session backend (ConPTY) and winget
+  # bootstrap are still in progress but do not regress this gate.
+  windows:
+    name: Windows build & test
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+      - name: Build
+        run: cargo build --bin orbit
+      - name: Test
+        run: cargo test --all
+
   # ── Security audit ────────────────────────────────────────────────────────────
   # Advisory — does not block green CI, but surfaces known CVEs in dependencies.
   audit:

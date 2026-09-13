@@ -68,14 +68,21 @@ impl TestHarness {
             let _ = orbit_daemon::server::run_on(sock_clone, pid_file, opts).await;
         });
 
-        // Wait up to 2 s for the socket to appear.
+        // Wait up to 2 s for the daemon to accept connections. Probe by actually
+        // connecting rather than checking for a socket file — on Windows the
+        // endpoint is a named pipe with no filesystem presence.
+        let mut ready = false;
         for _ in 0..100 {
-            if sock.exists() {
+            if orbit_client::ipc::send_raw_to(&sock, &Request::Status)
+                .await
+                .is_ok()
+            {
+                ready = true;
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(sock.exists(), "daemon socket did not appear within 2 s");
+        assert!(ready, "daemon did not accept connections within 2 s");
 
         TestHarness {
             dir,
