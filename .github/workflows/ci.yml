@@ -69,14 +69,13 @@ jobs:
       - name: Build
         run: cargo build --release --bin orbit
 
-  # ── Windows port check ─────────────────────────────────────────────────────────
-  # The daemon Windows port (native session backend, detach, Claude bootstrap) is
-  # in progress. Advisory until it compiles clean — flip continue-on-error to
-  # false to make Windows a required gate once the port lands.
+  # ── Windows build & test ───────────────────────────────────────────────────────
+  # Required gate: the daemon/CLI compiles and its unit + daemon IPC (named pipe)
+  # integration tests pass on Windows. Native session backend (ConPTY) and winget
+  # bootstrap are still in progress but do not regress this gate.
   windows:
     name: Windows build & test
     runs-on: windows-latest
-    continue-on-error: true
     defaults:
       run:
         shell: bash
