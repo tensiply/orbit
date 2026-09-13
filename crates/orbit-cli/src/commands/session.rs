@@ -3,7 +3,6 @@ use clap::{Args, Subcommand};
 use orbit_core::session::Session;
 use std::{
     io::{self, Write},
-    os::unix::process::CommandExt,
     process::Command,
 };
 
@@ -268,8 +267,9 @@ fn attach(id: Option<&str>) -> Result<()> {
         vec!["attach-session", "-t", tmux_name.as_str()]
     };
 
-    let err = Command::new("tmux").args(&tmux_cmd).exec();
-    bail!("failed to exec tmux: {err}");
+    let mut cmd = Command::new("tmux");
+    cmd.args(&tmux_cmd);
+    orbit_core::process::exec_replacing(cmd)
 }
 
 // ── clean ─────────────────────────────────────────────────────────────────────

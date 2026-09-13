@@ -1,5 +1,6 @@
 use crate::user_config::UserConfig;
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 
 // ── config ────────────────────────────────────────────────────────────────────

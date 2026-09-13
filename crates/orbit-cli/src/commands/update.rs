@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use orbit_core::{channel::Channel, user_config::UserConfig, workspace_config::WorkspaceConfig};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, os::unix::fs::PermissionsExt, process::Command};
+use std::{fs, io::Write, process::Command};
 
 use crate::update_check;
 
@@ -246,7 +246,11 @@ pub(crate) async fn update_binary_to(
             install_path.parent().unwrap_or(install_path).display()
         )
     })?;
-    fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755))?;
+    }
     fs::rename(&tmp_path, install_path).with_context(|| {
         format!(
             "failed to replace binary at {} — try running with sudo",

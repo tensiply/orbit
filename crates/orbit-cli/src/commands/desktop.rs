@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Args;
 use orbit_core::channel::Channel;
 use std::path::PathBuf;
@@ -24,9 +24,7 @@ pub fn run(args: DesktopArgs) -> Result<()> {
     let name = desktop_binary_name(channel);
     let binary = resolve(name).ok_or_else(|| anyhow::anyhow!(not_installed_hint(channel)))?;
 
-    use std::os::unix::process::CommandExt;
-    let err = std::process::Command::new(&binary).exec();
-    bail!("failed to launch {}: {err}", binary.display())
+    orbit_core::process::exec_replacing(std::process::Command::new(&binary))
 }
 
 /// Installed binary name of the desktop app for a channel. The dev and canary

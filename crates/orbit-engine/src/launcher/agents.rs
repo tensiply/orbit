@@ -2,9 +2,25 @@ use anyhow::Result;
 use orbit_core::{context::OrbitScope, engine::Engine};
 use std::{
     fs,
-    os::unix::fs::symlink,
     path::{Path, PathBuf},
 };
+
+/// Cross-platform symlink: `link` -> `target`. On Windows, picks the dir/file
+/// variant based on the target (Windows needs separate calls and, typically,
+/// Developer Mode or elevation).
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    if target.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+}
 
 // ── public entry point ────────────────────────────────────────────────────────
 
