@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the upcoming Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
+
 ## [0.25.0] - 2026-09-11
 
 ### Added

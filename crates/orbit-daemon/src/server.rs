@@ -297,7 +297,8 @@ impl ServerState {
             } => {
                 use orbit_core::engine::Engine;
                 use orbit_engine::{
-                    config, launcher,
+                    config,
+                    launcher::backend::session_backend,
                     resolver::{self, ResolveArgs},
                 };
 
@@ -342,7 +343,7 @@ impl ServerState {
                     }
                 };
 
-                match launcher::spawn_background(
+                match session_backend().spawn_background(
                     &scope,
                     &merged,
                     engine_val,

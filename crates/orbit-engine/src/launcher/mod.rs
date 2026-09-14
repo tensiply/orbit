@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod backend;
 pub mod engine_hooks;
 pub mod plugin_hooks;
 pub mod render;
