@@ -843,7 +843,7 @@ fn dispatch_node(
     let intent_path = write_node_intent(&session_name, node_label, node_intent)?;
     merged.instructions.push(intent_path);
 
-    launcher::backend::session_backend().spawn_plan_node(
+    crate::pty::select_backend().spawn_plan_node(
         &session_name,
         node_intent,
         &orbit_scope,
@@ -854,8 +854,9 @@ fn dispatch_node(
 
 // ── Output capture ────────────────────────────────────────────────────────────
 
-/// Start piping tmux pane output to a per-node log file and stream lines
-/// to the broadcast channel in real time.
+/// Capture a plan node's output into a per-node log file and stream lines to
+/// the broadcast channel in real time. Sources the output from tmux `pipe-pane`
+/// or, for daemon-owned PTY sessions, the PTY's broadcast.
 fn start_output_capture(
     session_key: &str,
     session: &Session,
@@ -863,24 +864,49 @@ fn start_output_capture(
     node_id: &str,
     event_tx: broadcast::Sender<PlanStreamEvent>,
 ) {
-    let Some(ref tmux_name) = session.tmux_session else {
-        return;
-    };
     let log_dir = std::env::temp_dir().join("orbit-plan-nodes");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join(format!("{session_key}.log"));
 
-    // Pipe tmux pane output to the log file.
-    let _ = std::process::Command::new("tmux")
-        .args([
-            "pipe-pane",
-            "-t",
-            tmux_name,
-            &format!("cat >> {}", log_path.to_string_lossy()),
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    // Feed the node's output into the per-node log the tail thread reads. tmux
+    // sessions use `pipe-pane`; daemon-owned PTY sessions drain the PTY's
+    // broadcast into the same file, so capture works identically either way.
+    if session.is_daemon_pty() {
+        let Some(handle) = crate::pty::get(&session.id) else {
+            return;
+        };
+        let (backlog, mut rx) = handle.attach();
+        let log_path = log_path.clone();
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            else {
+                return;
+            };
+            let _ = file.write_all(&backlog);
+            let _ = file.flush();
+            while let Ok(bytes) = rx.blocking_recv() {
+                let _ = file.write_all(&bytes);
+                let _ = file.flush();
+            }
+        });
+    } else if let Some(ref tmux_name) = session.tmux_session {
+        let _ = std::process::Command::new("tmux")
+            .args([
+                "pipe-pane",
+                "-t",
+                tmux_name,
+                &format!("cat >> {}", log_path.to_string_lossy()),
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    } else {
+        return;
+    }
 
     // Tail the log file and emit NodeOutput events for each new line.
     let plan_id = plan_id.to_string();

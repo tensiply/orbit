@@ -761,23 +761,42 @@ fn collect_session_env(
 
 // ── daemon-side spawn ─────────────────────────────────────────────────────────
 
-/// Spawn a detached tmux session containing the engine. Returns the registered
-/// `Session` on success. Intended for daemon use — does NOT exec() the current
-/// process and does NOT call `std::env::set_var`.
-/// Spawn the engine as a detached tmux session.
-///
-/// `session_name` overrides the default computed name — use it for plan nodes
-/// so each node gets an isolated session rather than reusing a shared one.
-/// When `None`, falls back to the scope-derived name and reuses an existing
-/// session if one with that name is already running.
-pub fn spawn_background(
+/// Which kind of session is being prepared — the only launch-time difference
+/// between an interactive session and a headless plan node.
+pub enum LaunchKind<'a> {
+    /// Interactive session (engine attaches to a terminal). Optional task
+    /// context (Jira/Linear issue) is injected as an instruction file.
+    Interactive {
+        task_context: Option<&'a TaskContext>,
+    },
+    /// Headless plan node driven by an explicit intent (engine runs in
+    /// print/headless mode and exits when done).
+    PlanNode { intent: &'a str },
+}
+
+/// Fully-resolved launch: the engine binary, its args, the session environment,
+/// the working directory, and the window/status-bar title. Produced by
+/// [`prepare_launch`] and consumed by whichever backend actually starts the
+/// process (tmux on unix, daemon-owned PTY on Windows / opt-in unix).
+pub struct PreparedLaunch {
+    pub bin: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub work_dir: std::path::PathBuf,
+    pub title: String,
+}
+
+/// Backend-agnostic session preparation: materialise agent/plugin/config/context
+/// files, resolve MCP secrets, sync workspace auth, and compute the engine
+/// command + environment. Every session backend runs this identical setup so
+/// tmux and daemon-PTY sessions behave the same; only the final process launch
+/// differs.
+pub fn prepare_launch(
     scope: &OrbitScope,
     config: &MergedConfig,
     engine: Engine,
-    task_context: Option<&TaskContext>,
-    session_name: Option<&str>,
-    force_new: bool,
-) -> Result<orbit_core::session::Session> {
+    kind: LaunchKind<'_>,
+) -> Result<PreparedLaunch> {
     // 1. Runtime dirs
     let paths = runtime::setup(scope, engine)?;
 
@@ -801,8 +820,11 @@ pub fn spawn_background(
         }
     }
 
-    // 2c. Task context injection — fetch full detail (description + comments).
-    if let Some(task) = task_context {
+    // 2c. Task context injection (interactive only) — full detail + comments.
+    if let LaunchKind::Interactive {
+        task_context: Some(task),
+    } = &kind
+    {
         let md = match orbit_core::jira::fetch_issue_detail(&task.key) {
             Ok(detail) => orbit_core::jira::render_task_detail_instructions(&detail),
             Err(_) => orbit_core::jira::render_task_instructions(task),
@@ -814,23 +836,24 @@ pub fn spawn_background(
         }
     }
 
-    // 2d. Engine hooks settings (Claude only) — write runtime settings file for --settings
-    let hooks_settings_path = if engine == Engine::Claude {
-        let hook_state = orbit_core::engine_hook::EngineHookState::load();
-        let catalog = orbit_core::engine_hook::load_all();
-        for hook in catalog.iter().filter(|h| h.always_on) {
-            let _ = orbit_core::engine_hook::install_scripts(hook);
-        }
-        if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
-            let path = paths.runtime_dir.join("claude-hooks-settings.json");
-            fs::write(&path, serde_json::to_string_pretty(&val)?)?;
-            Some(path)
+    // 2d. Engine hooks settings (interactive Claude only) — write --settings file.
+    let hooks_settings_path =
+        if matches!(kind, LaunchKind::Interactive { .. }) && engine == Engine::Claude {
+            let hook_state = orbit_core::engine_hook::EngineHookState::load();
+            let catalog = orbit_core::engine_hook::load_all();
+            for hook in catalog.iter().filter(|h| h.always_on) {
+                let _ = orbit_core::engine_hook::install_scripts(hook);
+            }
+            if let Some(val) = engine_hooks::build_settings(&hook_state, &catalog) {
+                let path = paths.runtime_dir.join("claude-hooks-settings.json");
+                fs::write(&path, serde_json::to_string_pretty(&val)?)?;
+                Some(path)
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
 
     // 3a. For Gemini: inject commands as context, then write merged GEMINI.md
     if engine == Engine::Gemini {
@@ -863,7 +886,63 @@ pub fn spawn_background(
         None
     };
 
-    // 4. Tmux session name
+    // 4. Sync workspace auth into tenant data dir.
+    if let Err(e) = runtime::sync_workspace_auth(&paths) {
+        tracing::warn!("could not sync workspace auth: {e}");
+    }
+
+    // 5. Resolve command, environment, and title per launch kind.
+    let (bin, args) = match &kind {
+        LaunchKind::Interactive { .. } => engine_cmd(
+            engine,
+            &paths.config_file,
+            context_file.as_deref(),
+            hooks_settings_path.as_deref(),
+        ),
+        LaunchKind::PlanNode { intent } => {
+            plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent)
+        }
+    };
+    let env = collect_session_env(scope, engine, &paths, &config.env);
+    let title = match &kind {
+        LaunchKind::Interactive { .. } => window_title(scope, engine, Channel::current()),
+        LaunchKind::PlanNode { .. } => {
+            // Re-tag as `[engine:node]` so the status bar marks it a headless node.
+            let base = window_title(scope, engine, Channel::current());
+            base.replacen(
+                &format!("[{}]", engine.as_str()),
+                &format!("[{}:node]", engine.as_str()),
+                1,
+            )
+        }
+    };
+
+    Ok(PreparedLaunch {
+        bin,
+        args,
+        env,
+        work_dir: scope.work_dir.clone(),
+        title,
+    })
+}
+
+/// Spawn a detached tmux session containing the engine. Returns the registered
+/// `Session` on success. Intended for daemon use — does NOT exec() the current
+/// process and does NOT call `std::env::set_var`.
+///
+/// `session_name` overrides the default computed name — use it for plan nodes
+/// so each node gets an isolated session rather than reusing a shared one.
+/// When `None`, falls back to the scope-derived name and reuses an existing
+/// session if one with that name is already running.
+pub fn spawn_background(
+    scope: &OrbitScope,
+    config: &MergedConfig,
+    engine: Engine,
+    task_context: Option<&TaskContext>,
+    session_name: Option<&str>,
+    force_new: bool,
+) -> Result<orbit_core::session::Session> {
+    // Tmux session name
     let username = orbit_core::user_config::UserConfig::load().user.name;
     let base_name = session_name
         .map(|s| s.to_string())
@@ -875,10 +954,9 @@ pub fn spawn_background(
     };
 
     // Reuse an existing session only when the caller did not supply an override
-    // and a new session was not explicitly requested.
-    // Plan-node sessions always get a fresh dedicated session.
+    // and a new session was not explicitly requested. Reattaching to a live
+    // engine needs no re-materialisation, so skip prepare_launch on this path.
     if !force_new && session_name.is_none() && tmux::session_exists(&tmux_name) {
-        // Already running — return the existing session name so client can attach
         let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
         let session = orbit_core::session::Session::new(
             pid,
@@ -893,38 +971,33 @@ pub fn spawn_background(
         return Ok(session);
     }
 
-    // 5. Sync workspace auth into tenant data dir, then build command
-    if let Err(e) = runtime::sync_workspace_auth(&paths) {
-        tracing::warn!("could not sync workspace auth: {e}");
-    }
-    let (bin, extra_args) = engine_cmd(
+    let prepared = prepare_launch(
+        scope,
+        config,
         engine,
-        &paths.config_file,
-        context_file.as_deref(),
-        hooks_settings_path.as_deref(),
-    );
-    let session_env = collect_session_env(scope, engine, &paths, &config.env);
-    let title = window_title(scope, engine, Channel::current());
+        LaunchKind::Interactive { task_context },
+    )?;
+
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")
         .arg("-d")
         .arg("-s")
         .arg(&tmux_name)
         .arg("-n")
-        .arg(&title)
+        .arg(&prepared.title)
         .arg("-c")
-        .arg(&scope.work_dir);
-    for (k, v) in &session_env {
+        .arg(&prepared.work_dir);
+    for (k, v) in &prepared.env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    cmd.arg("--").arg(&bin);
-    for arg in &extra_args {
+    cmd.arg("--").arg(&prepared.bin);
+    for arg in &prepared.args {
         cmd.arg(arg);
     }
-    for (k, v) in &session_env {
+    for (k, v) in &prepared.env {
         cmd.env(k, v);
     }
-    cmd.current_dir(&scope.work_dir);
+    cmd.current_dir(&prepared.work_dir);
 
     let status = cmd.status()?;
     if !status.success() {
@@ -933,10 +1006,7 @@ pub fn spawn_background(
 
     configure_tmux_session(&tmux_name);
 
-    // 6. Get pane PID
     let pid = tmux_pane_pid(&tmux_name).unwrap_or(std::process::id());
-
-    // 7. Register session
     let session = orbit_core::session::Session::new(
         pid,
         engine.as_str(),
@@ -966,97 +1036,29 @@ pub fn spawn_plan_node(
     config: &MergedConfig,
     engine: Engine,
 ) -> Result<orbit_core::session::Session> {
-    // 1. Runtime dirs
-    let paths = runtime::setup(scope, engine)?;
+    let prepared = prepare_launch(scope, config, engine, LaunchKind::PlanNode { intent })?;
 
-    // 2. Agent materialisation
-    agents::build(
-        scope,
-        engine,
-        &paths.runtime_dir,
-        &config.instructions,
-        config.commands_filter.as_ref(),
-    )?;
-
-    // 2b. Plugin context + pre-launch hooks
-    let mut config = config.clone();
-    let state = orbit_core::plugin::PluginState::load();
-    let plugins = orbit_core::plugin::load_all();
-    plugin_hooks::inject_context(&state, &plugins, &mut config, &paths.runtime_dir)?;
-    for path in plugin_hooks::run_pre_launch(&state, &plugins, &paths.runtime_dir) {
-        if !config.instructions.contains(&path) {
-            config.instructions.push(path);
-        }
-    }
-
-    // 3. For Gemini: inject commands as context, then write merged GEMINI.md
-    if engine == Engine::Gemini {
-        let cmd_file = agents::build_gemini_commands(
-            scope,
-            &paths.runtime_dir,
-            config.commands_filter.as_ref(),
-        )?;
-        if !config.instructions.contains(&cmd_file) {
-            config.instructions.push(cmd_file);
-        }
-        let gemini_ctx = paths.runtime_dir.join("GEMINI.md");
-        build_gemini_context(&config.instructions, &gemini_ctx)?;
-        config.instructions.push(gemini_ctx);
-    }
-
-    // 3b. Write config + context files
-    config.resolve_mcp_secrets(workspace_slug(scope).as_deref());
-    let rendered = render::render(&config, engine);
-    fs::write(&paths.config_file, serde_json::to_string_pretty(&rendered)?)?;
-
-    let context_file = if engine == Engine::Claude {
-        cleanup_claude_md_overlapping_refs(&scope.work_dir, &config.instructions);
-        let ctx_path = paths.runtime_dir.join("context.md");
-        build_claude_context(&config.instructions, &ctx_path)?;
-        Some(ctx_path)
-    } else {
-        None
-    };
-
-    // 4. Sync workspace auth, then build the headless engine command
-    if let Err(e) = runtime::sync_workspace_auth(&paths) {
-        tracing::warn!("could not sync workspace auth: {e}");
-    }
-    let (bin, extra_args) =
-        plan_node_cmd(engine, &paths.config_file, context_file.as_deref(), intent);
-
-    // 5. Launch in a dedicated detached tmux session
-    let node_title = {
-        let base = window_title(scope, engine, Channel::current());
-        // Strip the engine tag and re-insert with :node marker so the status bar
-        // makes it obvious this is a headless plan node, not an interactive session.
-        base.replacen(
-            &format!("[{}]", engine.as_str()),
-            &format!("[{}:node]", engine.as_str()),
-            1,
-        )
-    };
-    let session_env = collect_session_env(scope, engine, &paths, &config.env);
+    // Launch in a dedicated detached tmux session
     let mut cmd = Command::new("tmux");
     cmd.arg("new-session")
         .arg("-d")
         .arg("-s")
         .arg(session_name)
         .arg("-n")
-        .arg(&node_title)
+        .arg(&prepared.title)
         .arg("-c")
-        .arg(&scope.work_dir);
-    for (k, v) in &session_env {
+        .arg(&prepared.work_dir);
+    for (k, v) in &prepared.env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    cmd.arg("--").arg(&bin);
-    for arg in &extra_args {
+    cmd.arg("--").arg(&prepared.bin);
+    for arg in &prepared.args {
         cmd.arg(arg);
     }
-    for (k, v) in &session_env {
+    for (k, v) in &prepared.env {
         cmd.env(k, v);
     }
-    cmd.current_dir(&scope.work_dir);
+    cmd.current_dir(&prepared.work_dir);
 
     let status = cmd.status()?;
     if !status.success() {

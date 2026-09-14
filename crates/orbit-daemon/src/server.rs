@@ -298,7 +298,6 @@ impl ServerState {
                 use orbit_core::engine::Engine;
                 use orbit_engine::{
                     config,
-                    launcher::backend::session_backend,
                     resolver::{self, ResolveArgs},
                 };
 
@@ -343,7 +342,7 @@ impl ServerState {
                     }
                 };
 
-                match session_backend().spawn_background(
+                match crate::pty::select_backend().spawn_background(
                     &scope,
                     &merged,
                     engine_val,
@@ -360,6 +359,25 @@ impl ServerState {
                     },
                 }
             }
+
+            // ── Session PTY (daemon-owned) ────────────────────────────────────
+            Request::SessionResize { id, cols, rows } => match crate::pty::get(&id) {
+                Some(handle) => {
+                    handle.resize(cols, rows);
+                    Response::Ok
+                }
+                None => Response::Error {
+                    message: format!("no live daemon-owned PTY for session {id}"),
+                },
+            },
+            // Standalone detach is a no-op: real detach happens by closing the
+            // attach stream (`AttachFrame::Detach`). The PTY stays alive either way.
+            Request::SessionDetach { .. } => Response::Ok,
+            // Attach is a streaming request intercepted in `handle_connection`
+            // before it reaches here; arriving here means it was misrouted.
+            Request::SessionAttach { .. } => Response::Error {
+                message: "session_attach must use the streaming connection path".into(),
+            },
 
             // ── Plan requests ─────────────────────────────────────────────────
             Request::CreatePlan {
@@ -1244,6 +1262,73 @@ async fn handle_connection(stream: Stream, state: Arc<ServerState>, role: Connec
                     Ok(_) => {} // different plan — skip
                     Err(broadcast::error::RecvError::Lagged(_)) => {} // drop and continue
                     Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            break;
+        }
+
+        // ── session attach: bidirectional PTY stream ──────────────────────────
+        if let Request::SessionAttach { id, cols, rows } = &req {
+            use orbit_core::ipc::AttachFrame;
+
+            if !role.allows(&req) {
+                let err = Response::Error {
+                    message: "operation not permitted on project socket".into(),
+                };
+                let mut json = serde_json::to_string(&err).unwrap_or_default();
+                json.push('\n');
+                let _ = writer.write_all(json.as_bytes()).await;
+                break;
+            }
+
+            let Some(handle) = crate::pty::get(id) else {
+                let err = Response::Error {
+                    message: format!("no live daemon-owned PTY for session {id}"),
+                };
+                let mut json = serde_json::to_string(&err).unwrap_or_default();
+                json.push('\n');
+                let _ = writer.write_all(json.as_bytes()).await;
+                break;
+            };
+
+            handle.resize(*cols, *rows);
+            let (backlog, mut output_rx) = handle.attach();
+
+            // Replay scrollback, then stream live output and pump client frames.
+            let hello = AttachFrame::Output { bytes: backlog };
+            let mut json = serde_json::to_string(&hello).unwrap_or_default();
+            json.push('\n');
+            if writer.write_all(json.as_bytes()).await.is_err() {
+                break;
+            }
+
+            loop {
+                tokio::select! {
+                    out = output_rx.recv() => match out {
+                        Ok(bytes) => {
+                            let frame = AttachFrame::Output { bytes };
+                            let mut json = serde_json::to_string(&frame).unwrap_or_default();
+                            json.push('\n');
+                            if writer.write_all(json.as_bytes()).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {} // gap; client keeps up
+                        Err(broadcast::error::RecvError::Closed) => break, // PTY ended (child exited)
+                    },
+                    line = lines.next_line() => match line {
+                        Ok(Some(l)) => match serde_json::from_str::<AttachFrame>(&l) {
+                            Ok(AttachFrame::Input { bytes }) => {
+                                let _ = handle.write_input(&bytes);
+                            }
+                            Ok(AttachFrame::Resize { cols, rows }) => handle.resize(cols, rows),
+                            Ok(AttachFrame::Detach) => break,
+                            // Output frames are daemon→client only; ignore if echoed back.
+                            Ok(AttachFrame::Output { .. }) => {}
+                            Err(_) => break, // malformed frame — drop the attachment
+                        },
+                        Ok(None) | Err(_) => break, // client disconnected
+                    },
                 }
             }
             break;

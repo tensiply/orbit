@@ -1,11 +1,11 @@
 use anyhow::{Result, bail};
 use interprocess::local_socket::{GenericFilePath, ToFsName, tokio::Stream, tokio::prelude::*};
 use orbit_core::{
-    ipc::{PlanStreamEvent, Request, Response, endpoint_for_path, socket_endpoint},
+    ipc::{AttachFrame, PlanStreamEvent, Request, Response, endpoint_for_path, socket_endpoint},
     session::Session,
 };
 use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 
 // ── transport ───────────────────────────────────────────────────────────────
 //
@@ -256,6 +256,95 @@ async fn stream_plan_ep(
     });
 
     Ok(rx)
+}
+
+// ── session attach ──────────────────────────────────────────────────────────
+//
+// A bidirectional PTY stream to a daemon-owned session. After the initial
+// `SessionAttach`, both directions carry newline-JSON `AttachFrame`s. This is
+// the transport primitive — terminal raw-mode and stdin/stdout pumping live in
+// the CLI so this stays testable without a TTY.
+
+pub struct AttachChannel {
+    reader: tokio::io::Lines<BufReader<ReadHalf<Stream>>>,
+    writer: WriteHalf<Stream>,
+}
+
+impl AttachChannel {
+    /// Next chunk of PTY output, or `None` when the session ended (daemon closed
+    /// the stream). Non-output frames are skipped.
+    pub async fn recv_output(&mut self) -> Result<Option<Vec<u8>>> {
+        loop {
+            match self.reader.next_line().await? {
+                Some(line) => match serde_json::from_str::<AttachFrame>(&line) {
+                    Ok(AttachFrame::Output { bytes }) => return Ok(Some(bytes)),
+                    Ok(_) => continue, // client-bound frame echoed back — ignore
+                    Err(e) => bail!("malformed attach frame: {e}"),
+                },
+                None => return Ok(None),
+            }
+        }
+    }
+
+    /// Send client input (keystrokes / stdin) to the PTY.
+    pub async fn send_input(&mut self, bytes: &[u8]) -> Result<()> {
+        self.send_frame(&AttachFrame::Input {
+            bytes: bytes.to_vec(),
+        })
+        .await
+    }
+
+    /// Tell the daemon the terminal was resized.
+    pub async fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
+        self.send_frame(&AttachFrame::Resize { cols, rows }).await
+    }
+
+    /// Detach cleanly (the daemon keeps the PTY alive).
+    pub async fn detach(&mut self) -> Result<()> {
+        self.send_frame(&AttachFrame::Detach).await
+    }
+
+    async fn send_frame(&mut self, frame: &AttachFrame) -> Result<()> {
+        let mut line = serde_json::to_string(frame)?;
+        line.push('\n');
+        self.writer.write_all(line.as_bytes()).await?;
+        self.writer.flush().await?;
+        Ok(())
+    }
+}
+
+/// Open an attach stream to a daemon-owned session's PTY.
+pub async fn open_attach(id: &str, cols: u16, rows: u16) -> Result<AttachChannel> {
+    open_attach_on(&socket_endpoint(), id, cols, rows).await
+}
+
+/// Like `open_attach` but connects to an explicit socket path (integration tests).
+pub async fn open_attach_to(
+    sock: &std::path::Path,
+    id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<AttachChannel> {
+    open_attach_on(&endpoint_for_path(sock), id, cols, rows).await
+}
+
+async fn open_attach_on(endpoint: &str, id: &str, cols: u16, rows: u16) -> Result<AttachChannel> {
+    let stream = connect(endpoint)
+        .await
+        .map_err(|_| anyhow::anyhow!("Daemon is not running."))?;
+    let (reader, mut writer) = tokio::io::split(stream);
+    let req = Request::SessionAttach {
+        id: id.to_string(),
+        cols,
+        rows,
+    };
+    let mut line = serde_json::to_string(&req)?;
+    line.push('\n');
+    writer.write_all(line.as_bytes()).await?;
+    Ok(AttachChannel {
+        reader: BufReader::new(reader).lines(),
+        writer,
+    })
 }
 
 pub async fn approve_plan_node(plan_id: &str, node_id: &str) -> Result<()> {
