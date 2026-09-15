@@ -21,7 +21,7 @@ pub fn load_or_create_signing_key() -> Result<[u8; 32]> {
     }
     use rand::RngCore;
     let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    rand::rng().fill_bytes(&mut key);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

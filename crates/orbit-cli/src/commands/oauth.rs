@@ -156,7 +156,7 @@ pub async fn run_oauth_flow(plugin_name: &str, spec: &OAuthSpec) -> Result<()> {
 
 fn generate_code_verifier() -> String {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
@@ -167,7 +167,7 @@ fn pkce_challenge(verifier: &str) -> String {
 
 fn generate_state() -> String {
     let mut bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
