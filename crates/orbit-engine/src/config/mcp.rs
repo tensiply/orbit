@@ -113,6 +113,16 @@ pub fn normalize(base_dir: &Path, raw: &serde_json::Value) -> Option<McpServer> 
 
 /// Merge all servers from an `mcp.json` file into `target`.
 /// Format: `{ "mcpServers": { "name": { ... } } }`
+/// Names of the MCP servers declared in a single `mcp.json`-style file.
+/// Returns an empty vec when the file is missing or has no `mcpServers` object.
+pub fn mcp_names_in_file(path: &Path) -> Vec<String> {
+    super::jsonc::load_file(path)
+        .get("mcpServers")
+        .and_then(|s| s.as_object())
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
 pub fn merge_file(target: &mut HashMap<String, McpServer>, path: &Path) {
     let val = super::jsonc::load_file(path);
     let Some(servers) = val.get("mcpServers").and_then(|v| v.as_object()) else {

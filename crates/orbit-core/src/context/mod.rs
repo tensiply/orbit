@@ -1,4 +1,47 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// A single level of the scope hierarchy, ordered from least to most specific.
+///
+/// Pure value type (no I/O): consumers map it to concrete paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScopeLevel {
+    Global,
+    Workspace,
+    Tenant,
+    Project,
+    Repository,
+}
+
+impl ScopeLevel {
+    /// Depth in the hierarchy — higher means more specific.
+    pub fn depth(self) -> u8 {
+        match self {
+            ScopeLevel::Global => 0,
+            ScopeLevel::Workspace => 1,
+            ScopeLevel::Tenant => 2,
+            ScopeLevel::Project => 3,
+            ScopeLevel::Repository => 4,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScopeLevel::Global => "global",
+            ScopeLevel::Workspace => "workspace",
+            ScopeLevel::Tenant => "tenant",
+            ScopeLevel::Project => "project",
+            ScopeLevel::Repository => "repository",
+        }
+    }
+}
+
+impl std::fmt::Display for ScopeLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 /// Fully resolved scope for a given invocation.
 ///

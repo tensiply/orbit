@@ -7,6 +7,7 @@ use orbit_core::{
     },
     secrets,
 };
+use orbit_engine::{plugin_status::plugin_status_for_scope, resolver};
 use std::collections::{BTreeMap, HashMap};
 use std::{
     io::{self, Write},
@@ -28,7 +29,14 @@ pub struct PluginsArgs {
 #[derive(Debug, Subcommand)]
 pub enum PluginsCommand {
     /// List all available plugins with their install and MCP status
-    List,
+    List {
+        /// Show scope-aware enablement status for this level (default: cwd scope)
+        #[arg(long, value_enum)]
+        scope: Option<ScopeLevel>,
+        /// Emit machine-readable JSON with per-scope enablement status
+        #[arg(long)]
+        json: bool,
+    },
     /// Install a plugin
     Install {
         /// Plugin name (from `orbit plugins list`)
@@ -120,8 +128,11 @@ pub enum PluginsCommand {
 }
 
 pub fn run(args: PluginsArgs) -> Result<()> {
-    match args.command.unwrap_or(PluginsCommand::List) {
-        PluginsCommand::List => list(),
+    match args.command.unwrap_or(PluginsCommand::List {
+        scope: None,
+        json: false,
+    }) {
+        PluginsCommand::List { scope, json } => list(scope, json),
         PluginsCommand::Install { name, method, yes } => install(&name, method.as_deref(), yes),
         PluginsCommand::Enable { name, scope } => enable(&name, scope),
         PluginsCommand::Disable { name, scope } => disable(&name, scope),
@@ -135,7 +146,11 @@ pub fn run(args: PluginsArgs) -> Result<()> {
 
 // ── list ──────────────────────────────────────────────────────────────────────
 
-fn list() -> Result<()> {
+fn list(scope_override: Option<ScopeLevel>, json: bool) -> Result<()> {
+    if json {
+        return list_json(scope_override);
+    }
+
     let plugins = plugin::load_all();
     let state = PluginState::load();
 
@@ -281,6 +296,54 @@ fn list() -> Result<()> {
     }
     println!("  ·  orbit plugins install/enable <name>");
 
+    Ok(())
+}
+
+/// The core `ScopeLevel::Repository` is spelled `Repo` in the CLI enum; map the
+/// CLI arg to the lowercase string the engine emits for `enabled_here`.
+fn scope_filter_label(level: ScopeLevel) -> &'static str {
+    match level {
+        ScopeLevel::Global => "global",
+        ScopeLevel::Workspace => "workspace",
+        ScopeLevel::Tenant => "tenant",
+        ScopeLevel::Project => "project",
+        ScopeLevel::Repo => "repository",
+    }
+}
+
+/// Machine-readable scope-aware status (see ADR-014). Enablement per scope is
+/// derived from the scope's `mcp.json` layers by `orbit-engine`.
+fn list_json(scope_override: Option<ScopeLevel>) -> Result<()> {
+    let scope = resolver::resolve_from_cwd().unwrap_or_default();
+    let statuses = plugin_status_for_scope(&scope);
+
+    // Enrich engine status with catalog metadata the engine doesn't carry.
+    let meta: HashMap<String, (String, bool)> = plugin::load_all()
+        .into_iter()
+        .map(|p| (p.name.clone(), (p.category.clone(), p.is_installed())))
+        .collect();
+
+    let filter = scope_override.map(scope_filter_label);
+    let items: Vec<serde_json::Value> = statuses
+        .into_iter()
+        .filter(|s| match filter {
+            Some(level) => s.enabled_here.map(|l| l.as_str()) == Some(level),
+            None => true,
+        })
+        .map(|s| {
+            let (category, installed) = meta.get(&s.name).cloned().unwrap_or_default();
+            serde_json::json!({
+                "name": s.name,
+                "category": category,
+                "installed": installed,
+                "has_mcp": s.has_mcp,
+                "enabled_here": s.enabled_here.map(|l| l.as_str()),
+                "enabled_effective": s.enabled_effective,
+            })
+        })
+        .collect();
+
+    println!("{}", serde_json::to_string_pretty(&items)?);
     Ok(())
 }
 
