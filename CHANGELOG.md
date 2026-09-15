@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
+- **Windows x64 is a first-class release artifact** — Now that the Windows daemon port works, the `windows-x86_64` build is a required (blocking) job in both the stable and canary release workflows instead of an experimental, non-blocking one. `orbit-{stable,canary}-<ver>-windows-x86_64.exe` publishes alongside the Linux and macOS assets.
 
 ## [0.25.0] - 2026-09-11
 

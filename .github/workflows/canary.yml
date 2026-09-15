@@ -56,9 +56,6 @@ jobs:
     name: Build — ${{ matrix.slug }}
     needs: prepare
     runs-on: ${{ matrix.os }}
-    # Windows is experimental until the daemon Windows port lands — keep it
-    # non-blocking so the other platforms still publish.
-    continue-on-error: ${{ matrix.experimental || false }}
     defaults:
       run:
         shell: bash
@@ -87,7 +84,6 @@ jobs:
             target: x86_64-pc-windows-msvc
             slug: windows-x86_64
             use_cross: false
-            experimental: true
     steps:
       - uses: actions/checkout@v7
 
