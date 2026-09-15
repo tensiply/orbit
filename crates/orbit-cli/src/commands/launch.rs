@@ -134,6 +134,11 @@ pub async fn run(args: LaunchArgs) -> Result<()> {
         return Ok(());
     }
 
+    // On Windows the engine ships via npm — offer to bootstrap Node + Claude
+    // here (client-side, where a TTY exists) before the daemon spawns it. No-op
+    // on unix. Best-effort: a failure still proceeds to the engine's own error.
+    launcher::engine_bootstrap::ensure_available(engine);
+
     // no_tmux sessions cannot go through the daemon (daemon can't exec into the terminal)
     if !args.no_tmux {
         // Try daemon first; fall back to direct launch if unavailable

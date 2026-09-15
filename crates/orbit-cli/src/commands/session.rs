@@ -306,6 +306,12 @@ async fn pty_attach_loop(channel: &mut orbit_client::ipc::AttachChannel) -> Resu
         signal(SignalKind::window_change()).ok()
     };
 
+    // Windows has no SIGWINCH, so poll the console size and forward changes.
+    #[cfg(not(unix))]
+    let mut size_poll = tokio::time::interval(std::time::Duration::from_millis(500));
+    #[cfg(not(unix))]
+    let mut last_size = crossterm::terminal::size().unwrap_or((80, 24));
+
     loop {
         #[cfg(unix)]
         {
@@ -337,6 +343,14 @@ async fn pty_attach_loop(channel: &mut orbit_client::ipc::AttachChannel) -> Resu
                     let n = n?;
                     if n == 0 { channel.detach().await.ok(); break; }
                     channel.send_input(&inbuf[..n]).await?;
+                }
+                _ = size_poll.tick() => {
+                    if let Ok(sz) = crossterm::terminal::size() {
+                        if sz != last_size {
+                            last_size = sz;
+                            channel.resize(sz.0, sz.1).await.ok();
+                        }
+                    }
                 }
             }
         }

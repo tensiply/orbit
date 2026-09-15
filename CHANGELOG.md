@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Daemon-owned PTY sessions** — A cross-platform session backend where the daemon owns the engine's PTY (`portable-pty`/ConPTY) with a bounded scrollback ring, instead of tmux. New IPC ops (`SessionAttach`/`SessionResize`/`SessionDetach`) and an `AttachFrame` stream let `orbit session attach` / `orbit launch` reattach over IPC with scrollback intact; the PTY survives client disconnects (but not a daemon restart). Default on Windows; opt-in on unix via `ORBIT_DAEMON_PTY=1` (tmux stays the unix default). See ADR-013.
+- **Daemon-owned PTY sessions** — A cross-platform session backend where the daemon owns the engine's PTY (`portable-pty`/ConPTY) with a bounded scrollback ring, instead of tmux. New IPC ops (`SessionAttach`/`SessionResize`/`SessionDetach`) and an `AttachFrame` stream let `orbit session attach` / `orbit launch` reattach over IPC with scrollback intact; the PTY survives client disconnects (but not a daemon restart). `AttachFrame` PTY bytes ride base64-encoded (compact wire), and the client forwards terminal resizes to the daemon — SIGWINCH on unix, console-size polling on Windows. Default on Windows; opt-in on unix via `ORBIT_DAEMON_PTY=1` (tmux stays the unix default). See ADR-013.
+- **Windows engine bootstrap** — On Windows, `orbit launch` now checks whether the Claude CLI is present and, in an interactive terminal, offers to install it (Node.js via `winget`, then `npm install -g @anthropic-ai/claude-code`) — mirroring the tmux auto-install on unix. Runs client-side before the daemon spawns the engine; degrades with a clear message when winget is unavailable or the terminal is non-interactive. No-op on unix.
 
 ### Changed
 
 - **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
+- **Windows daemon detach** — The daemon is now spawned through `orbit-core::process::spawn_detached`, which sets `CREATE_NO_WINDOW | DETACHED_PROCESS` on Windows so `orbit daemon serve` detaches from the launching console instead of dying with it or flashing a window. No behavior change on unix.
 - **Windows x64 is a first-class release artifact** — Now that the Windows daemon port works, the `windows-x86_64` build is a required (blocking) job in both the stable and canary release workflows instead of an experimental, non-blocking one. `orbit-{stable,canary}-<ver>-windows-x86_64.exe` publishes alongside the Linux and macOS assets.
 
 ## [0.25.0] - 2026-09-11

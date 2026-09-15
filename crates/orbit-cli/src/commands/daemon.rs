@@ -55,12 +55,12 @@ async fn start() -> Result<()> {
     }
 
     let exe = std::env::current_exe()?;
-    std::process::Command::new(exe)
-        .args(["daemon", "serve"])
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["daemon", "serve"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .stdin(std::process::Stdio::null())
-        .spawn()?;
+        .stdin(std::process::Stdio::null());
+    orbit_core::process::spawn_detached(cmd)?;
 
     // Give the daemon a moment to bind the socket
     for _ in 0..10 {
