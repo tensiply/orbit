@@ -2,7 +2,10 @@ pub mod jsonc;
 pub mod mcp;
 
 use anyhow::Result;
-use orbit_core::{context::OrbitScope, engine::Engine};
+use orbit_core::{
+    context::{OrbitScope, ScopeLevel},
+    engine::Engine,
+};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -678,6 +681,45 @@ fn apply_global_root_inline_mcp(
     }
 }
 
+/// Ordered per-level `mcp.json` file paths for the scoped layers
+/// (workspace → tenant → project → repository), each level with the file(s)
+/// that belong to it. The workspace level spans both the global and the
+/// workspace AI roots (deduped when they coincide).
+///
+/// Shared by `load_mcp_layers` (which merges the files) and by scope-aware
+/// status queries (which read the entry names), so the path walk lives in one place.
+pub fn scoped_mcp_layers(scope: &OrbitScope) -> Vec<(ScopeLevel, Vec<PathBuf>)> {
+    let mut out = Vec::new();
+
+    // workspace root — both global and workspace AI root
+    let mut ws = vec![scope.global_ai_root.join("mcp.json")];
+    if scope.ai_context_root != scope.global_ai_root {
+        ws.push(scope.ai_context_root.join("mcp.json"));
+    }
+    out.push((ScopeLevel::Workspace, ws));
+
+    if scope.global_mode || scope.tenant.is_empty() {
+        return out;
+    }
+    let local = &scope.ai_context_root;
+    let tenant_base = local.join("tenants").join(&scope.tenant);
+    out.push((ScopeLevel::Tenant, vec![tenant_base.join("mcp.json")]));
+
+    if !scope.project.is_empty() {
+        let proj_base = tenant_base.join("projects").join(&scope.project);
+        out.push((ScopeLevel::Project, vec![proj_base.join("mcp.json")]));
+
+        if !scope.repository.is_empty() {
+            let repo_mcp = proj_base
+                .join("repositories")
+                .join(&scope.repository)
+                .join("mcp.json");
+            out.push((ScopeLevel::Repository, vec![repo_mcp]));
+        }
+    }
+    out
+}
+
 fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) {
     // Catalog MCPs configured via `orbit setup` or `orbit mcp enable` — lowest priority baseline.
     let catalog_mcp = dirs_global_config().join("orbit/mcps.json");
@@ -687,52 +729,10 @@ fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) 
     let plugins_mcp = dirs_global_config().join("orbit/plugins.mcp.json");
     mcp::merge_file(target, &plugins_mcp);
 
-    let global = &scope.global_ai_root;
-    let local = &scope.ai_context_root;
-
-    // workspace root — both global and workspace AI root
-    merge_dual_mcp(target, global, local, "mcp.json");
-
-    if !scope.global_mode {
-        // tenant and below — workspace AI root only
-        mcp::merge_file(
-            target,
-            &local.join("tenants").join(&scope.tenant).join("mcp.json"),
-        );
-
-        if !scope.project.is_empty() {
-            let proj_base = local
-                .join("tenants")
-                .join(&scope.tenant)
-                .join("projects")
-                .join(&scope.project);
-            mcp::merge_file(target, &proj_base.join("mcp.json"));
-
-            if !scope.repository.is_empty() {
-                mcp::merge_file(
-                    target,
-                    &proj_base
-                        .join("repositories")
-                        .join(&scope.repository)
-                        .join("mcp.json"),
-                );
-            }
+    for (_level, paths) in scoped_mcp_layers(scope) {
+        for path in &paths {
+            mcp::merge_file(target, path);
         }
-    }
-}
-
-fn merge_dual_mcp(
-    target: &mut HashMap<String, McpServer>,
-    shared_root: &Path,
-    local_root: &Path,
-    relative: &str,
-) {
-    let shared = shared_root.join(relative);
-    let local = local_root.join(relative);
-    mcp::merge_file(target, &shared);
-    // avoid merging the same file twice when shared_root == local_root
-    if local_root != shared_root {
-        mcp::merge_file(target, &local);
     }
 }
 
@@ -1061,5 +1061,68 @@ mod tests {
         // Both servers are present (no clobbering when names don't overlap)
         assert!(cfg.mcp.contains_key("global-only"));
         assert!(cfg.mcp.contains_key("repo-only"));
+    }
+
+    #[test]
+    fn scoped_mcp_layers_full_scope_orders_levels_workspace_to_repo() {
+        let global_root = PathBuf::from("/g");
+        let ws_root = PathBuf::from("/ws");
+        let scope = OrbitScope {
+            global_ai_root: global_root.clone(),
+            ai_context_root: ws_root.clone(),
+            workspace_root: ws_root.clone(),
+            tenant: "T".into(),
+            project: "P".into(),
+            repository: "R".into(),
+            global_mode: false,
+            ..Default::default()
+        };
+
+        let layers = scoped_mcp_layers(&scope);
+        let levels: Vec<ScopeLevel> = layers.iter().map(|(l, _)| *l).collect();
+        assert_eq!(
+            levels,
+            vec![
+                ScopeLevel::Workspace,
+                ScopeLevel::Tenant,
+                ScopeLevel::Project,
+                ScopeLevel::Repository,
+            ]
+        );
+        // Workspace spans both the global and workspace AI roots.
+        assert_eq!(
+            layers[0].1,
+            vec![global_root.join("mcp.json"), ws_root.join("mcp.json")]
+        );
+        assert_eq!(
+            layers[3].1,
+            vec![
+                ws_root
+                    .join("tenants")
+                    .join("T")
+                    .join("projects")
+                    .join("P")
+                    .join("repositories")
+                    .join("R")
+                    .join("mcp.json")
+            ]
+        );
+    }
+
+    #[test]
+    fn scoped_mcp_layers_global_mode_is_workspace_only() {
+        let root = PathBuf::from("/ai");
+        let scope = OrbitScope {
+            global_ai_root: root.clone(),
+            ai_context_root: root.clone(),
+            global_mode: true,
+            ..Default::default()
+        };
+
+        let layers = scoped_mcp_layers(&scope);
+        // Only the workspace level, and the two roots coincide → single deduped path.
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].0, ScopeLevel::Workspace);
+        assert_eq!(layers[0].1, vec![root.join("mcp.json")]);
     }
 }

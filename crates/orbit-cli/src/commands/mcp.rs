@@ -1,8 +1,15 @@
 use crate::output::truncate_desc;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
-use orbit_core::{catalog, catalog::McpEntry, context::OrbitScope};
-use orbit_engine::{config::jsonc, resolver};
+use orbit_core::{
+    catalog,
+    catalog::McpEntry,
+    context::{OrbitScope, ScopeLevel as CoreScopeLevel},
+};
+use orbit_engine::{
+    config::{jsonc, mcp::mcp_names_in_file, scoped_mcp_layers},
+    resolver,
+};
 use serde_json::Value;
 use std::{
     fs,
@@ -511,78 +518,29 @@ fn collect_all_scope_mcps(
 ) -> std::collections::HashMap<String, String> {
     let mut found: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
-    // Global
+    // Global — the catalog file only (`orbit mcp` scope, not plugin MCPs).
     for name in mcp_names_in_file(&global_config_dir().join("orbit/mcps.json")) {
         found.insert(name, "global".to_string());
     }
     if matches!(override_level, Some(ScopeLevel::Global)) || scope.global_mode {
         return found;
     }
-    // Workspace
-    for name in mcp_names_in_file(&scope.global_ai_root.join("mcp.json")) {
-        found.insert(name, "workspace".to_string());
-    }
-    if scope.ai_context_root != scope.global_ai_root {
-        for name in mcp_names_in_file(&scope.ai_context_root.join("mcp.json")) {
-            found.insert(name, "workspace".to_string());
-        }
-    }
-    // Tenant
-    if !scope.tenant.is_empty() {
-        let p = scope
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.tenant)
-            .join("mcp.json");
-        for name in mcp_names_in_file(&p) {
-            found.insert(name, format!("tenant:{}", scope.tenant));
-        }
-    }
-    // Project
-    if !scope.project.is_empty() {
-        let p = scope
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.tenant)
-            .join("projects")
-            .join(&scope.project)
-            .join("mcp.json");
-        for name in mcp_names_in_file(&p) {
-            found.insert(name, format!("project:{}", scope.project));
-        }
-    }
-    // Repo
-    if !scope.repository.is_empty() {
-        let p = scope
-            .ai_context_root
-            .join("tenants")
-            .join(&scope.tenant)
-            .join("projects")
-            .join(&scope.project)
-            .join("repositories")
-            .join(&scope.repository)
-            .join("mcp.json");
-        for name in mcp_names_in_file(&p) {
-            found.insert(name, format!("repo:{}", scope.repository));
+    // Workspace → repository — reuse the shared scope path walk.
+    for (level, paths) in scoped_mcp_layers(scope) {
+        let label = match level {
+            CoreScopeLevel::Global => continue,
+            CoreScopeLevel::Workspace => "workspace".to_string(),
+            CoreScopeLevel::Tenant => format!("tenant:{}", scope.tenant),
+            CoreScopeLevel::Project => format!("project:{}", scope.project),
+            CoreScopeLevel::Repository => format!("repo:{}", scope.repository),
+        };
+        for path in &paths {
+            for name in mcp_names_in_file(path) {
+                found.insert(name, label.clone());
+            }
         }
     }
     found
-}
-
-fn mcp_names_in_file(path: &Path) -> Vec<String> {
-    if !path.is_file() {
-        return vec![];
-    }
-    let Ok(text) = fs::read_to_string(path) else {
-        return vec![];
-    };
-    let Ok(val) = jsonc::parse(&text) else {
-        return vec![];
-    };
-    val.get("mcpServers")
-        .and_then(|s| s.as_object())
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default()
 }
 
 // ── var prompts ───────────────────────────────────────────────────────────────
