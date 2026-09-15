@@ -1924,12 +1924,12 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
                                 ))
                                 .await;
                             if let Ok(exe) = std::env::current_exe() {
-                                let _ = std::process::Command::new(&exe)
-                                    .args(["daemon", "serve"])
+                                let mut cmd = std::process::Command::new(&exe);
+                                cmd.args(["daemon", "serve"])
                                     .stdout(std::process::Stdio::null())
                                     .stderr(std::process::Stdio::null())
-                                    .stdin(std::process::Stdio::null())
-                                    .spawn();
+                                    .stdin(std::process::Stdio::null());
+                                let _ = orbit_core::process::spawn_detached(cmd);
                             }
                             tokio::time::sleep(Duration::from_millis(800)).await;
                             send_result = tokio::time::timeout(
@@ -2045,12 +2045,12 @@ async fn handle_async_action(action: AsyncAction, app: &mut App) {
 
         AsyncAction::DaemonStart => {
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(&exe)
-                    .args(["daemon", "serve"])
+                let mut cmd = std::process::Command::new(&exe);
+                cmd.args(["daemon", "serve"])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
-                    .stdin(std::process::Stdio::null())
-                    .spawn();
+                    .stdin(std::process::Stdio::null());
+                let _ = orbit_core::process::spawn_detached(cmd);
             }
             tokio::time::sleep(Duration::from_millis(400)).await;
             app.sys.refresh();

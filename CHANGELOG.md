@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Session backend abstraction** — Session spawning now goes through a `SessionBackend` trait with a per-platform selector (`orbit-engine::launcher::backend`), and each `Session` records its backend via `SessionBackendKind { Tmux, DaemonPty }`. unix keeps tmux unchanged; this is the seam for the Windows daemon-owned PTY backend. Pre-existing session files load as `Tmux` (serde-default), so there is no migration. See ADR-012.
+- **Windows daemon detach** — The daemon is now spawned through `orbit-core::process::spawn_detached`, which sets `CREATE_NO_WINDOW | DETACHED_PROCESS` on Windows so `orbit daemon serve` detaches from the launching console instead of dying with it or flashing a window. No behavior change on unix.
 
 ## [0.25.0] - 2026-09-11
 
