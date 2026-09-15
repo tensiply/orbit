@@ -192,7 +192,7 @@ fn build_scope_report(scope: &OrbitScope, engine: Engine, merged: &MergedConfig)
     // ── MCP layers ────────────────────────────────────────────────────────────
     let mut mcp_layers: Vec<LayerEntry> = Vec::new();
 
-    let catalog_mcp = dirs_global_config().join("orbit/mcps.json");
+    let catalog_mcp = orbit_core::data_paths::orbit_home().join("mcps.json");
     mcp_layers.push(LayerEntry {
         exists: catalog_mcp.is_file(),
         path: shorten_path(&home, &catalog_mcp),
@@ -721,12 +721,15 @@ pub fn scoped_mcp_layers(scope: &OrbitScope) -> Vec<(ScopeLevel, Vec<PathBuf>)> 
 }
 
 fn load_mcp_layers(scope: &OrbitScope, target: &mut HashMap<String, McpServer>) {
-    // Catalog MCPs configured via `orbit setup` or `orbit mcp enable` — lowest priority baseline.
-    let catalog_mcp = dirs_global_config().join("orbit/mcps.json");
+    // Catalog + plugin MCPs live under orbit_home (~/.orbit), where the writers
+    // (`orbit setup`, `orbit mcp enable --scope global`, `orbit plugins enable`)
+    // put them. orbit_home is HOME-based, so it survives the launcher's
+    // XDG_CONFIG_HOME override for session isolation — unlike dirs_global_config.
+    let catalog_mcp = orbit_core::data_paths::orbit_home().join("mcps.json");
     mcp::merge_file(target, &catalog_mcp);
 
     // Plugin MCPs enabled via `orbit plugins enable` — override catalog MCPs.
-    let plugins_mcp = dirs_global_config().join("orbit/plugins.mcp.json");
+    let plugins_mcp = orbit_core::plugin::plugins_mcp_path();
     mcp::merge_file(target, &plugins_mcp);
 
     for (_level, paths) in scoped_mcp_layers(scope) {
