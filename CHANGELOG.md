@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Daemon-owned PTY sessions** — A cross-platform session backend where the daemon owns the engine's PTY (`portable-pty`/ConPTY) with a bounded scrollback ring, instead of tmux. New IPC ops (`SessionAttach`/`SessionResize`/`SessionDetach`) and an `AttachFrame` stream let `orbit session attach` / `orbit launch` reattach over IPC with scrollback intact; the PTY survives client disconnects (but not a daemon restart). Default on Windows; opt-in on unix via `ORBIT_DAEMON_PTY=1` (tmux stays the unix default). See ADR-013.
+- **Daemon-owned PTY sessions** — A cross-platform session backend where the daemon owns the engine's PTY (`portable-pty`/ConPTY) with a bounded scrollback ring, instead of tmux. New IPC ops (`SessionAttach`/`SessionResize`/`SessionDetach`) and an `AttachFrame` stream let `orbit session attach` / `orbit launch` reattach over IPC with scrollback intact; the PTY survives client disconnects (but not a daemon restart). `AttachFrame` PTY bytes ride base64-encoded (compact wire), and the client forwards terminal resizes to the daemon — SIGWINCH on unix, console-size polling on Windows. Default on Windows; opt-in on unix via `ORBIT_DAEMON_PTY=1` (tmux stays the unix default). See ADR-013.
 - **Windows engine bootstrap** — On Windows, `orbit launch` now checks whether the Claude CLI is present and, in an interactive terminal, offers to install it (Node.js via `winget`, then `npm install -g @anthropic-ai/claude-code`) — mirroring the tmux auto-install on unix. Runs client-side before the daemon spawns the engine; degrades with a clear message when winget is unavailable or the terminal is non-interactive. No-op on unix.
 
 ### Changed
