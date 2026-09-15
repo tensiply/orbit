@@ -412,16 +412,65 @@ pub enum Response {
 /// Frames exchanged over a connection after a `SessionAttach`, replacing the
 /// request/response protocol for the life of the attachment. One JSON object per
 /// line (same newline framing as the rest of the protocol); raw PTY bytes ride
-/// inside as a `Vec<u8>`, so embedded newlines are escaped by the JSON encoding.
+/// inside base64-encoded, which keeps the wire compact (a JSON `Vec<u8>` expands
+/// each byte to a decimal number plus comma — ~4× overhead on binary streams).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "frame", rename_all = "snake_case")]
 pub enum AttachFrame {
     /// daemon → client: PTY output (scrollback backlog first, then live).
-    Output { bytes: Vec<u8> },
+    Output {
+        #[serde(with = "base64_bytes")]
+        bytes: Vec<u8>,
+    },
     /// client → daemon: keystrokes / stdin to write into the PTY.
-    Input { bytes: Vec<u8> },
+    Input {
+        #[serde(with = "base64_bytes")]
+        bytes: Vec<u8>,
+    },
     /// client → daemon: terminal was resized.
     Resize { cols: u16, rows: u16 },
     /// client → daemon: detach and close the stream (PTY stays alive).
     Detach,
+}
+
+/// Serde helper: encode `Vec<u8>` as a base64 string on the wire instead of a
+/// JSON array of byte integers.
+mod base64_bytes {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        STANDARD
+            .decode(s.as_bytes())
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attach_frame_output_roundtrips_as_base64() {
+        let frame = AttachFrame::Output {
+            bytes: vec![0x00, 0x1b, b'[', b'0', b'm', 0xff],
+        };
+        let json = serde_json::to_string(&frame).unwrap();
+        // Bytes ride as a base64 string, not a JSON array of integers.
+        assert!(json.contains("\"bytes\":\""));
+        assert!(!json.contains('['));
+
+        match serde_json::from_str::<AttachFrame>(&json).unwrap() {
+            AttachFrame::Output { bytes } => {
+                assert_eq!(bytes, vec![0x00, 0x1b, b'[', b'0', b'm', 0xff])
+            }
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
 }
