@@ -232,9 +232,16 @@ fn run_create(args: CreateArgs) -> Result<()> {
     );
     println!("  source: {}", result.source.display());
 
-    let dir = result.output.parent().unwrap_or(&result.output);
-    if let Err(e) = open::that(dir) {
-        eprintln!("[orbit document] warn: could not open directory: {e}");
+    // Inside Orbit Desktop, open the document in a tab; otherwise fall back to the OS
+    // file explorer. Best-effort — a no-op when the desktop is not running.
+    let opened_in_desktop = req.id.as_deref().is_some_and(|id| {
+        super::desktop_notify::open_in_desktop(super::desktop_notify::FileKind::Doc, id)
+    });
+    if !opened_in_desktop {
+        let dir = result.output.parent().unwrap_or(&result.output);
+        if let Err(e) = open::that(dir) {
+            eprintln!("[orbit document] warn: could not open directory: {e}");
+        }
     }
 
     Ok(())
