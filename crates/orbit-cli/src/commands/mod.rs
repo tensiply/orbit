@@ -7,6 +7,7 @@ pub mod config;
 pub mod context;
 pub mod daemon;
 pub mod desktop;
+pub mod desktop_notify;
 pub mod discover;
 pub mod doctor;
 pub mod document;

@@ -562,6 +562,33 @@ fn workspace_slug(scope: &OrbitScope) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Variables that pin a child process to the launching channel's data home.
+///
+/// tmux does not propagate arbitrary parent-process variables into a new session, so any
+/// `orbit ...` the engine runs inside the session (document/image/svg generation) would
+/// otherwise resolve `Channel::Stable` and write files to `~/.orbit/` regardless of the
+/// channel that launched it. `ORBIT_CHANNEL` is injected unconditionally; explicit home
+/// overrides (`ORBIT_HOME` and friends) that are active in the daemon — e.g. a dev sandbox
+/// — are forwarded when set so the child resolves paths identically. When unset the child
+/// derives its home from the channel suffix, which is the correct default.
+fn channel_env() -> Vec<(&'static str, String)> {
+    let mut vars = vec![(
+        "ORBIT_CHANNEL",
+        orbit_core::channel::Channel::current().as_str().to_string(),
+    )];
+    for key in [
+        "ORBIT_HOME",
+        "ORBIT_DATA_HOME",
+        "ORBIT_CACHE_HOME",
+        "ORBIT_CONFIG_HOME",
+    ] {
+        if let Ok(val) = std::env::var(key) {
+            vars.push((key, val));
+        }
+    }
+    vars
+}
+
 /// Set the environment variables the engine expects.
 ///
 /// # Safety
@@ -580,6 +607,14 @@ fn set_env(
         std::env::set_var("XDG_DATA_HOME", &paths.xdg_data);
         std::env::set_var("XDG_CACHE_HOME", &paths.xdg_cache);
         std::env::set_var("XDG_STATE_HOME", &paths.xdg_state);
+
+        // Channel identity: any `orbit ...` invoked inside the session (e.g. document
+        // generation) must resolve the same channel home as the daemon that launched it,
+        // otherwise a canary/dev session writes files to the stable `~/.orbit/`. tmux does
+        // not inherit these, so they are injected explicitly here and in collect_session_env.
+        for (k, v) in channel_env() {
+            std::env::set_var(k, v);
+        }
 
         std::env::set_var("AI_ENGINE", engine.as_str());
         std::env::set_var(
@@ -705,6 +740,11 @@ fn collect_session_env(
             if scope.global_mode { "1" } else { "0" }.into(),
         ),
     ];
+
+    // Channel identity — see channel_env(). Injected via tmux `-e` so `orbit ...` run
+    // inside the session (document/image/svg generation) resolves the launching channel's
+    // home instead of falling back to stable `~/.orbit/`.
+    env.extend(channel_env().into_iter().map(|(k, v)| (k.to_string(), v)));
 
     match engine {
         Engine::Opencode => {
@@ -1442,6 +1482,40 @@ mod tests {
         assert_ne!(stable, canary);
         assert_ne!(stable, dev);
         assert_ne!(canary, dev);
+    }
+
+    #[test]
+    fn channel_env_pins_session_to_launching_channel() {
+        // Any `orbit ...` run inside the session must resolve the launching channel's home;
+        // channel_env() is what carries that identity across the tmux boundary. Save and
+        // restore the vars so this test cannot leak into others.
+        let prev_channel = std::env::var("ORBIT_CHANNEL").ok();
+        let prev_home = std::env::var("ORBIT_HOME").ok();
+
+        unsafe {
+            std::env::set_var("ORBIT_CHANNEL", "canary");
+            std::env::remove_var("ORBIT_HOME");
+        }
+        let vars = channel_env();
+        assert!(vars.contains(&("ORBIT_CHANNEL", "canary".to_string())));
+        // No home override set → not forwarded; child derives it from the channel suffix.
+        assert!(!vars.iter().any(|(k, _)| *k == "ORBIT_HOME"));
+
+        // An explicit home override (e.g. a dev sandbox) is forwarded verbatim.
+        unsafe { std::env::set_var("ORBIT_HOME", "/tmp/orbit-test-home") };
+        let vars = channel_env();
+        assert!(vars.contains(&("ORBIT_HOME", "/tmp/orbit-test-home".to_string())));
+
+        unsafe {
+            match prev_channel {
+                Some(v) => std::env::set_var("ORBIT_CHANNEL", v),
+                None => std::env::remove_var("ORBIT_CHANNEL"),
+            }
+            match prev_home {
+                Some(v) => std::env::set_var("ORBIT_HOME", v),
+                None => std::env::remove_var("ORBIT_HOME"),
+            }
+        }
     }
 
     #[test]
