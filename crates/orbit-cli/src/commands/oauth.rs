@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use orbit_core::{plugin::OAuthSpec, secrets};
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

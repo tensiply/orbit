@@ -19,7 +19,7 @@ pub fn load_or_create_signing_key() -> Result<[u8; 32]> {
         key.copy_from_slice(&bytes);
         return Ok(key);
     }
-    use rand::RngCore;
+    use rand::Rng;
     let mut key = [0u8; 32];
     rand::rng().fill_bytes(&mut key);
     if let Some(parent) = path.parent() {
