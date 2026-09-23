@@ -184,7 +184,10 @@ pub fn launch(
 
     // 4. Decide tmux strategy before registering the session
     let username = orbit_core::user_config::UserConfig::load().user.name;
-    let tmux_name = tmux_session_name(scope, engine, &username, Channel::current());
+    // `for_home()`, not `current()`: keep the session's name in step with the channel its
+    // files actually resolve to (see `channel_env`), so a split env can't label the session
+    // one channel while it writes to another.
+    let tmux_name = tmux_session_name(scope, engine, &username, Channel::for_home());
     let use_tmux = !opts.no_tmux && !tmux::already_inside() && tmux::ensure_available(); // prompts to install if missing + TTY
 
     // 5. Register session — BEFORE set_env() overwrites XDG_DATA_HOME
@@ -571,10 +574,18 @@ fn workspace_slug(scope: &OrbitScope) -> Option<String> {
 /// overrides (`ORBIT_HOME` and friends) that are active in the daemon — e.g. a dev sandbox
 /// — are forwarded when set so the child resolves paths identically. When unset the child
 /// derives its home from the channel suffix, which is the correct default.
+///
+/// The channel is taken from [`Channel::for_home`], not `current()`: the session must run
+/// under the channel whose home the daemon is actually using, so a daemon with a pinned
+/// `ORBIT_HOME` but a contaminated `ORBIT_CHANNEL` still stamps its sessions with the home's
+/// true channel — otherwise files land in one channel's home while flagged as another and
+/// never surface in the desktop that launched them.
 fn channel_env() -> Vec<(&'static str, String)> {
     let mut vars = vec![(
         "ORBIT_CHANNEL",
-        orbit_core::channel::Channel::current().as_str().to_string(),
+        orbit_core::channel::Channel::for_home()
+            .as_str()
+            .to_string(),
     )];
     for key in [
         "ORBIT_HOME",
@@ -1505,6 +1516,17 @@ mod tests {
         unsafe { std::env::set_var("ORBIT_HOME", "/tmp/orbit-test-home") };
         let vars = channel_env();
         assert!(vars.contains(&("ORBIT_HOME", "/tmp/orbit-test-home".to_string())));
+
+        // A channel-suffixed ORBIT_HOME is ground truth: a contaminated ORBIT_CHANNEL that
+        // disagrees with it must not reach the session (the exact split that made a canary
+        // desktop's document land in — and open from — the dev home).
+        unsafe {
+            std::env::set_var("ORBIT_CHANNEL", "dev");
+            std::env::set_var("ORBIT_HOME", "/tmp/.orbit-canary");
+        }
+        let vars = channel_env();
+        assert!(vars.contains(&("ORBIT_CHANNEL", "canary".to_string())));
+        assert!(vars.contains(&("ORBIT_HOME", "/tmp/.orbit-canary".to_string())));
 
         unsafe {
             match prev_channel {

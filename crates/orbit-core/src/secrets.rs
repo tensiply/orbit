@@ -4,8 +4,15 @@ use crate::channel::Channel;
 
 /// Keychain service name for the active channel: `orbit`, `orbit-canary`,
 /// `orbit-dev`. Keeps each channel's stored secrets from colliding.
+///
+/// Derived from [`Channel::for_home`], not `current()`: the keychain compartment
+/// must track the same ground truth as the data home (`data_paths::orbit_home`).
+/// A daemon whose home is pinned to `~/.orbit-canary` but whose `ORBIT_CHANNEL`
+/// was contaminated (e.g. an inherited shell value) still reads and writes under
+/// `orbit-canary`, so a secret set for a channel is the one its engine sessions
+/// resolve — never split across two services by a stale env var.
 fn keyring_service() -> String {
-    format!("orbit{}", Channel::current().home_suffix())
+    format!("orbit{}", Channel::for_home().home_suffix())
 }
 
 // ── public API ────────────────────────────────────────────────────────────────
@@ -242,6 +249,44 @@ mod tests {
         unsafe { env::set_var("ORBIT_TEST_FULL", "resolved") };
         assert_eq!(resolve("$ORBIT_TEST_FULL"), "resolved");
         unsafe { env::remove_var("ORBIT_TEST_FULL") };
+    }
+
+    #[test]
+    fn keyring_service_follows_pinned_home_over_contaminated_channel() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
+        let prev_channel = env::var("ORBIT_CHANNEL").ok();
+        let prev_home = env::var("ORBIT_HOME").ok();
+
+        // A channel-suffixed ORBIT_HOME is ground truth even when ORBIT_CHANNEL
+        // disagrees: the keychain compartment must match the data home so a
+        // secret set under canary is the one canary's engine sessions resolve.
+        unsafe {
+            env::set_var("ORBIT_CHANNEL", "dev");
+            env::set_var("ORBIT_HOME", "/tmp/.orbit-canary");
+        }
+        assert_eq!(keyring_service(), "orbit-canary");
+
+        // A custom (non-suffixed) home falls back to ORBIT_CHANNEL.
+        unsafe { env::set_var("ORBIT_HOME", "/tmp/orbit-test-home") };
+        assert_eq!(keyring_service(), "orbit-dev");
+
+        // No home override → derived purely from the channel.
+        unsafe {
+            env::remove_var("ORBIT_HOME");
+            env::set_var("ORBIT_CHANNEL", "canary");
+        }
+        assert_eq!(keyring_service(), "orbit-canary");
+
+        unsafe {
+            match prev_channel {
+                Some(v) => env::set_var("ORBIT_CHANNEL", v),
+                None => env::remove_var("ORBIT_CHANNEL"),
+            }
+            match prev_home {
+                Some(v) => env::set_var("ORBIT_HOME", v),
+                None => env::remove_var("ORBIT_HOME"),
+            }
+        }
     }
 
     #[test]

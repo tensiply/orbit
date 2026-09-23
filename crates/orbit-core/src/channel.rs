@@ -25,6 +25,36 @@ impl Channel {
         }
     }
 
+    /// Channel implied by an `ORBIT_HOME` override that names a known
+    /// channel-suffixed directory (`.orbit`, `.orbit-canary`, `.orbit-dev`).
+    ///
+    /// A custom home (tests / CI) has no recognized suffix and returns `None`.
+    fn from_home_env() -> Option<Channel> {
+        let home = std::env::var_os("ORBIT_HOME")?;
+        match std::path::Path::new(&home).file_name()?.to_str()? {
+            ".orbit" => Some(Channel::Stable),
+            ".orbit-canary" => Some(Channel::Canary),
+            ".orbit-dev" => Some(Channel::Dev),
+            _ => None,
+        }
+    }
+
+    /// The channel whose data home is actually in effect for this process.
+    ///
+    /// `ORBIT_HOME` decides where data physically lives (see `data_paths::orbit_home`),
+    /// so when it pins a channel-suffixed directory it is the ground truth for the
+    /// channel — independent of a possibly-contaminated `ORBIT_CHANNEL`. Otherwise
+    /// falls back to [`Channel::current`].
+    ///
+    /// This closes the `ORBIT_HOME`/`ORBIT_CHANNEL` split: a daemon whose home is
+    /// `~/.orbit-canary` but whose `ORBIT_CHANNEL` was contaminated to `dev` (e.g. an
+    /// inherited value from the shell that launched it) still resolves — and stamps the
+    /// sessions it spawns — as canary, so generated files land in the home the launching
+    /// desktop actually watches.
+    pub fn for_home() -> Channel {
+        Self::from_home_env().unwrap_or_else(Channel::current)
+    }
+
     /// Canonical lowercase name: `"stable"`, `"canary"`, `"dev"`.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -140,5 +170,41 @@ mod tests {
         assert_eq!(Channel::current(), Channel::Stable);
         unsafe { std::env::remove_var("ORBIT_CHANNEL") };
         assert_eq!(Channel::current(), Channel::Stable);
+    }
+
+    #[test]
+    fn for_home_prefers_pinned_home_over_contaminated_channel() {
+        let _lock = crate::TEST_ENV_LOCK.lock().unwrap();
+        let prev_channel = std::env::var("ORBIT_CHANNEL").ok();
+        let prev_home = std::env::var("ORBIT_HOME").ok();
+
+        // A channel-suffixed ORBIT_HOME is ground truth even when ORBIT_CHANNEL disagrees.
+        unsafe {
+            std::env::set_var("ORBIT_CHANNEL", "dev");
+            std::env::set_var("ORBIT_HOME", "/tmp/.orbit-canary");
+        }
+        assert_eq!(Channel::for_home(), Channel::Canary);
+
+        // A custom (non-suffixed) home falls back to ORBIT_CHANNEL.
+        unsafe { std::env::set_var("ORBIT_HOME", "/tmp/orbit-test-home") };
+        assert_eq!(Channel::for_home(), Channel::Dev);
+
+        // No home override → identical to current().
+        unsafe {
+            std::env::remove_var("ORBIT_HOME");
+            std::env::set_var("ORBIT_CHANNEL", "canary");
+        }
+        assert_eq!(Channel::for_home(), Channel::Canary);
+
+        unsafe {
+            match prev_channel {
+                Some(v) => std::env::set_var("ORBIT_CHANNEL", v),
+                None => std::env::remove_var("ORBIT_CHANNEL"),
+            }
+            match prev_home {
+                Some(v) => std::env::set_var("ORBIT_HOME", v),
+                None => std::env::remove_var("ORBIT_HOME"),
+            }
+        }
     }
 }
