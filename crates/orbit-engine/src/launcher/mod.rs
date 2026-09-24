@@ -570,29 +570,34 @@ fn workspace_slug(scope: &OrbitScope) -> Option<String> {
 /// tmux does not propagate arbitrary parent-process variables into a new session, so any
 /// `orbit ...` the engine runs inside the session (document/image/svg generation) would
 /// otherwise resolve `Channel::Stable` and write files to `~/.orbit/` regardless of the
-/// channel that launched it. `ORBIT_CHANNEL` is injected unconditionally; explicit home
-/// overrides (`ORBIT_HOME` and friends) that are active in the daemon — e.g. a dev sandbox
-/// — are forwarded when set so the child resolves paths identically. When unset the child
-/// derives its home from the channel suffix, which is the correct default.
+/// channel that launched it.
 ///
-/// The channel is taken from [`Channel::for_home`], not `current()`: the session must run
-/// under the channel whose home the daemon is actually using, so a daemon with a pinned
-/// `ORBIT_HOME` but a contaminated `ORBIT_CHANNEL` still stamps its sessions with the home's
-/// true channel — otherwise files land in one channel's home while flagged as another and
-/// never surface in the desktop that launched them.
+/// The child is pinned to an **absolute** `ORBIT_HOME` — the daemon's own resolved home —
+/// rather than being left to re-derive one from `ORBIT_CHANNEL`. `data_paths::orbit_home`
+/// consults `ORBIT_HOME` first, so this absolute pin is authoritative even if `ORBIT_CHANNEL`
+/// is later stripped or contaminated in a nested `orbit ...` call. This closes the case where
+/// a canary session's document was written to — and then opened from — the dev home.
+///
+/// `ORBIT_CHANNEL` is still injected (for the banner label and process naming) from
+/// [`Channel::for_home`], not `current()`: a daemon with a pinned `ORBIT_HOME` but a
+/// contaminated `ORBIT_CHANNEL` stamps its sessions with the home's true channel. The other
+/// XDG-style home overrides are forwarded verbatim when the daemon has them set.
 fn channel_env() -> Vec<(&'static str, String)> {
-    let mut vars = vec![(
-        "ORBIT_CHANNEL",
-        orbit_core::channel::Channel::for_home()
-            .as_str()
-            .to_string(),
-    )];
-    for key in [
-        "ORBIT_HOME",
-        "ORBIT_DATA_HOME",
-        "ORBIT_CACHE_HOME",
-        "ORBIT_CONFIG_HOME",
-    ] {
+    let mut vars = vec![
+        (
+            "ORBIT_CHANNEL",
+            orbit_core::channel::Channel::for_home()
+                .as_str()
+                .to_string(),
+        ),
+        (
+            "ORBIT_HOME",
+            orbit_core::data_paths::orbit_home()
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    ];
+    for key in ["ORBIT_DATA_HOME", "ORBIT_CACHE_HOME", "ORBIT_CONFIG_HOME"] {
         if let Ok(val) = std::env::var(key) {
             vars.push((key, val));
         }
@@ -1509,8 +1514,12 @@ mod tests {
         }
         let vars = channel_env();
         assert!(vars.contains(&("ORBIT_CHANNEL", "canary".to_string())));
-        // No home override set → not forwarded; child derives it from the channel suffix.
-        assert!(!vars.iter().any(|(k, _)| *k == "ORBIT_HOME"));
+        // No home override set → the child is still pinned to an absolute home, resolved the
+        // same way orbit_home() does, so a nested `orbit ...` cannot re-derive a wrong channel.
+        let derived_home = orbit_core::data_paths::orbit_home()
+            .to_string_lossy()
+            .into_owned();
+        assert!(vars.contains(&("ORBIT_HOME", derived_home)));
 
         // An explicit home override (e.g. a dev sandbox) is forwarded verbatim.
         unsafe { std::env::set_var("ORBIT_HOME", "/tmp/orbit-test-home") };
