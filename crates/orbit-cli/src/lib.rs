@@ -115,6 +115,13 @@ pub async fn run_channel(channel: Channel) -> Result<()> {
         unsafe { std::env::set_var("ORBIT_CHANNEL", channel.as_str()) };
     }
 
+    // Drop AppImage-injected loader vars (PYTHONHOME, LD_LIBRARY_PATH, GTK/Qt
+    // paths, …) before anything spawns a child. When the desktop app's bundled
+    // binary launches the CLI/daemon, these leak down to engine sessions, the
+    // Bash tool, and MCP servers, breaking any external Python/Perl/linked
+    // binary. The GUI (Tauri) process never reaches here, so it keeps them.
+    orbit_core::process::scrub_appimage_env();
+
     // Name the process after its channel (`orbit`, `orbit-canary`, `orbit-dev`)
     // so `ps`/`top`/`pgrep` identify it regardless of the installed binary or
     // symlink filename. The daemon overrides this to `orbitd{-channel}` in
