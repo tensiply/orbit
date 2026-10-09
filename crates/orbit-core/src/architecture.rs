@@ -127,23 +127,23 @@ pub struct CatalogEntity {
 
     // Kind-specific summary fields (all optional, unknown fields captured in extra)
     #[serde(default)]
-    pub tech: Option<serde_yml::Value>,
+    pub tech: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub environments: Option<serde_yml::Value>,
+    pub environments: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub depends_on: Option<serde_yml::Value>,
+    pub depends_on: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub exposes: Option<serde_yml::Value>,
+    pub exposes: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub source: Option<serde_yml::Value>,
+    pub source: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub target: Option<serde_yml::Value>,
+    pub target: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub protocol: Option<serde_yml::Value>,
+    pub protocol: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub engine: Option<serde_yml::Value>,
+    pub engine: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub used_by: Option<serde_yml::Value>,
+    pub used_by: Option<serde_yaml_ng::Value>,
     #[serde(rename = "type", default)]
     pub infra_type: Option<String>,
     #[serde(default)]
@@ -157,18 +157,18 @@ pub struct CatalogEntity {
     #[serde(default)]
     pub platform: Option<String>,
     #[serde(default)]
-    pub members: Option<serde_yml::Value>,
+    pub members: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub contact: Option<serde_yml::Value>,
+    pub contact: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub monitoring: Option<serde_yml::Value>,
+    pub monitoring: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub security: Option<serde_yml::Value>,
+    pub security: Option<serde_yaml_ng::Value>,
     #[serde(default)]
-    pub backup: Option<serde_yml::Value>,
+    pub backup: Option<serde_yaml_ng::Value>,
 
     #[serde(flatten)]
-    pub extra: std::collections::HashMap<String, serde_yml::Value>,
+    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
 }
 
 impl CatalogEntity {
@@ -313,8 +313,9 @@ pub fn load_catalog(tenant_dir: &Path) -> CatalogLoadResult {
         for path in paths {
             match std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
-                .and_then(|s| serde_yml::from_str::<CatalogEntity>(&s).map_err(|e| e.to_string()))
-            {
+                .and_then(|s| {
+                    serde_yaml_ng::from_str::<CatalogEntity>(&s).map_err(|e| e.to_string())
+                }) {
                 Ok(mut entity) => {
                     // Infer kind from folder when not declared in the file
                     if entity.kind == EntityKind::Unknown && entity.id.is_empty() {
@@ -373,7 +374,7 @@ pub fn save_entity(tenant_dir: &Path, incoming: &CatalogEntity) -> anyhow::Resul
 
     let base: CatalogEntity = if path.exists() {
         let s = std::fs::read_to_string(&path)?;
-        serde_yml::from_str(&s).unwrap_or_default()
+        serde_yaml_ng::from_str(&s).unwrap_or_default()
     } else {
         CatalogEntity {
             schema_version: "1".to_string(),
@@ -421,9 +422,9 @@ pub fn save_entity(tenant_dir: &Path, incoming: &CatalogEntity) -> anyhow::Resul
         extra: base.extra,
     };
 
-    let val = serde_yml::to_value(&merged)?;
+    let val = serde_yaml_ng::to_value(&merged)?;
     let clean = remove_nulls(val);
-    let yaml = serde_yml::to_string(&clean)?;
+    let yaml = serde_yaml_ng::to_string(&clean)?;
     std::fs::write(&path, yaml)?;
     Ok(())
 }
@@ -437,11 +438,11 @@ pub fn delete_entity(tenant_dir: &Path, kind_folder: &str, id: &str) -> anyhow::
     Ok(())
 }
 
-fn remove_nulls(val: serde_yml::Value) -> serde_yml::Value {
-    use serde_yml::Value;
+fn remove_nulls(val: serde_yaml_ng::Value) -> serde_yaml_ng::Value {
+    use serde_yaml_ng::Value;
     match val {
         Value::Mapping(m) => {
-            let mut out = serde_yml::Mapping::new();
+            let mut out = serde_yaml_ng::Mapping::new();
             for (k, v) in m {
                 if !matches!(v, Value::Null) {
                     out.insert(k, remove_nulls(v));
