@@ -33,16 +33,20 @@ impl FileKind {
 
 /// Ask a running Orbit Desktop (same channel) to open `id` in a tab.
 ///
+/// `workspace` disambiguates `id` across workspaces — entry IDs are allocated per workspace,
+/// so the same `DOC-000004` can exist in several. Pass "" when unknown (the desktop then
+/// falls back to matching by ID alone).
+///
 /// Returns `true` when the request reached the desktop MCP server, so callers can skip the
 /// OS file-explorer fallback. Best-effort: returns `false` on any failure (no desktop, no
 /// discovery file, connection refused, timeout).
-pub fn open_in_desktop(kind: FileKind, id: &str) -> bool {
+pub fn open_in_desktop(kind: FileKind, id: &str, workspace: &str) -> bool {
     let Some(port) = discover_desktop_port() else {
         return false;
     };
     // `run` handlers are synchronous but execute on the tokio runtime; block just this call.
     tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(post_open_file(port, kind, id))
+        tokio::runtime::Handle::current().block_on(post_open_file(port, kind, id, workspace))
     })
     .is_ok()
 }
@@ -57,7 +61,12 @@ fn discover_desktop_port() -> Option<u16> {
         .and_then(|p| u16::try_from(p).ok())
 }
 
-async fn post_open_file(port: u16, kind: FileKind, id: &str) -> anyhow::Result<()> {
+async fn post_open_file(
+    port: u16,
+    kind: FileKind,
+    id: &str,
+    workspace: &str,
+) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(800))
         .build()?;
@@ -67,7 +76,7 @@ async fn post_open_file(port: u16, kind: FileKind, id: &str) -> anyhow::Result<(
         "method": "tools/call",
         "params": {
             "name": "open_file",
-            "arguments": { "kind": kind.as_str(), "id": id },
+            "arguments": { "kind": kind.as_str(), "id": id, "workspace": workspace },
         },
     });
     client
