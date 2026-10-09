@@ -59,7 +59,7 @@ directories = "6"
 tempfile = "3"
 sha2 = "0.11"
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 keyring = "4"
 # Pinned to 9.x: the 11.x bump (dependabot #33) breaks the auth crypto tests
 # (panic in jsonwebtoken::crypto). Upgrading to 11 needs a deliberate migration.
