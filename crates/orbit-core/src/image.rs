@@ -555,7 +555,7 @@ fn load_image_rule(format: &ImageFormat) -> ImageRule {
     if let Some(dir) = data_paths::workspace_image_rules_dir() {
         let p = dir.join(format!("{fmt}.yaml"));
         if let Ok(raw) = fs::read_to_string(&p)
-            && let Ok(rule) = serde_yml::from_str::<ImageRule>(&raw)
+            && let Ok(rule) = serde_yaml_ng::from_str::<ImageRule>(&raw)
         {
             return rule;
         }
@@ -563,14 +563,14 @@ fn load_image_rule(format: &ImageFormat) -> ImageRule {
 
     let user_p = data_paths::image_rules_dir().join(format!("{fmt}.yaml"));
     if let Ok(raw) = fs::read_to_string(&user_p)
-        && let Ok(rule) = serde_yml::from_str::<ImageRule>(&raw)
+        && let Ok(rule) = serde_yaml_ng::from_str::<ImageRule>(&raw)
     {
         return rule;
     }
 
     for (name, content) in BUILTIN_IMAGE_RULES {
         if *name == fmt
-            && let Ok(rule) = serde_yml::from_str::<ImageRule>(content)
+            && let Ok(rule) = serde_yaml_ng::from_str::<ImageRule>(content)
         {
             return rule;
         }
@@ -689,7 +689,7 @@ fn parse_template_meta(html: &str, fallback: &str) -> ImageTemplateMeta {
         && let Some(end) = rest.find("--- -->")
     {
         let yaml = rest[..end].trim();
-        if let Ok(meta) = serde_yml::from_str::<ImageTemplateMeta>(yaml) {
+        if let Ok(meta) = serde_yaml_ng::from_str::<ImageTemplateMeta>(yaml) {
             return meta;
         }
     }

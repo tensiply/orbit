@@ -373,7 +373,7 @@ pub fn load_rule(format: &DocumentFormat) -> DocumentRule {
         let ws_path = ws_dir.join(format!("{format_str}.yaml"));
         if ws_path.exists()
             && let Ok(content) = fs::read_to_string(&ws_path)
-            && let Ok(rule) = serde_yml::from_str::<DocumentRule>(&content)
+            && let Ok(rule) = serde_yaml_ng::from_str::<DocumentRule>(&content)
         {
             return rule;
         }
@@ -384,14 +384,14 @@ pub fn load_rule(format: &DocumentFormat) -> DocumentRule {
 
     if user_path.exists()
         && let Ok(content) = fs::read_to_string(&user_path)
-        && let Ok(rule) = serde_yml::from_str::<DocumentRule>(&content)
+        && let Ok(rule) = serde_yaml_ng::from_str::<DocumentRule>(&content)
     {
         return rule;
     }
 
     for (name, content) in BUILTIN_DOCUMENT_RULES {
         if *name == format_str
-            && let Ok(rule) = serde_yml::from_str::<DocumentRule>(content)
+            && let Ok(rule) = serde_yaml_ng::from_str::<DocumentRule>(content)
         {
             return rule;
         }
@@ -426,7 +426,7 @@ pub fn parse_template_front_matter(source: &str) -> (DocumentTemplateMeta, Strin
     if let Some(end) = trimmed.find("--- -->") {
         let inner_start = "<!-- ---".len();
         let inner = trimmed[inner_start..end].trim_matches(|c: char| c == '\n' || c == '\r');
-        let meta: DocumentTemplateMeta = serde_yml::from_str(inner).unwrap_or_default();
+        let meta: DocumentTemplateMeta = serde_yaml_ng::from_str(inner).unwrap_or_default();
         let body = trimmed[end + "--- -->".len()..]
             .trim_start_matches('\n')
             .to_string();

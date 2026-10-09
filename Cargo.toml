@@ -69,7 +69,7 @@ rand = "0.10"
 hostname = "0.4"
 
 # Document generation
-serde_yml = "0.0.13"
+serde_yaml_ng = "0.10.0"
 minijinja = "2"
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 rust_xlsxwriter = "0.99"

@@ -274,7 +274,7 @@ fn load_svg_rule() -> SvgRule {
     if let Some(dir) = data_paths::workspace_svg_rules_dir() {
         let p = dir.join("svg.yaml");
         if let Ok(raw) = fs::read_to_string(&p)
-            && let Ok(rule) = serde_yml::from_str::<SvgRule>(&raw)
+            && let Ok(rule) = serde_yaml_ng::from_str::<SvgRule>(&raw)
         {
             return rule;
         }
@@ -282,14 +282,14 @@ fn load_svg_rule() -> SvgRule {
 
     let user_p = data_paths::svg_rules_dir().join("svg.yaml");
     if let Ok(raw) = fs::read_to_string(&user_p)
-        && let Ok(rule) = serde_yml::from_str::<SvgRule>(&raw)
+        && let Ok(rule) = serde_yaml_ng::from_str::<SvgRule>(&raw)
     {
         return rule;
     }
 
     for (name, content) in BUILTIN_SVG_RULES {
         if *name == "svg"
-            && let Ok(rule) = serde_yml::from_str::<SvgRule>(content)
+            && let Ok(rule) = serde_yaml_ng::from_str::<SvgRule>(content)
         {
             return rule;
         }
@@ -404,7 +404,7 @@ fn parse_template_meta(src: &str, fallback: &str) -> SvgTemplateMeta {
         && let Some(end) = rest.find("--- -->")
     {
         let yaml = rest[..end].trim();
-        if let Ok(meta) = serde_yml::from_str::<SvgTemplateMeta>(yaml) {
+        if let Ok(meta) = serde_yaml_ng::from_str::<SvgTemplateMeta>(yaml) {
             return meta;
         }
     }
